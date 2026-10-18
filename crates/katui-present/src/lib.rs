@@ -6,6 +6,7 @@ pub mod blocks;
 pub mod cells;
 pub mod kitty;
 pub mod select;
+pub mod session;
 
 /// Where a presenter writes its output.
 ///

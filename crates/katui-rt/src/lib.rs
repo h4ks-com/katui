@@ -3,6 +3,7 @@
 //! pump and frame clock. Everything pure lives in the crates below.
 
 pub mod info;
+pub mod session;
 
 #[cfg(unix)]
 pub mod tty;

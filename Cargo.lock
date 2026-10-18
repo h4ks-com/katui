@@ -309,6 +309,7 @@ dependencies = [
 name = "katui-rt"
 version = "0.1.0"
 dependencies = [
+ "katui-present",
  "katui-proto",
  "rustix",
  "thiserror",
