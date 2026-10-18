@@ -1,0 +1,46 @@
+default:
+    @just --list
+
+# fast inner-loop verification; agents run this after every change.
+# the same denials as ci, so a warning fails here first
+check: clippy
+
+fmt:
+    cargo fmt --all
+
+fmt-check:
+    cargo fmt --all -- --check
+
+clippy:
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+# auto-fix what is mechanical
+fix:
+    cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged
+    cargo fmt --all
+
+test:
+    cargo test --workspace --all-features
+
+# license, advisory and source bans; config in deny.toml
+deny:
+    cargo deny check
+
+# spelling gate, matches CI's typos job
+typos:
+    command -v typos >/dev/null && typos || echo "typos not installed, skipping"
+
+# copy-paste duplication gate, matches CI's dupes job; config in .jscpd.json
+dupes:
+    npx --yes jscpd@4 crates/
+
+# unused-dependency gate, matches CI's machete job
+machete:
+    cargo machete
+
+# install the prek hooks, once per clone
+hooks:
+    prek install
+
+# the gate: must pass before any commit; CI runs the same targets
+ci: fmt-check clippy test typos

@@ -1,0 +1,43 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/katui-present",
+    "crates/katui-proto",
+    "crates/katui-scene",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/matheusfillipe/katui"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+# lints newer than the msrv fire as unknown; allow them instead of failing
+# the build (priority -2 so a later -D warnings cannot re-enable them)
+unknown_lints = { level = "allow", priority = -2 }
+rust_2018_idioms = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "warn"
+indexing_slicing = "warn"
+# a function scoring over 20 grew a second job; split it (clippy.toml)
+cognitive_complexity = "warn"
+# pedantic lints we allow
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+cast_possible_truncation = "allow"

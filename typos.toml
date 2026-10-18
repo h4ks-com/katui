@@ -1,0 +1,15 @@
+[default]
+# deliberate non-words that must stay verbatim
+extend-ignore-re = [
+  'PNGs',
+  'flate2',
+]
+
+[default.extend-words]
+katui = "katui"
+sixel = "sixel"
+ratatui = "ratatui"
+wezterm = "wezterm"
+
+[files]
+extend-exclude = ["Cargo.lock", "LICENSE-APACHE", "research"]
