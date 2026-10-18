@@ -1,0 +1,16 @@
+[package]
+name = "katui-ratatui"
+description = "Ratatui Backend implementation over the katui scene and presenters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+katui-present.workspace = true
+katui-scene.workspace = true
+ratatui.workspace = true
+
+[lints]
+workspace = true

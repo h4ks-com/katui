@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/katui-present",
     "crates/katui-proto",
+    "crates/katui-ratatui",
     "crates/katui-scene",
 ]
 
