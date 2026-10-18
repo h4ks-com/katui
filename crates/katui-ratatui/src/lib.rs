@@ -5,6 +5,8 @@
 //! tracked, never queried: reading the terminal's answer belongs to the
 //! runtime's transport.
 
+pub mod image;
+
 use std::io;
 
 use katui_present::cells::{

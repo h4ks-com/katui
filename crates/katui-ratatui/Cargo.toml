@@ -8,9 +8,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+image.workspace = true
 katui-present.workspace = true
+katui-proto.workspace = true
 katui-scene.workspace = true
 ratatui.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
