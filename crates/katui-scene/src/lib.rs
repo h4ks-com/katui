@@ -3,6 +3,7 @@
 //! RGBA, presenters turn the diff of two scenes into terminal bytes.
 
 pub mod cell;
+pub mod placement;
 
 /// A rectangular size in terminal cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
