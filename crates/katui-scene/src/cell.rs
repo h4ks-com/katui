@@ -27,8 +27,48 @@ pub enum Color {
     Rgb(u8, u8, u8),
 }
 
-/// One cell: a symbol and its colors. Attributes such as bold belong to
-/// the text layer.
+/// The SGR render states a cell can carry, one bit each.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Attrs(u8);
+
+impl Attrs {
+    /// No attributes.
+    pub const EMPTY: Self = Self(0);
+    /// Bold text.
+    pub const BOLD: Self = Self(1 << 0);
+    /// Dim text.
+    pub const DIM: Self = Self(1 << 1);
+    /// Italic text.
+    pub const ITALIC: Self = Self(1 << 2);
+    /// Underlined text.
+    pub const UNDERLINE: Self = Self(1 << 3);
+    /// Blinking text.
+    pub const BLINK: Self = Self(1 << 4);
+    /// Foreground and background swapped.
+    pub const REVERSE: Self = Self(1 << 5);
+    /// Invisible text.
+    pub const HIDDEN: Self = Self(1 << 6);
+    /// Struck-through text.
+    pub const CROSSED: Self = Self(1 << 7);
+
+    /// Both attribute sets at once.
+    #[must_use]
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    /// Whether every attribute of `other` is set here.
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// Whether nothing is set.
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+/// One cell: a symbol, its colors and its attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     /// The symbol shown, usually one grapheme. A blank cell holds a
@@ -38,6 +78,8 @@ pub struct Cell {
     pub fg: Color,
     /// Background color.
     pub bg: Color,
+    /// Text attributes.
+    pub attrs: Attrs,
 }
 
 impl Default for Cell {
@@ -46,6 +88,7 @@ impl Default for Cell {
             symbol: " ".to_owned(),
             fg: Color::Reset,
             bg: Color::Reset,
+            attrs: Attrs::EMPTY,
         }
     }
 }
@@ -98,6 +141,7 @@ impl Buffer {
                 symbol: symbol.to_string(),
                 fg,
                 bg,
+                attrs: crate::cell::Attrs::EMPTY,
             };
             if !self.set(Position { x, y: at.y }, cell) {
                 break;
@@ -173,7 +217,16 @@ mod tests {
             symbol: symbol.to_owned(),
             fg: Color::Reset,
             bg: Color::Reset,
+            attrs: super::Attrs::EMPTY,
         }
+    }
+
+    #[test]
+    fn attrs_combine_and_test_membership() {
+        let style = super::Attrs::BOLD.union(super::Attrs::UNDERLINE);
+        assert!(style.contains(super::Attrs::BOLD));
+        assert!(!style.contains(super::Attrs::ITALIC));
+        assert!(super::Attrs::EMPTY.is_empty());
     }
 
     #[test]
