@@ -300,6 +300,7 @@ dependencies = [
  "image",
  "katui-present",
  "katui-proto",
+ "katui-rt",
  "katui-scene",
  "ratatui",
  "thiserror",

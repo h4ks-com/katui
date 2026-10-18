@@ -11,6 +11,7 @@ repository.workspace = true
 image.workspace = true
 katui-present.workspace = true
 katui-proto.workspace = true
+katui-rt.workspace = true
 katui-scene.workspace = true
 ratatui.workspace = true
 thiserror.workspace = true

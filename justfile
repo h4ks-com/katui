@@ -46,5 +46,13 @@ hooks:
 info:
     cargo run -p katui-rt --bin katui-info
 
+# the gallery demo: styled cells plus a kitty-protocol image (needs a terminal)
+demo-gallery:
+    cargo run -p katui-ratatui --example gallery
+
+# the plasma demo: quarter-block animation on any truecolor terminal
+demo-plasma:
+    cargo run -p katui-ratatui --example plasma
+
 # the gate: must pass before any commit; CI runs the same targets
 ci: fmt-check clippy test typos

@@ -10,7 +10,7 @@ use katui_proto::probe::Transport;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::termios::{
     InputModes, LocalModes, OptionalActions, QueueSelector, SpecialCodeIndex, Termios, tcflush,
-    tcgetattr, tcsetattr,
+    tcgetattr, tcgetwinsize, tcsetattr,
 };
 
 /// Failures of the terminal lifecycle.
@@ -59,6 +59,14 @@ impl StdTransport {
                 .unwrap_or_else(|| Instant::now() + Duration::from_secs(86_400 * 365)),
         })
     }
+}
+
+/// The terminal's size in columns and rows, asked of the controlling
+/// terminal.
+pub fn size() -> Result<(u16, u16), RtError> {
+    let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+    let winsize = tcgetwinsize(tty.as_fd())?;
+    Ok((winsize.ws_col, winsize.ws_row))
 }
 
 impl Drop for StdTransport {
