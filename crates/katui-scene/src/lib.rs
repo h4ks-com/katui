@@ -4,6 +4,7 @@
 
 pub mod cell;
 pub mod placement;
+pub mod surface;
 
 /// A rectangular size in terminal cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
