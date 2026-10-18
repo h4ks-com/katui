@@ -11,6 +11,9 @@
 use std::fmt::Write as _;
 
 use base64::Engine as _;
+use flate2::Compression;
+use flate2::write::ZlibEncoder;
+use std::io::Write as _;
 
 /// The protocol's maximum chunk payload, in base64 characters.
 pub const CHUNK: usize = 4096;
@@ -84,6 +87,9 @@ pub struct Transmit<'a> {
     pub payload: &'a [u8],
     /// Answer suppression, [`Quiet::Silent`] from the constructor.
     pub quiet: Quiet,
+    /// Zlib-compress the payload before base64 (`o=z`), the default for
+    /// anything frame-sized.
+    pub compressed: bool,
 }
 
 impl<'a> Transmit<'a> {
@@ -96,6 +102,7 @@ impl<'a> Transmit<'a> {
             height,
             payload,
             quiet: Quiet::Silent,
+            compressed: false,
         }
     }
 
@@ -107,7 +114,15 @@ impl<'a> Transmit<'a> {
     /// construction. Only the first frame carries control data; the rest
     /// carry the `m` continuation flag alone.
     pub fn encode(&self) -> Vec<Vec<u8>> {
-        let encoded = base64::engine::general_purpose::STANDARD.encode(self.payload);
+        let raw = if self.compressed {
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+            // a ZlibEncoder over a Vec cannot fail, only its finish reports
+            let _ = encoder.write_all(self.payload);
+            encoder.finish().unwrap_or_else(|_| self.payload.to_vec())
+        } else {
+            self.payload.to_vec()
+        };
+        let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
         let chunks: Vec<&str> = if encoded.is_empty() {
             vec![""]
         } else {
@@ -129,6 +144,9 @@ impl<'a> Transmit<'a> {
                     command.push_str("a=t");
                     let _ = write!(command, ",f={}", self.format.key());
                     command.push_str(",t=d");
+                    if self.compressed {
+                        command.push_str(",o=z");
+                    }
                     if self.width > 0 {
                         let _ = write!(command, ",s={}", self.width);
                     }
@@ -422,6 +440,42 @@ mod tests {
                 assert_eq!(payload.len() % 4, 0, "non-final chunks are a multiple of 4");
             }
         }
+    }
+
+    #[test]
+    fn a_compressed_transmit_round_trips_through_zlib() {
+        use base64::Engine as _;
+        use flate2::read::ZlibDecoder;
+        use std::io::Read as _;
+
+        let payload: Vec<u8> = (0..600u32).map(|i| (i % 7) as u8).collect();
+        let mut command = Transmit::new(ImageId(5), Format::Rgba, 10, 20, &payload);
+        command.compressed = true;
+        let frames = command.encode();
+        let first = String::from_utf8_lossy(&frames[0]).into_owned();
+        assert!(first.contains("o=z"), "the wire declares compression");
+        let mut joined = String::new();
+        for frame in &frames {
+            let text = String::from_utf8_lossy(frame);
+            let chunk = text.split(';').next_back().expect("separator");
+            let chunk = chunk.strip_suffix("\x1b\\").expect("frame terminator");
+            joined.push_str(chunk);
+        }
+        let wire = base64::engine::general_purpose::STANDARD
+            .decode(&joined)
+            .expect("the chunks are valid base64");
+        let mut restored = Vec::new();
+        ZlibDecoder::new(wire.as_slice())
+            .read_to_end(&mut restored)
+            .expect("the wire is valid zlib");
+        assert_eq!(restored, payload);
+        assert!(
+            joined.len()
+                < base64::engine::general_purpose::STANDARD
+                    .encode(&payload)
+                    .len(),
+            "repetitive pixels compress below their raw size"
+        );
     }
 
     #[test]
