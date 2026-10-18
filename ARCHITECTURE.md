@@ -97,8 +97,8 @@ pub trait Presenter {
     fn present(&mut self, diff: &SceneDiff, caps: &Capabilities,
                out: &mut dyn Sink) -> FrameStats;
 }
-pub fn select(caps: &Capabilities, needs: &Needs) -> Box<dyn Presenter>;
-pub struct Needs { alpha: bool, z_order: bool, fps: u8 }  // + degrade ladder
+pub fn select(caps: &Capabilities) -> Backend;  // needs-aware choice lands with presenter strategies
+pub struct Needs { alpha: bool, z_order: bool, fps: u8 }  // degrade ladder, lands with surfaces
 pub struct FrameStats { bytes_out: usize, placements_moved: usize,
                         surfaces_patched: usize, encode_us: u64 }
 

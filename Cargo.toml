@@ -15,6 +15,7 @@ repository = "https://github.com/matheusfillipe/katui"
 
 [workspace.dependencies]
 base64 = "0.22"
+katui-proto = { path = "crates/katui-proto" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
