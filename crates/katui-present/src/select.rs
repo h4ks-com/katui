@@ -16,7 +16,7 @@ pub enum Backend {
 
 /// Pick the best backend the terminal offers. Kitty wins when present,
 /// sixel comes second, blocks carry everything else. Needs-aware choices
-/// (alpha, z-order, frame budget) join when the presenter strategies do.
+/// (alpha, z-order, frame budget) are the presenter strategies' concern.
 pub fn select(caps: &Capabilities) -> Backend {
     if caps.kitty {
         Backend::Kitty

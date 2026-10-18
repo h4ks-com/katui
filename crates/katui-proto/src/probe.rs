@@ -2,21 +2,27 @@
 //! answer parsed from a single reply stream, plus the environment sniff
 //! that seeds the result when a terminal stays silent.
 //!
-//! The batch follows the recipe every dissected implementation converged
-//! on: the kitty graphics query with marker id 31, XTVERSION, the cell
-//! size query, and the primary device attributes last, because a terminal
-//! must answer those, so they terminate the exchange.
+//! The batch ends with the primary device attributes, which every terminal
+//! must answer, so that reply terminates the exchange. Time is the
+//! transport's concern: its read patience and total budget are configured
+//! where it is built.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use crate::kitty;
+
+/// How long the probe waits per read before asking the transport again.
+/// The transport may cut the wait shorter under its own budget.
+const READ_WAIT: Duration = Duration::from_millis(50);
 
 /// The channel a probe talks through. The real one is the controlling tty
 /// in raw mode; tests script it with recorded replies.
 pub trait Transport {
     /// Send bytes to the terminal.
     fn write(&mut self, bytes: &[u8]);
-    /// Read the next available reply chunk. `None` means nothing arrived
-    /// and the probe stops waiting.
-    fn read(&mut self) -> Option<Vec<u8>>;
+    /// Read the next reply chunk, waiting at most `wait`. `None` means
+    /// nothing arrived in time and the probe stops waiting.
+    fn read_timeout(&mut self, wait: Duration) -> Option<Vec<u8>>;
 }
 
 /// The environment values the sniff reads, captured by the caller or with
@@ -30,8 +36,6 @@ pub struct Env {
     pub term_program: Option<String>,
     /// `COLORTERM`.
     pub colorterm: Option<String>,
-    /// `LC_TERMINAL`, which ssh forwards and `TERM` markers lose.
-    pub lc_terminal: Option<String>,
     /// `KITTY_WINDOW_ID`.
     pub kitty_window_id: Option<String>,
     /// `TMUX`.
@@ -46,7 +50,6 @@ impl Env {
             term: var("TERM"),
             term_program: var("TERM_PROGRAM"),
             colorterm: var("COLORTERM"),
-            lc_terminal: var("LC_TERMINAL"),
             kitty_window_id: var("KITTY_WINDOW_ID"),
             tmux: var("TMUX"),
         }
@@ -67,18 +70,17 @@ impl Env {
     }
 
     /// A multiplexer or an unknown terminal swallows or mangles queries,
-    /// so probing stops before it starts there.
+    /// so probing stops before it starts there. An unset `TERM` counts as
+    /// unknown.
     pub fn probing_allowed(&self) -> bool {
         let blocked = ["dumb", "unknown", "", "linux"];
-        match self.term.as_deref() {
-            Some(term) => {
-                self.tmux.is_none()
-                    && !blocked.contains(&term)
-                    && !term.starts_with("screen")
-                    && !term.starts_with("tmux")
-            }
-            None => self.tmux.is_none(),
-        }
+        let Some(term) = self.term.as_deref() else {
+            return false;
+        };
+        self.tmux.is_none()
+            && !blocked.contains(&term)
+            && !term.starts_with("screen")
+            && !term.starts_with("tmux")
     }
 }
 
@@ -127,7 +129,8 @@ pub struct Capabilities {
     pub identity: Option<Identity>,
     /// Cell size in pixels, when the `CSI 16 t` answer arrived.
     pub cell: Option<CellPixels>,
-    /// How these values were established.
+    /// The strongest source behind any value in this report: a barrier
+    /// answer proves the terminal listened, whatever each field says.
     pub trust: ProbeSource,
 }
 
@@ -145,29 +148,25 @@ struct Replies {
     barrier: bool,
 }
 
-/// Probe the terminal over `transport`, within `budget`.
+/// Probe the terminal over `transport`.
 ///
 /// The sniff seeds the result and probing only ever adds: a marker the
 /// environment claims stays claimed, because markers like
 /// `KITTY_WINDOW_ID` are near certain and a lost answer proves nothing.
-/// Probing is skipped whole under a multiplexer.
-pub fn probe(transport: &mut dyn Transport, env: &Env, budget: Duration) -> Capabilities {
+/// Probing is skipped whole under a multiplexer or an unknown terminal.
+pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     let mut caps = sniff(env);
     if !env.probing_allowed() {
         return caps;
     }
     transport.write(BATCH);
-    let deadline = Instant::now() + budget;
     let mut stream = Vec::new();
     loop {
         let replies = parse_replies(&stream);
         if replies.barrier {
             break;
         }
-        if Instant::now() >= deadline {
-            break;
-        }
-        let Some(chunk) = transport.read() else {
+        let Some(chunk) = transport.read_timeout(READ_WAIT) else {
             break;
         };
         stream.extend_from_slice(&chunk);
@@ -208,20 +207,25 @@ pub fn sniff(env: &Env) -> Capabilities {
 /// bytes. An unterminated sequence ends the scan: the rest belongs to a
 /// reply that has not fully arrived.
 fn parse_replies(stream: &[u8]) -> Replies {
-    let mut replies = Replies::default();
+    // any answer to the marker query proves the protocol, an error reply
+    // included, so the scanner never judges APC frames itself
+    let kitty_ok = kitty::parse_responses(stream)
+        .into_iter()
+        .any(|answer| match answer {
+            kitty::Response::Ok { image, .. } | kitty::Response::Error { image, .. } => {
+                image == kitty::ImageId(31)
+            }
+        });
+    let mut replies = Replies {
+        kitty_ok,
+        ..Replies::default()
+    };
     let mut cursor = 0;
     while let Some(rest) = stream.get(cursor..) {
         if rest.starts_with(b"\x1b_G") {
             let Some(body_len) = body_len(rest, 3) else {
                 break;
             };
-            if let Some(body) = rest.get(3..3 + body_len)
-                && let Ok(text) = std::str::from_utf8(body)
-                && let Some((keys, message)) = text.split_once(';')
-                && keys == "i=31"
-            {
-                replies.kitty_ok |= message == "OK";
-            }
             cursor += 3 + body_len + 2;
         } else if rest.starts_with(b"\x1bP") {
             let Some(body_len) = body_len(rest, 2) else {
@@ -350,7 +354,7 @@ mod tests {
             self.writes.push(bytes.to_vec());
         }
 
-        fn read(&mut self) -> Option<Vec<u8>> {
+        fn read_timeout(&mut self, _wait: Duration) -> Option<Vec<u8>> {
             if self.chunks.is_empty() {
                 None
             } else {
@@ -364,20 +368,17 @@ mod tests {
             term: Some("xterm-kitty".to_owned()),
             term_program: None,
             colorterm: Some("truecolor".to_owned()),
-            lc_terminal: None,
             kitty_window_id: None,
             tmux: None,
         }
     }
-
-    const BUDGET: Duration = Duration::from_millis(100);
 
     #[test]
     fn a_full_kitty_session_reports_everything() {
         let mut transport = Scripted::new(&[
             b"\x1b_Gi=31;OK\x1b\\\x1bP>|kitty(0.29.0)\x1b\\\x1b[6;14;7t\x1b[?62;1;2;6;9;22c",
         ]);
-        let caps = probe(&mut transport, &env(), BUDGET);
+        let caps = probe(&mut transport, &env());
         assert_eq!(
             caps,
             Capabilities {
@@ -400,9 +401,17 @@ mod tests {
     #[test]
     fn da1_alone_reports_sixel_and_ends_the_exchange() {
         let mut transport = Scripted::new(&[b"\x1b[?64;1;2;4;6;9;15c"]);
-        let caps = probe(&mut transport, &env(), BUDGET);
+        let caps = probe(&mut transport, &env());
         assert!(caps.sixel);
-        assert!(!caps.kitty || caps.kitty == env().kitty());
+        assert_eq!(caps.kitty, env().kitty(), "DA1 alone adds nothing");
+        assert_eq!(caps.trust, super::ProbeSource::Probed);
+    }
+
+    #[test]
+    fn an_error_answer_still_proves_the_protocol() {
+        let mut transport = Scripted::new(&[b"\x1b_Gi=31;EINVAL:nope\x1b\\\x1b[?62c"]);
+        let caps = probe(&mut transport, &env());
+        assert!(caps.kitty, "a rejected query still answered in protocol");
         assert_eq!(caps.trust, super::ProbeSource::Probed);
     }
 
@@ -413,7 +422,7 @@ mod tests {
             b";OK\x1b\\more\x1bP>|wezterm 2026",
             b"-01-01\x1b\\\x1b[6;20;10t\x1b[?62;4c",
         ]);
-        let caps = probe(&mut transport, &env(), BUDGET);
+        let caps = probe(&mut transport, &env());
         assert!(caps.kitty);
         assert!(caps.sixel);
         assert_eq!(
@@ -435,7 +444,7 @@ mod tests {
     #[test]
     fn a_silent_terminal_keeps_the_sniffed_state() {
         let mut transport = Scripted::new(&[]);
-        let caps = probe(&mut transport, &env(), BUDGET);
+        let caps = probe(&mut transport, &env());
         assert_eq!(caps, sniff(&env()));
         assert_eq!(caps.trust, super::ProbeSource::Sniffed);
     }
@@ -445,7 +454,7 @@ mod tests {
         let mut mux = env();
         mux.tmux = Some("pane".to_owned());
         let mut transport = Scripted::new(&[]);
-        let caps = probe(&mut transport, &mux, BUDGET);
+        let caps = probe(&mut transport, &mux);
         assert_eq!(caps.trust, super::ProbeSource::Sniffed);
         assert!(transport.writes.is_empty(), "no batch under tmux");
     }
@@ -453,7 +462,7 @@ mod tests {
     #[test]
     fn garbage_and_unterminated_sequences_never_panic() {
         let mut transport = Scripted::new(&[b"\x1b_G\x1b[?u\x1bP>|only\x1b[[[", &[0xff, 0xfe]]);
-        let caps = probe(&mut transport, &env(), BUDGET);
+        let caps = probe(&mut transport, &env());
         assert_eq!(caps.trust, super::ProbeSource::Sniffed);
     }
 
@@ -463,7 +472,7 @@ mod tests {
         env.term = Some("xterm-256color".to_owned());
         env.kitty_window_id = Some("1".to_owned());
         let mut transport = Scripted::new(&[b"\x1b[?64;4c"]);
-        let caps = probe(&mut transport, &env, BUDGET);
+        let caps = probe(&mut transport, &env);
         assert!(caps.kitty, "the marker survives a lost answer");
         assert!(caps.sixel);
     }
@@ -487,7 +496,10 @@ mod tests {
             };
             assert!(!env.probing_allowed(), "{term} must block probing");
         }
-        assert!(Env::default().probing_allowed());
+        assert!(
+            !Env::default().probing_allowed(),
+            "an unset TERM is an unknown terminal"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! The cell plane: a grid of styled symbols plus the diff presenters
 //! translate into terminal bytes. The plane stores one symbol per cell and
-//! diffs by value; wide glyph and grapheme semantics land with the text
-//! layer on top of it.
+//! diffs by value; grapheme shaping and wide-glyph layout are the text
+//! layer's concern, never the plane's.
 
 use crate::CellSize;
 
@@ -27,7 +27,7 @@ pub enum Color {
     Rgb(u8, u8, u8),
 }
 
-/// One cell: a symbol and its colors. Attributes such as bold arrive with
+/// One cell: a symbol and its colors. Attributes such as bold belong to
 /// the text layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
@@ -63,14 +63,6 @@ impl Buffer {
         Self {
             size,
             cells: vec![Cell::default(); cell_count(size)],
-        }
-    }
-
-    /// A buffer where every cell is `cell`.
-    pub fn filled(size: CellSize, cell: Cell) -> Self {
-        Self {
-            size,
-            cells: vec![cell; cell_count(size)],
         }
     }
 

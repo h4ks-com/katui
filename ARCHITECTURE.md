@@ -38,8 +38,9 @@ same scene and presenters under all three:
 2. No layer below L2 knows what a widget is.
 3. The core (proto, scene, present, draw, layout, widgets, docs) performs
    zero I/O: everything flows through `Sink`/`Source`/`Transport` traits
-   owned by katui-rt. That single rule is what makes ~90 percent of the
-   system unit-testable without a terminal.
+   owned by katui-rt. The probe's `Env::capture` reading the process
+   environment is the one sanctioned exception. That single rule is what
+   makes ~90 percent of the system unit-testable without a terminal.
 4. Everything that talks to a real terminal is either an encoder test with
    golden bytes, or an integration tier concern (katui-rt + demo apps).
 
