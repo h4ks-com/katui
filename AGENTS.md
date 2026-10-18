@@ -8,11 +8,13 @@ writing code; it is the contract this guide enforces.
 ## Layout
 
 ```
-crates/katui-proto/     L0: protocol codecs, capability probes (pure, no I/O)
-crates/katui-scene/     L2: planes (cells + RGBA), damage, placements (pure state)
-crates/katui-present/   L1: presenters, scene diff -> sink bytes (pure)
-crates/katui-ratatui/   ratatui Backend adapter: cells into the scene, SGR out through katui-present
-crates/katui-rt/        the impure layer: /dev/tty transport for the probe, katui-info card
+crates/katui-proto/     L0: protocol codecs (kitty, rgp), capability probes (pure, no I/O)
+crates/katui-scene/     L2: cell plane, placements, RGBA surfaces with tile damage (pure state)
+crates/katui-present/   L1: presenters: cells, blocks, kitty placements, full-frame surfaces (pure)
+crates/katui-ratatui/   ratatui Backend adapter, image decode/fit, the demos
+crates/katui-rt/        the impure layer: /dev/tty transport, frame clock, session guard
+crates/katui-layout/    L4: constraint splitting of cell rectangles (pure)
+crates/katui-content/   L6: documents to scene cells, markdown today (pure)
 scripts/                repo tooling (the commit-message gate)
 .opencode/              repo commands and skills (/rev review fan-out)
 ```
