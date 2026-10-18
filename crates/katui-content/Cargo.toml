@@ -1,0 +1,15 @@
+[package]
+name = "katui-content"
+description = "Document content rendered into scene cells, starting with markdown"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+katui-scene.workspace = true
+pulldown-cmark.workspace = true
+
+[lints]
+workspace = true

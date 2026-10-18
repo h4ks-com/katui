@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/katui-content",
     "crates/katui-layout",
     "crates/katui-present",
     "crates/katui-proto",
@@ -24,6 +25,7 @@ katui-present = { path = "crates/katui-present" }
 katui-proto = { path = "crates/katui-proto" }
 katui-rt = { path = "crates/katui-rt" }
 katui-scene = { path = "crates/katui-scene" }
+pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = { version = "0.30", default-features = false }
 rustix = { version = "1", default-features = false, features = ["std", "termios", "event"] }
 thiserror = "2"
