@@ -50,6 +50,10 @@ only with its tier-1 test suite.
 
 ## Rules
 
+- Work stays inside this repository. Never modify, branch, build in, or
+  run tests in another repository on this machine, even a scratch branch,
+  unless the user asks for exactly that in the current session.
+
 - Code is done only when `just ci` passes. Run it, don't assume.
 - No `unwrap`, `panic!` or `todo!` in non-test code; clippy denies them.
   `expect` needs a reason. `unsafe` is denied workspace-wide; the only
