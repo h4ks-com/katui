@@ -389,6 +389,19 @@ mod tests {
         Transmit::new(ImageId(1), Format::Rgba, 1, 1, &[0, 0, 0, 0xff])
     }
 
+    /// The concatenated base64 payload of every frame, terminators and
+    /// control data stripped.
+    fn joined_payload(frames: &[Vec<u8>]) -> String {
+        let mut joined = String::new();
+        for frame in frames {
+            let text = String::from_utf8_lossy(frame);
+            let chunk = text.split(';').next_back().expect("separator");
+            let chunk = chunk.strip_suffix("\x1b\\").expect("frame terminator");
+            joined.push_str(chunk);
+        }
+        joined
+    }
+
     #[test]
     fn transmit_encodes_one_golden_frame() {
         let frames = transmit().encode();
@@ -454,13 +467,7 @@ mod tests {
         let frames = command.encode();
         let first = String::from_utf8_lossy(&frames[0]).into_owned();
         assert!(first.contains("o=z"), "the wire declares compression");
-        let mut joined = String::new();
-        for frame in &frames {
-            let text = String::from_utf8_lossy(frame);
-            let chunk = text.split(';').next_back().expect("separator");
-            let chunk = chunk.strip_suffix("\x1b\\").expect("frame terminator");
-            joined.push_str(chunk);
-        }
+        let joined = joined_payload(&frames);
         let wire = base64::engine::general_purpose::STANDARD
             .decode(&joined)
             .expect("the chunks are valid base64");
@@ -551,15 +558,8 @@ mod tests {
 
         let payload: Vec<u8> = (0..5000u32).map(|i| (i % 256) as u8).collect();
         let frames = Transmit::new(ImageId(4), Format::Rgba, 100, 25, &payload).encode();
-        let mut joined = String::new();
-        for frame in &frames {
-            let text = String::from_utf8_lossy(frame);
-            let chunk = text.split(';').next_back().expect("separator");
-            let chunk = chunk.strip_suffix("\x1b\\").expect("frame terminator");
-            joined.push_str(chunk);
-        }
         let decoded = base64::engine::general_purpose::STANDARD
-            .decode(joined)
+            .decode(joined_payload(&frames))
             .expect("concatenated chunks are valid base64");
         assert_eq!(decoded, payload);
     }

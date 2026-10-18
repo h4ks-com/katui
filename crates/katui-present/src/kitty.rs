@@ -222,6 +222,15 @@ mod tests {
         text.matches(needle).count()
     }
 
+    /// Draw the first frame of `image` into a throwaway writer, the
+    /// starting state of every later-frame test.
+    fn seed(presenter: &mut Kitty, image: u32) {
+        let first = [placement(image, 1, 0, 0)];
+        presenter
+            .render(&mut Vec::new(), &delta(&first, &[], &[]), &images())
+            .expect("writing to a Vec cannot fail");
+    }
+
     #[test]
     fn an_empty_diff_writes_nothing() {
         let mut out = Vec::new();
@@ -278,11 +287,7 @@ mod tests {
     #[test]
     fn a_later_pair_places_without_retransmitting_the_live_image() {
         let mut presenter = Kitty::new();
-        let first = [placement(7, 1, 0, 0)];
-        let mut out = Vec::new();
-        presenter
-            .render(&mut out, &delta(&first, &[], &[]), &images())
-            .expect("writing to a Vec cannot fail");
+        seed(&mut presenter, 7);
         let second = [placement(7, 2, 6, 0)];
         let mut out = Vec::new();
         presenter
@@ -299,11 +304,7 @@ mod tests {
     #[test]
     fn a_move_replaces_the_pair_without_transmitting() {
         let mut presenter = Kitty::new();
-        let first = [placement(7, 1, 0, 0)];
-        let mut out = Vec::new();
-        presenter
-            .render(&mut out, &delta(&first, &[], &[]), &images())
-            .expect("writing to a Vec cannot fail");
+        seed(&mut presenter, 7);
         let moved = [placement(7, 1, 9, 9)];
         let mut out = Vec::new();
         presenter
@@ -317,11 +318,7 @@ mod tests {
     #[test]
     fn removing_the_last_pair_retires_the_image() {
         let mut presenter = Kitty::new();
-        let first = [placement(7, 1, 0, 0)];
-        let mut out = Vec::new();
-        presenter
-            .render(&mut out, &delta(&first, &[], &[]), &images())
-            .expect("writing to a Vec cannot fail");
+        seed(&mut presenter, 7);
         let removed = [placement(7, 1, 0, 0)];
         let mut out = Vec::new();
         presenter
