@@ -10,8 +10,10 @@ use std::io;
 use katui_present::cells::{
     ClearKind, clear_region, hide_cursor, move_cursor, render_cell, show_cursor,
 };
+use katui_present::kitty::{Images, Kitty, RgbaImage};
 use katui_scene::CellSize;
 use katui_scene::cell::{Attrs, Buffer, Cell as SceneCell, Color, Position};
+use katui_scene::placement::{self, CellRect, ImageId, Placement, PlacementId};
 use ratatui::backend::{Backend, ClearType, WindowSize};
 use ratatui::buffer::Cell as RatCell;
 use ratatui::layout::{Position as RatPosition, Size};
@@ -24,6 +26,8 @@ pub struct KatuiBackend<W: io::Write> {
     screen: Buffer,
     pixels: Size,
     cursor: RatPosition,
+    kitty: Kitty,
+    placements: Vec<Placement>,
 }
 
 impl<W: io::Write> KatuiBackend<W> {
@@ -34,6 +38,8 @@ impl<W: io::Write> KatuiBackend<W> {
             screen: Buffer::blank(CellSize { columns, rows }),
             pixels: Size::ZERO,
             cursor: RatPosition::ORIGIN,
+            kitty: Kitty::new(),
+            placements: Vec::new(),
         }
     }
 
@@ -52,6 +58,38 @@ impl<W: io::Write> KatuiBackend<W> {
     /// The writer back.
     pub fn into_inner(self) -> W {
         self.out
+    }
+
+    /// Draw one RGBA image at `area`: the placement bookkeeping diffs
+    /// against the previous image state, so an unchanged image costs
+    /// nothing, a move re-places without re-transmitting, and a new
+    /// image id transmits once. Returns the bytes written, the frame
+    /// budget's input.
+    ///
+    /// One image at a time is the whole contract today: a second call
+    /// replaces the first image entirely. Cells under `area` are the
+    /// app's to keep clear: the ratatui cell stream knows nothing of
+    /// images yet, and the scene mirror does not mark them.
+    pub fn draw_image(
+        &mut self,
+        image: ImageId,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+        area: CellRect,
+    ) -> io::Result<usize> {
+        let mut images = Images::default();
+        images.insert(image, RgbaImage::new(width, height, pixels));
+        let next = vec![Placement {
+            image,
+            id: PlacementId(1),
+            area,
+            crop: None,
+        }];
+        let delta = placement::diff(&self.placements, &next);
+        let written = self.kitty.render(&mut self.out, &delta, &images)?;
+        self.placements = next;
+        Ok(written)
     }
 
     fn blank_cells(&mut self, from: Position, to: Position) {
@@ -423,6 +461,73 @@ mod tests {
         let window = backend.window_size().expect("reading fields cannot fail");
         assert_eq!(window.columns_rows, Size::new(80, 24));
         assert_eq!(window.pixels, Size::new(700, 400));
+    }
+
+    #[test]
+    fn draw_image_transmits_once_and_moves_without_payload() {
+        use katui_scene::placement::{CellRect, ImageId};
+
+        let mut backend = KatuiBackend::new(20, 6, Vec::new());
+        let area = CellRect {
+            x: 2,
+            y: 1,
+            columns: 4,
+            rows: 2,
+        };
+        let first = backend
+            .draw_image(ImageId(7), &[0xff, 0, 0, 0xff], 1, 1, area)
+            .expect("writing to a Vec cannot fail");
+        assert!(first > 0, "the first draw transmits and places");
+
+        let moved = CellRect {
+            x: 8,
+            y: 3,
+            columns: 4,
+            rows: 2,
+        };
+        let second = backend
+            .draw_image(ImageId(7), &[0xff, 0, 0, 0xff], 1, 1, moved)
+            .expect("writing to a Vec cannot fail");
+        assert!(second < first, "a move writes less than a first draw");
+        let unchanged = backend
+            .draw_image(ImageId(7), &[0xff, 0, 0, 0xff], 1, 1, moved)
+            .expect("writing to a Vec cannot fail");
+        assert_eq!(unchanged, 0, "an unchanged image costs nothing");
+
+        let bytes = backend.into_inner();
+        let text = String::from_utf8_lossy(&bytes);
+        assert_eq!(
+            text.matches("/wAA").count(),
+            1,
+            "one payload on the wire across all three draws"
+        );
+        assert!(
+            text.contains("\x1b[4;9H"),
+            "the move re-places at the new origin"
+        );
+    }
+
+    #[test]
+    fn replacing_the_image_transmits_the_new_id_and_retires_the_old() {
+        use katui_scene::placement::{CellRect, ImageId};
+
+        let area = CellRect {
+            x: 0,
+            y: 0,
+            columns: 4,
+            rows: 2,
+        };
+        let mut backend = KatuiBackend::new(20, 6, Vec::new());
+        backend
+            .draw_image(ImageId(7), &[0xff, 0, 0, 0xff], 1, 1, area)
+            .expect("writing to a Vec cannot fail");
+        backend
+            .draw_image(ImageId(8), &[0, 0xff, 0, 0xff], 1, 1, area)
+            .expect("writing to a Vec cannot fail");
+        let bytes = backend.into_inner();
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("i=8,"), "the new id transmits");
+        assert!(text.contains("d=i,i=7"), "the old id retires");
     }
 
     #[test]
