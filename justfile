@@ -54,5 +54,9 @@ demo-gallery:
 demo-plasma:
     cargo run -p katui-ratatui --example plasma
 
+# the snake demo: a self-playing game on a pixel surface
+demo-snake:
+    cargo run -p katui-ratatui --example snake
+
 # the gate: must pass before any commit; CI runs the same targets
 ci: fmt-check clippy test typos
