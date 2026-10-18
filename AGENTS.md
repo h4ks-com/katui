@@ -12,6 +12,7 @@ crates/katui-proto/     L0: protocol codecs, capability probes (pure, no I/O)
 crates/katui-scene/     L2: planes (cells + RGBA), damage, placements (pure state)
 crates/katui-present/   L1: presenters, scene diff -> sink bytes (pure)
 crates/katui-ratatui/   ratatui Backend adapter: cells into the scene, SGR out through katui-present
+crates/katui-rt/        the impure layer: /dev/tty transport for the probe, katui-info card
 scripts/                repo tooling (the commit-message gate)
 .opencode/              repo commands and skills (/rev review fan-out)
 ```

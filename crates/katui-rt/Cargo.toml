@@ -1,0 +1,18 @@
+[package]
+name = "katui-rt"
+description = "The katui runtime: the tty transport, terminal lifecycle and loops"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+katui-proto.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
+[lints]
+workspace = true

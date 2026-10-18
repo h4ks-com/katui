@@ -4,6 +4,7 @@ members = [
     "crates/katui-present",
     "crates/katui-proto",
     "crates/katui-ratatui",
+    "crates/katui-rt",
     "crates/katui-scene",
 ]
 
@@ -18,8 +19,11 @@ repository = "https://github.com/matheusfillipe/katui"
 base64 = "0.22"
 katui-present = { path = "crates/katui-present" }
 katui-proto = { path = "crates/katui-proto" }
+katui-rt = { path = "crates/katui-rt" }
 katui-scene = { path = "crates/katui-scene" }
 ratatui = { version = "0.30", default-features = false }
+rustix = { version = "1", default-features = false, features = ["std", "termios", "event"] }
+thiserror = "2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -42,5 +42,9 @@ machete:
 hooks:
     prek install
 
+# print the terminal's capability card (needs a terminal)
+info:
+    cargo run -p katui-rt --bin katui-info
+
 # the gate: must pass before any commit; CI runs the same targets
 ci: fmt-check clippy test typos
