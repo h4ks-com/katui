@@ -7,7 +7,9 @@
 
 use std::io;
 
-use katui_present::cells::render_cell;
+use katui_present::cells::{
+    ClearKind, clear_region, hide_cursor, move_cursor, render_cell, show_cursor,
+};
 use katui_scene::CellSize;
 use katui_scene::cell::{Attrs, Buffer, Cell as SceneCell, Color, Position};
 use ratatui::backend::{Backend, ClearType, WindowSize};
@@ -52,10 +54,6 @@ impl<W: io::Write> KatuiBackend<W> {
         self.out
     }
 
-    fn write_str(&mut self, text: &str) -> io::Result<()> {
-        self.out.write_all(text.as_bytes())
-    }
-
     fn blank_cells(&mut self, from: Position, to: Position) {
         for y in from.y..=to.y {
             for x in from.x..=to.x {
@@ -97,7 +95,7 @@ fn map_modifier(modifier: Modifier) -> Attrs {
         (Modifier::ITALIC, Attrs::ITALIC),
         (Modifier::UNDERLINED, Attrs::UNDERLINE),
         (Modifier::SLOW_BLINK, Attrs::BLINK),
-        (Modifier::RAPID_BLINK, Attrs::BLINK),
+        (Modifier::RAPID_BLINK, Attrs::RAPID_BLINK),
         (Modifier::REVERSED, Attrs::REVERSE),
         (Modifier::HIDDEN, Attrs::HIDDEN),
         (Modifier::CROSSED_OUT, Attrs::CROSSED),
@@ -130,6 +128,9 @@ impl<W: io::Write> Backend for KatuiBackend<W> {
     {
         for (x, y, cell) in content {
             let at = Position { x, y };
+            // every rendered cell addresses the cursor absolutely, so the
+            // terminal parks on the last drawn cell and the mirror follows
+            self.cursor = RatPosition { x, y };
             let converted = convert(cell);
             self.screen.set(at, converted.clone());
             render_cell(&mut self.out, at, &converted)?;
@@ -138,11 +139,11 @@ impl<W: io::Write> Backend for KatuiBackend<W> {
     }
 
     fn hide_cursor(&mut self) -> io::Result<()> {
-        self.write_str("\x1b[?25l")
+        hide_cursor(&mut self.out)
     }
 
     fn show_cursor(&mut self) -> io::Result<()> {
-        self.write_str("\x1b[?25h")
+        show_cursor(&mut self.out)
     }
 
     fn get_cursor_position(&mut self) -> io::Result<RatPosition> {
@@ -152,13 +153,19 @@ impl<W: io::Write> Backend for KatuiBackend<W> {
     fn set_cursor_position<P: Into<RatPosition>>(&mut self, position: P) -> io::Result<()> {
         let position = position.into();
         self.cursor = position;
-        self.write_str(&format!("\x1b[{};{}H", position.y + 1, position.x + 1))
+        move_cursor(
+            &mut self.out,
+            Position {
+                x: position.x,
+                y: position.y,
+            },
+        )
     }
 
     fn clear(&mut self) -> io::Result<()> {
         let size = self.screen.size();
         self.screen = Buffer::blank(size);
-        self.write_str("\x1b[2J")
+        clear_region(&mut self.out, ClearKind::All)
     }
 
     fn clear_region(&mut self, clear_type: ClearType) -> io::Result<()> {
@@ -166,10 +173,6 @@ impl<W: io::Write> Backend for KatuiBackend<W> {
         let end = Position {
             x: self.screen.size().columns.saturating_sub(1),
             y: self.screen.size().rows.saturating_sub(1),
-        };
-        let line_end = Position {
-            x: end.x,
-            y: self.cursor.y,
         };
         let cursor = Position {
             x: self.cursor.x,
@@ -179,25 +182,25 @@ impl<W: io::Write> Backend for KatuiBackend<W> {
             ClearType::All => self.clear(),
             ClearType::AfterCursor => {
                 self.blank_cells(cursor, end);
-                self.write_str("\x1b[0J")
+                clear_region(&mut self.out, ClearKind::AfterCursor)
             }
             ClearType::BeforeCursor => {
                 self.blank_cells(origin, cursor);
-                self.write_str("\x1b[1J")
+                clear_region(&mut self.out, ClearKind::BeforeCursor)
             }
             ClearType::CurrentLine => {
+                self.blank_cells(Position { x: 0, y: cursor.y }, end);
+                clear_region(&mut self.out, ClearKind::CurrentLine)
+            }
+            ClearType::UntilNewLine => {
                 self.blank_cells(
-                    Position { x: 0, y: cursor.y },
+                    cursor,
                     Position {
                         x: end.x,
                         y: cursor.y,
                     },
                 );
-                self.write_str("\x1b[2K")
-            }
-            ClearType::UntilNewLine => {
-                self.blank_cells(cursor, line_end);
-                self.write_str("\x1b[0K")
+                clear_region(&mut self.out, ClearKind::UntilNewLine)
             }
         }
     }
@@ -231,10 +234,10 @@ mod tests {
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{Block, Paragraph, Widget as _};
 
-    fn render<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) {
+    fn render<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, headline: &str) {
         let drawn = terminal.draw(|frame| {
             Paragraph::new(vec![
-                Line::from(Span::styled("plain text", Style::new())),
+                Line::from(Span::styled(headline, Style::new())),
                 Line::from(vec![
                     Span::styled(
                         "bold red ",
@@ -260,16 +263,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cell_parity_with_the_ratatui_testbackend() {
-        let (columns, rows) = (24u16, 6u16);
-        let mut expected_terminal =
-            Terminal::new(TestBackend::new(columns, rows)).expect("terminal constructs");
-        render(&mut expected_terminal);
-        let mut ours = Terminal::new(KatuiBackend::new(columns, rows, Vec::new()))
-            .expect("terminal constructs");
-        render(&mut ours);
-
+    fn compare_every_cell(
+        expected_terminal: &Terminal<TestBackend>,
+        ours: &Terminal<KatuiBackend<Vec<u8>>>,
+        columns: u16,
+        rows: u16,
+    ) {
         let expected = expected_terminal.backend().buffer();
         let screen = ours.backend().screen();
         for y in 0..rows {
@@ -302,6 +301,63 @@ mod tests {
     }
 
     #[test]
+    fn cell_parity_with_the_ratatui_testbackend_over_two_frames() {
+        let (columns, rows) = (24u16, 6u16);
+        let mut expected_terminal =
+            Terminal::new(TestBackend::new(columns, rows)).expect("terminal constructs");
+        let mut ours = Terminal::new(KatuiBackend::new(columns, rows, Vec::new()))
+            .expect("terminal constructs");
+        render(&mut expected_terminal, "plain text");
+        render(&mut ours, "plain text");
+        compare_every_cell(&expected_terminal, &ours, columns, rows);
+        render(&mut expected_terminal, "changed text");
+        render(&mut ours, "changed text");
+        compare_every_cell(&expected_terminal, &ours, columns, rows);
+    }
+
+    #[test]
+    fn the_named_color_and_modifier_tables_are_pinned() {
+        let table = [
+            (Color::Black, 0u8),
+            (Color::Red, 1),
+            (Color::Green, 2),
+            (Color::Yellow, 3),
+            (Color::Blue, 4),
+            (Color::Magenta, 5),
+            (Color::Cyan, 6),
+            (Color::Gray, 7),
+            (Color::DarkGray, 8),
+            (Color::LightRed, 9),
+            (Color::LightGreen, 10),
+            (Color::LightYellow, 11),
+            (Color::LightBlue, 12),
+            (Color::LightMagenta, 13),
+            (Color::LightCyan, 14),
+            (Color::White, 15),
+        ];
+        for (color, index) in table {
+            assert_eq!(
+                super::map_color(color),
+                SceneColor::Indexed(index),
+                "{color:?}"
+            );
+        }
+        assert_eq!(super::map_color(Color::Reset), SceneColor::Reset);
+        assert_eq!(
+            super::map_modifier(Modifier::UNDERLINED),
+            SceneAttrs::UNDERLINE
+        );
+        assert_eq!(
+            super::map_modifier(Modifier::RAPID_BLINK),
+            SceneAttrs::RAPID_BLINK
+        );
+        assert_eq!(
+            super::map_modifier(Modifier::CROSSED_OUT),
+            SceneAttrs::CROSSED
+        );
+    }
+
+    #[test]
     fn draw_writes_sgr_bytes_and_updates_the_mirror() {
         let mut backend = KatuiBackend::new(4, 2, Vec::new());
         let mut cell = RatCell::default();
@@ -315,6 +371,11 @@ mod tests {
             .expect("the drawn cell is in the mirror");
         assert_eq!(mirror.symbol, "X");
         assert!(matches!(mirror.fg, SceneColor::Reset));
+        assert_eq!(
+            backend.get_cursor_position().expect("tracked position"),
+            RatPosition { x: 1, y: 0 },
+            "the cursor parks on the last drawn cell, like the terminal"
+        );
     }
 
     #[test]

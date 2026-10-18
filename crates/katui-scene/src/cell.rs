@@ -29,7 +29,7 @@ pub enum Color {
 
 /// The SGR render states a cell can carry, one bit each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Attrs(u8);
+pub struct Attrs(u16);
 
 impl Attrs {
     /// No attributes.
@@ -44,12 +44,14 @@ impl Attrs {
     pub const UNDERLINE: Self = Self(1 << 3);
     /// Blinking text.
     pub const BLINK: Self = Self(1 << 4);
+    /// Rapidly blinking text.
+    pub const RAPID_BLINK: Self = Self(1 << 5);
     /// Foreground and background swapped.
-    pub const REVERSE: Self = Self(1 << 5);
+    pub const REVERSE: Self = Self(1 << 6);
     /// Invisible text.
-    pub const HIDDEN: Self = Self(1 << 6);
+    pub const HIDDEN: Self = Self(1 << 7);
     /// Struck-through text.
-    pub const CROSSED: Self = Self(1 << 7);
+    pub const CROSSED: Self = Self(1 << 8);
 
     /// Both attribute sets at once.
     #[must_use]
