@@ -2,6 +2,8 @@
 //! glyphs over SGR truecolor, the one pixel path every color terminal
 //! understands.
 
+use std::fmt::Write as _;
+
 /// An opaque color, the pixel the classifiers work with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb {
@@ -105,6 +107,39 @@ pub fn half(top: Rgb, bottom: Rgb) -> Block {
     }
 }
 
+/// Render one terminal line of a pixel image into `out`: every cell
+/// classifies the 2x2 pixel block under it, a trailing odd column becomes
+/// a half block. SGR truecolor only; palette degradation belongs to the
+/// fidelity ladders. Rows of different lengths stop at the shorter one.
+pub fn render_line<W: std::io::Write>(
+    out: &mut W,
+    top: &[Rgb],
+    bottom: &[Rgb],
+) -> std::io::Result<()> {
+    let mut text = String::new();
+    for (top_pair, bottom_pair) in top.chunks(2).zip(bottom.chunks(2)) {
+        let block = match (top_pair, bottom_pair) {
+            ([tl, tr], [bl, br]) => quarter([[*tl, *tr], [*bl, *br]]),
+            (odd_top, odd_bottom) => match (odd_top.first(), odd_bottom.first()) {
+                (Some(top), Some(bottom)) => half(*top, *bottom),
+                _ => break,
+            },
+        };
+        let _ = write!(
+            text,
+            "\x1b[38;2;{r};{g};{b}m\x1b[48;2;{r2};{g2};{b2}m{glyph}\x1b[0m",
+            r = block.fg.r,
+            g = block.fg.g,
+            b = block.fg.b,
+            r2 = block.bg.r,
+            g2 = block.bg.g,
+            b2 = block.bg.b,
+            glyph = block.glyph,
+        );
+    }
+    out.write_all(text.as_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Block, Rgb, half, quarter};
@@ -196,5 +231,33 @@ mod tests {
             }
         );
         assert_eq!(half(BLACK, BLACK).glyph, ' ');
+    }
+
+    #[test]
+    fn render_line_writes_golden_sgr_bytes() {
+        let mut out = Vec::new();
+        super::render_line(&mut out, &[WHITE, BLACK], &[BLACK, WHITE])
+            .expect("writing to a Vec cannot fail");
+        assert_eq!(
+            String::from_utf8_lossy(&out),
+            "\x1b[38;2;255;255;255m\x1b[48;2;0;0;0m▚\x1b[0m"
+        );
+    }
+
+    #[test]
+    fn a_trailing_odd_column_renders_a_half_block() {
+        let mut out = Vec::new();
+        super::render_line(&mut out, &[WHITE, BLACK, WHITE], &[BLACK, WHITE, BLACK])
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&out);
+        assert!(text.contains('▀'), "the odd column becomes a half block");
+        assert_eq!(text.chars().filter(|c| *c == '▀').count(), 1);
+    }
+
+    #[test]
+    fn empty_rows_render_nothing() {
+        let mut out = Vec::new();
+        super::render_line(&mut out, &[], &[]).expect("writing to a Vec cannot fail");
+        assert!(out.is_empty());
     }
 }
