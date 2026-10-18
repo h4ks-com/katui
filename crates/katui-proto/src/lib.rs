@@ -4,3 +4,4 @@
 
 pub mod kitty;
 pub mod probe;
+pub mod rgp;
