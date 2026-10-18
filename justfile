@@ -20,7 +20,7 @@ fix:
     cargo fmt --all
 
 test:
-    cargo test --workspace --all-features
+    cargo test --workspace --all-features --all-targets
 
 # license, advisory and source bans; config in deny.toml
 deny:

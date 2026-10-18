@@ -180,10 +180,10 @@ fn fill_cell(
     color: Rgba,
     inset: u32,
 ) {
-    // the border cells sit at -1 and wrap to the surface edge through the
-    // +1 offset below, which unsigned arithmetic carries exactly
-    let x = u32::from(column.cast_unsigned() + 1) * u32::from(cell.width) + inset;
-    let y = u32::from(row.cast_unsigned() + 1) * u32::from(cell.height) + inset;
+    // border cells sit at -1; the +1 shift lands them at 0 and every
+    // value stays non-negative from there
+    let x = u32::from((column + 1).cast_unsigned()) * u32::from(cell.width) + inset;
+    let y = u32::from((row + 1).cast_unsigned()) * u32::from(cell.height) + inset;
     surface.fill_rect(
         katui_scene::surface::PixelRect {
             x,
@@ -193,4 +193,102 @@ fn fill_cell(
         },
         color,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FRAMES, Game, draw};
+    use katui_proto::probe::CellPixels;
+    use katui_scene::placement::CellRect;
+    use katui_scene::surface::Surface;
+
+    fn cell() -> CellPixels {
+        CellPixels {
+            width: 10,
+            height: 20,
+        }
+    }
+
+    #[test]
+    fn a_thousand_ticks_stay_inside_and_duplicate_free() {
+        let mut game = Game::new();
+        for _ in 0..1000 {
+            game.tick();
+            for (index, segment) in game.body.iter().enumerate() {
+                assert!(super::inside(*segment), "segment {index} left the grid");
+                assert!(
+                    game.body.iter().position(|other| other == segment) == Some(index),
+                    "the body never crosses itself"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_full_headless_run_alternates_frames() {
+        let mut presenter = katui_present::surface::KittySurface::new(500);
+        let mut game = Game::new();
+        let area = CellRect {
+            x: 1,
+            y: 1,
+            columns: 26,
+            rows: 18,
+        };
+        let mut wire = Vec::new();
+        for frame in 0..FRAMES {
+            if frame % 2 == 0 {
+                game.tick();
+            }
+            let mut surface = Surface::new(26 * 10, 18 * 20);
+            draw(&mut surface, &game, cell());
+            presenter
+                .render_frame(&mut wire, &surface, area)
+                .expect("writing to a Vec cannot fail");
+        }
+        let text = String::from_utf8_lossy(&wire);
+        assert!(text.contains("i=500,"), "the first alternating id runs");
+        assert!(text.contains("i=501,"), "the second alternating id runs");
+        assert_eq!(text.matches("\x1b[?2026h").count(), FRAMES as usize);
+    }
+
+    #[test]
+    fn the_fortieth_frame_dumps_a_png_artifact() {
+        let mut game = Game::new();
+        for _ in 0..40 {
+            game.tick();
+        }
+        let mut surface = Surface::new(26 * 10, 18 * 20);
+        draw(&mut surface, &game, cell());
+        let image = image::RgbaImage::from_raw(
+            surface.width(),
+            surface.height(),
+            surface.pixels().to_vec(),
+        )
+        .expect("the surface holds exactly width * height pixels");
+        let artifact = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../target/katui-snake-frame.png"
+        );
+        image
+            .save(artifact)
+            .expect("the png writer saves under target");
+    }
+
+    #[test]
+    fn the_blocks_fallback_renders_the_same_game() {
+        let game = Game::new();
+        let mut surface = Surface::new(26 * 2, 18 * 2);
+        draw(
+            &mut surface,
+            &game,
+            CellPixels {
+                width: 2,
+                height: 2,
+            },
+        );
+        let mut wire = Vec::new();
+        katui_present::surface::render_blocks(&mut wire, &surface)
+            .expect("writing to a Vec cannot fail");
+        assert!(String::from_utf8_lossy(&wire).contains('█'));
+    }
 }
