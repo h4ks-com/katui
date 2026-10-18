@@ -77,11 +77,11 @@ pub trait Transport {                    // real: /dev/tty; tests: fixtures
 }
 pub fn probe(t: &mut dyn Transport, env: &EnvSniff) -> Capabilities;
 
-pub mod kitty {   // pure functions, golden-byte tested
-    pub fn encode_transmit(cmd: &Transmit, chunk_sz: usize) -> Vec<Vec<u8>>;
-    pub fn encode_place(p: &Place) -> Vec<u8>;
-    pub fn encode_delete(d: &Delete) -> Vec<u8>;
-    pub fn parse_response(bytes: &[u8]) -> Result<Vec<Response>, ParseError>;
+pub mod kitty {   // command types with encode() methods, golden-byte tested
+    impl Transmit<'_> { pub fn encode(&self) -> Vec<Vec<u8>>; }  // CHUNK-sized frames
+    impl Place { pub fn encode(&self) -> Vec<u8>; }
+    impl Delete { pub fn encode(&self) -> Vec<u8>; }
+    pub fn parse_responses(bytes: &[u8]) -> Vec<Response>;  // total, never fails
 }
 
 // katui-scene: pure state, the hard contract

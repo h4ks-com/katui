@@ -13,6 +13,9 @@ rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/matheusfillipe/katui"
 
+[workspace.dependencies]
+base64 = "0.22"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 # lints newer than the msrv fire as unknown; allow them instead of failing
@@ -41,3 +44,5 @@ must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 cast_possible_truncation = "allow"
+# a nursery lint: assert!(x.is_empty()) reads better than the assert_eq form
+assert_is_empty = "allow"
