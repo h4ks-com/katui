@@ -8,7 +8,10 @@ use std::time::{Duration, Instant};
 
 use katui_proto::probe::Transport;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
-use rustix::termios::{InputModes, LocalModes, OptionalActions, Termios, tcgetattr, tcsetattr};
+use rustix::termios::{
+    InputModes, LocalModes, OptionalActions, QueueSelector, SpecialCodeIndex, Termios, tcflush,
+    tcgetattr, tcsetattr,
+};
 
 /// Failures of the terminal lifecycle.
 #[derive(Debug, thiserror::Error)]
@@ -33,7 +36,7 @@ pub struct StdTransport {
 
 impl StdTransport {
     /// Open the controlling terminal and switch it to raw mode. `budget`
-    /// bounds the whole exchange from the first read.
+    /// bounds the whole exchange, writes included.
     pub fn open(budget: Duration) -> Result<Self, RtError> {
         let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
         let saved = tcgetattr(tty.as_fd())?;
@@ -42,19 +45,28 @@ impl StdTransport {
         // them, no flow control eating control bytes mid-reply
         raw.local_modes -= LocalModes::ECHO | LocalModes::ICANON;
         raw.input_modes -= InputModes::IXON | InputModes::ICRNL;
+        // pin the noncanonical read floor so a previous owner's VMIN cannot
+        // stall trailing reply fragments
+        raw.special_codes[SpecialCodeIndex::VMIN] = 1;
+        raw.special_codes[SpecialCodeIndex::VTIME] = 0;
         tcsetattr(tty.as_fd(), OptionalActions::Now, &raw)?;
         Ok(Self {
             tty,
             saved,
-            deadline: Instant::now() + budget,
+            // a budget overflowing the clock means a limit nobody reaches
+            deadline: Instant::now()
+                .checked_add(budget)
+                .unwrap_or_else(|| Instant::now() + Duration::from_secs(86_400 * 365)),
         })
     }
 }
 
 impl Drop for StdTransport {
     fn drop(&mut self) {
-        // drop cannot report, so the restore is best effort; the termios
-        // copy is the terminal's own saved state
+        // replies that arrived after the budget stay queued on the device
+        // and would reach the parent shell as typed junk, so drain first;
+        // drop cannot report, so the restore itself is best effort
+        let _ = tcflush(self.tty.as_fd(), QueueSelector::IFlush);
         let _ = tcsetattr(self.tty.as_fd(), OptionalActions::Now, &self.saved);
     }
 }
@@ -86,9 +98,16 @@ impl Transport for StdTransport {
             tv_nsec: i64::from(wait.subsec_nanos()),
         };
         let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
-        match poll(&mut fds, Some(&timeout)) {
-            Ok(ready) if ready > 0 => {}
-            _ => return None,
+        // a signal must not end the exchange, only the budget may
+        let ready = loop {
+            match poll(&mut fds, Some(&timeout)) {
+                Ok(ready) => break ready,
+                Err(rustix::io::Errno::INTR) => {}
+                Err(_) => return None,
+            }
+        };
+        if ready == 0 {
+            return None;
         }
         let mut buffer = [0u8; 4096];
         match rustix::io::read(self.tty.as_fd(), &mut buffer) {
