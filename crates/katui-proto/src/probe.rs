@@ -62,11 +62,14 @@ impl Env {
             .is_some_and(|value| value.contains("truecolor") || value.contains("24bit"))
     }
 
-    /// Kitty graphics markers in the environment.
+    /// Kitty graphics markers in the environment. A multiplexer lies
+    /// here: its panes inherit the outer terminal's `TERM_PROGRAM`, so
+    /// under tmux no marker counts.
     pub fn kitty(&self) -> bool {
-        self.kitty_window_id.is_some()
-            || self.term.as_deref() == Some("xterm-kitty")
-            || self.term_program.as_deref() == Some("kitty")
+        self.tmux.is_none()
+            && (self.kitty_window_id.is_some()
+                || self.term.as_deref() == Some("xterm-kitty")
+                || self.term_program.as_deref() == Some("kitty"))
     }
 
     /// A multiplexer or an unknown terminal swallows or mangles queries,
@@ -485,6 +488,17 @@ mod tests {
         assert!(caps.truecolor);
         assert!(!caps.sixel);
         assert_eq!(caps.trust, super::ProbeSource::Sniffed);
+    }
+
+    #[test]
+    fn a_multiplexers_inherited_markers_do_not_count() {
+        let mut mux = env();
+        mux.tmux = Some("pane".to_owned());
+        assert!(
+            !mux.kitty(),
+            "tmux panes inherit TERM_PROGRAM from the outer terminal"
+        );
+        assert!(!sniff(&mux).kitty);
     }
 
     #[test]
