@@ -62,7 +62,8 @@ katui-proto ────┘  codecs + probes + Capabilities (pure)
 ```
 
 Dependency direction: strictly downward. `katui-scene` and `katui-proto`
-depend on nothing katui-internal.
+depend on nothing katui-internal and each define their own ids and rects,
+protocol-neutral in the scene; katui-present translates between the two.
 
 ## The trait seams (the flexible interface)
 

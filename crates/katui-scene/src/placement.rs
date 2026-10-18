@@ -12,7 +12,9 @@ pub struct ImageId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PlacementId(pub u32);
 
-/// A rectangle of cells: origin plus extent.
+/// A rectangle of cells: origin plus extent. Zero columns or rows leave
+/// the display size to the terminal, which then draws the image at its
+/// natural pixel size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CellRect {
     /// Left edge, in columns.
@@ -25,7 +27,8 @@ pub struct CellRect {
     pub rows: u16,
 }
 
-/// A rectangle of the source image, in pixels.
+/// A rectangle of the source image, in pixels. A zero-sized crop
+/// intersects the image to nothing and displays no pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PixelRect {
     /// Left edge of the crop.
@@ -79,8 +82,9 @@ impl PlacementDelta {
 }
 
 /// Diff two placement sets by (image, placement) pair: a new pair adds, a
-/// changed geometry moves, a vanished pair removes. Search is linear per
-/// entry; placement counts are tens, never thousands.
+/// changed geometry moves, a vanished pair removes. Both sets hold each
+/// pair at most once. Search is linear per entry; placement counts are
+/// tens, never thousands.
 pub fn diff(prev: &[Placement], next: &[Placement]) -> PlacementDelta {
     let mut delta = PlacementDelta::default();
     for placement in next {
@@ -143,7 +147,10 @@ mod tests {
             x: 4,
             ..super::PixelRect::default()
         });
-        assert_eq!(diff(&prev, &next).moved.len(), 1);
+        let delta = diff(&prev, &next);
+        assert_eq!(delta.moved.len(), 1);
+        assert!(delta.added.is_empty());
+        assert!(delta.removed.is_empty());
     }
 
     #[test]
