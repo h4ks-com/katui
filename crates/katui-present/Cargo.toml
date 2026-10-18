@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 katui-proto.workspace = true
+katui-scene.workspace = true
 
 [lints]
 workspace = true

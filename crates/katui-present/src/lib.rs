@@ -3,6 +3,7 @@
 //! [`Sink`], which is stdout, a buffer, a socket or a test harness.
 
 pub mod blocks;
+pub mod cells;
 pub mod select;
 
 /// Where a presenter writes its output.

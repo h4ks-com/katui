@@ -13,6 +13,7 @@ name = "katui-present"
 version = "0.1.0"
 dependencies = [
  "katui-proto",
+ "katui-scene",
 ]
 
 [[package]]
