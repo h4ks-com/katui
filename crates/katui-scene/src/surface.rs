@@ -129,6 +129,19 @@ impl Surface {
         }
     }
 
+    /// Copy every pixel of `source` onto this surface at (`x`, `y`),
+    /// clipped to the destination. Overwrites, no blending: the cheap
+    /// path for stamping a precomputed backdrop under a frame.
+    pub fn blit(&mut self, source: &Surface, x: u32, y: u32) {
+        for row in 0..source.height() {
+            for column in 0..source.width() {
+                if let Some(color) = source.get(column, row) {
+                    self.set(x.saturating_add(column), y.saturating_add(row), color);
+                }
+            }
+        }
+    }
+
     fn index(&self, x: u32, y: u32) -> Option<usize> {
         if x < self.width && y < self.height {
             Some((y as usize) * (self.width as usize) * 4 + (x as usize) * 4)
@@ -250,6 +263,37 @@ mod tests {
                 assert_eq!(surface.get(x, y), Some(expected), "{x},{y}");
             }
         }
+    }
+
+    #[test]
+    fn blit_stamps_a_source_and_clips_at_the_edges() {
+        let stamp = Surface::from_rgba(2, 2, [255, 0, 0, 255].repeat(4)).expect("16 bytes");
+        let mut surface = Surface::new(4, 4);
+        surface.blit(&stamp, 1, 1);
+        assert_eq!(surface.get(1, 1), Some(Rgba::solid(255, 0, 0)));
+        assert_eq!(surface.get(2, 2), Some(Rgba::solid(255, 0, 0)));
+        assert_eq!(
+            surface.get(0, 0),
+            Some(Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0
+            })
+        );
+
+        let mut corner = Surface::new(4, 4);
+        corner.blit(&stamp, 3, 3);
+        assert_eq!(corner.get(3, 3), Some(Rgba::solid(255, 0, 0)));
+        assert_eq!(
+            corner.get(0, 3),
+            Some(Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0
+            })
+        );
     }
 
     #[test]
