@@ -58,5 +58,9 @@ demo-plasma:
 demo-snake:
     cargo run -p katui-ratatui --example snake
 
+# the dvd demo: the immortal bouncing logo, color per bounce, corner-hit flash
+demo-dvd:
+    cargo run -p katui-ratatui --example dvd
+
 # the gate: must pass before any commit; CI runs the same targets
 ci: fmt-check clippy test typos
