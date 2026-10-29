@@ -70,12 +70,41 @@ const PALETTE: [Rgba; 6] = [
 
 const FLASH: Rgba = Rgba::solid(255, 255, 255);
 
-/// One twinkling star: a fixed pixel and its own sine.
+/// One twinkling star: a fixed pixel, its own sine, and the frame it
+/// last changed shine. Stars re-brighten on a staggered cadence so the
+/// damage per frame stays a scatter, not a storm.
 struct Star {
     x: u32,
     y: u32,
     phase: f64,
     speed: f64,
+    last_frame: u64,
+    shine: u8,
+}
+
+impl Star {
+    #[allow(clippy::cast_sign_loss, clippy::cast_precision_loss)]
+    // brightness stays inside 0..=255 by construction; frame counts
+    // never leave the f64 mantissa range
+    fn shine_at(phase: f64, speed: f64, frame: u64) -> u8 {
+        let brightness = 90.0 + 90.0 * (phase + speed * frame as f64).sin();
+        brightness as u8
+    }
+
+    /// Repaint at most every 16 frames; unchanged brightness keeps the
+    /// old value and costs no bytes.
+    fn repaint(&mut self, frame: u64) -> bool {
+        if frame.saturating_sub(self.last_frame) < 16 {
+            return false;
+        }
+        let shine = Self::shine_at(self.phase, self.speed, frame);
+        if shine == self.shine {
+            return false;
+        }
+        self.shine = shine;
+        self.last_frame = frame;
+        true
+    }
 }
 
 /// The precomputed backdrop plus its stars, built once for the run.
@@ -99,8 +128,8 @@ fn main() -> io::Result<()> {
     let height = u32::from(rows) * u32::from(pixel_cell.height);
     let scale = font_scale(width, height);
     let mut dvd = Dvd::new(width, height, scale);
-    let backdrop = build_backdrop(width, height);
-    let mut presenter = katui_present::surface::KittySurface::new(700);
+    let mut backdrop = build_backdrop(width, height);
+    let mut presenter = katui_present::surface::PatchedKitty::new(700, pixel_cell);
     let mut clock = FrameClock::new(30);
     let mut out = io::stdout();
     out.write_all(b"\x1b[?25l")?;
@@ -112,7 +141,7 @@ fn main() -> io::Result<()> {
     while frame < MAX_FRAMES && running.load(Ordering::Relaxed) {
         dvd.step();
         let mut surface = Surface::new(width, height);
-        draw_frame(&mut surface, &backdrop, &dvd, frame);
+        draw_frame(&mut surface, &mut backdrop, &dvd, frame);
         if kitty {
             presenter.render_frame(
                 &mut out,
@@ -307,21 +336,32 @@ fn build_backdrop(width: u32, height: u32) -> Backdrop {
         let x = rng % width.max(1);
         rng = rng.rotate_left(3) ^ rng.wrapping_mul(0x811c_9dc5);
         let y = rng % height.max(1);
+        let phase = f64::from(rng % 628) / 100.0;
+        let speed = 0.02 + f64::from(rng % 7) * 0.01;
         stars.push(Star {
             x,
             y,
-            phase: f64::from(rng % 628) / 100.0,
-            speed: 0.02 + f64::from(rng % 7) * 0.01,
+            phase,
+            speed,
+            last_frame: 0,
+            shine: Star::shine_at(phase, speed, 0),
         });
     }
     Backdrop { gradient, stars }
 }
 
-/// One whole frame: backdrop, stars, the trail of ghosts, the logo, the
-/// corner flash.
-fn draw_frame(surface: &mut Surface, backdrop: &Backdrop, dvd: &Dvd, frame: u64) {
+/// One whole frame: backdrop, every star at its current shine, the
+/// trail of ghosts, the logo, the corner flash.
+fn draw_frame(surface: &mut Surface, backdrop: &mut Backdrop, dvd: &Dvd, frame: u64) {
     surface.blit(&backdrop.gradient, 0, 0);
-    draw_stars(surface, &backdrop.stars, frame);
+    for star in &mut backdrop.stars {
+        star.repaint(frame);
+        surface.set(
+            star.x,
+            star.y,
+            Rgba::solid(star.shine, star.shine, star.shine),
+        );
+    }
     for (index, (ghost_x, ghost_y)) in dvd.trail.iter().enumerate().skip(1) {
         let dim = 1 + index as u8;
         draw_logo(
@@ -343,17 +383,6 @@ fn draw_frame(surface: &mut Surface, backdrop: &Backdrop, dvd: &Dvd, frame: u64)
             },
             FLASH,
         );
-    }
-}
-
-#[allow(clippy::cast_sign_loss, clippy::cast_precision_loss)]
-// brightness stays inside 0..=255 by construction; frame counts never
-// leave the f64 mantissa range
-fn draw_stars(surface: &mut Surface, stars: &[Star], frame: u64) {
-    for star in stars {
-        let brightness = 90.0 + 90.0 * (star.phase + star.speed * frame as f64).sin();
-        let shine = brightness as u8;
-        surface.set(star.x, star.y, Rgba::solid(shine, shine, shine));
     }
 }
 
@@ -439,9 +468,9 @@ mod tests {
 
     #[test]
     fn the_backdrop_paints_every_pixel_and_stars_twinkle() {
-        let backdrop = build_backdrop(160, 90);
+        let mut backdrop = build_backdrop(160, 90);
         let mut surface = Surface::new(160, 90);
-        draw_frame(&mut surface, &backdrop, &Dvd::new(160, 90, 4), 0);
+        draw_frame(&mut surface, &mut backdrop, &Dvd::new(160, 90, 4), 0);
         for y in 0..90 {
             for x in 0..160 {
                 assert!(surface.get(x, y).is_some(), "every pixel is painted");
@@ -449,7 +478,7 @@ mod tests {
         }
         let first = surface;
         let mut second = Surface::new(160, 90);
-        draw_frame(&mut second, &backdrop, &Dvd::new(160, 90, 4), 37);
+        draw_frame(&mut second, &mut backdrop, &Dvd::new(160, 90, 4), 64);
         let mut changed = 0;
         for y in 0..90 {
             for x in 0..160 {
@@ -483,9 +512,15 @@ mod tests {
     }
 
     #[test]
-    fn a_headless_run_streams_alternating_frames() {
-        let mut presenter = katui_present::surface::KittySurface::new(700);
-        let backdrop = build_backdrop(320, 180);
+    fn a_headless_run_transmits_once_then_patches() {
+        let mut presenter = katui_present::surface::PatchedKitty::new(
+            700,
+            katui_proto::probe::CellPixels {
+                width: 4,
+                height: 6,
+            },
+        );
+        let mut backdrop = build_backdrop(320, 180);
         let mut dvd = Dvd::new(320, 180, 4);
         let area = katui_scene::placement::CellRect {
             x: 0,
@@ -497,13 +532,16 @@ mod tests {
         for frame in 0..MAX_FRAMES.min(120) {
             dvd.step();
             let mut surface = Surface::new(320, 180);
-            draw_frame(&mut surface, &backdrop, &dvd, frame);
+            draw_frame(&mut surface, &mut backdrop, &dvd, frame);
             presenter
                 .render_frame(&mut wire, &surface, area)
                 .expect("writing to a Vec cannot fail");
         }
         let text = String::from_utf8_lossy(&wire);
-        assert!(text.contains("i=700,"), "the first alternating id runs");
-        assert!(text.contains("i=701,"), "the second alternating id runs");
+        assert!(
+            text.matches("a=t").count() <= 2,
+            "at most the first frame and one flash retransmit whole"
+        );
+        assert!(text.contains("a=p,i=700"), "later frames patch in place");
     }
 }
