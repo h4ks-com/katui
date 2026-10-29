@@ -92,3 +92,23 @@ jobs:
         with:
           tool: cargo-machete,just
       - run: just machete
+
+  # report tier, never blocks: the complexity trend over time. The gate
+  # tier is the clippy cognitive ceiling in the lint job
+  metrics:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo install rust-code-analysis-cli --locked
+      - run: just metrics
+      - uses: actions/upload-artifact@v7
+        with:
+          name: metrics-${{ github.sha }}
+          path: target/metrics
+          retention-days: 90

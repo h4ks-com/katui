@@ -25,6 +25,71 @@ pub enum RtError {
     Control(#[from] rustix::io::Errno),
 }
 
+/// The shared raw-mode entry: no echo, no line buffering, no flow
+/// control, a one-byte read floor. `with_signals` keeps ISIG on for the
+/// probe (Ctrl-C must stay a signal there) and drops it for raw input,
+/// where Ctrl-C arrives as a byte.
+fn enter_raw(tty: &File, with_signals: bool) -> Result<Termios, RtError> {
+    let saved = tcgetattr(tty.as_fd())?;
+    let mut raw = saved.clone();
+    let mut modes = LocalModes::ECHO | LocalModes::ICANON;
+    if !with_signals {
+        modes |= LocalModes::ISIG;
+    }
+    raw.local_modes -= modes;
+    raw.input_modes -= InputModes::IXON | InputModes::ICRNL;
+    // pin the noncanonical read floor so a previous owner's VMIN cannot
+    // stall trailing fragments
+    raw.special_codes[SpecialCodeIndex::VMIN] = 1;
+    raw.special_codes[SpecialCodeIndex::VTIME] = 0;
+    tcsetattr(tty.as_fd(), OptionalActions::Now, &raw)?;
+    Ok(saved)
+}
+
+/// Raw keyboard input for the duration of the guard: the controlling
+/// terminal delivers bytes one at a time, with `Ctrl-C`, `q` and `Esc`
+/// arriving as plain bytes instead of signals, and the saved state
+/// restores on drop whatever ends the run.
+pub struct RawInput {
+    tty: File,
+    saved: Termios,
+}
+
+impl RawInput {
+    /// Grab the controlling terminal in raw mode.
+    pub fn open() -> Result<Self, RtError> {
+        let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+        let saved = enter_raw(&tty, false)?;
+        Ok(Self { tty, saved })
+    }
+
+    /// Wait up to `wait` for one key byte; `None` on silence.
+    pub fn read_timeout(&mut self, wait: Duration) -> Option<u8> {
+        let timeout = timespec(wait);
+        let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
+        let Ok(ready) = poll(&mut fds, Some(&timeout)) else {
+            return None;
+        };
+        if ready == 0 {
+            return None;
+        }
+        let mut buffer = [0u8; 1];
+        match rustix::io::read(self.tty.as_fd(), &mut buffer) {
+            Ok(1) => Some(buffer[0]),
+            _ => None,
+        }
+    }
+}
+
+impl Drop for RawInput {
+    fn drop(&mut self) {
+        // drop cannot report, so the restore is best effort; bytes that
+        // arrived after the last read are drained so the shell sees none
+        let _ = tcflush(self.tty.as_fd(), QueueSelector::IFlush);
+        let _ = tcsetattr(self.tty.as_fd(), OptionalActions::Now, &self.saved);
+    }
+}
+
 /// The probe transport over `/dev/tty`, raw for its lifetime and restored
 /// on drop however the exchange ends. The total listening budget lives
 /// here: reads stop returning once it is spent.
@@ -39,17 +104,7 @@ impl StdTransport {
     /// bounds the whole exchange, writes included.
     pub fn open(budget: Duration) -> Result<Self, RtError> {
         let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
-        let saved = tcgetattr(tty.as_fd())?;
-        let mut raw = saved.clone();
-        // no echo of the answers into the output, no line buffering of
-        // them, no flow control eating control bytes mid-reply
-        raw.local_modes -= LocalModes::ECHO | LocalModes::ICANON;
-        raw.input_modes -= InputModes::IXON | InputModes::ICRNL;
-        // pin the noncanonical read floor so a previous owner's VMIN cannot
-        // stall trailing reply fragments
-        raw.special_codes[SpecialCodeIndex::VMIN] = 1;
-        raw.special_codes[SpecialCodeIndex::VTIME] = 0;
-        tcsetattr(tty.as_fd(), OptionalActions::Now, &raw)?;
+        let saved = enter_raw(&tty, true)?;
         Ok(Self {
             tty,
             saved,
@@ -67,6 +122,13 @@ pub fn size() -> Result<(u16, u16), RtError> {
     let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
     let winsize = tcgetwinsize(tty.as_fd())?;
     Ok((winsize.ws_col, winsize.ws_row))
+}
+
+fn timespec(wait: Duration) -> Timespec {
+    Timespec {
+        tv_sec: wait.as_secs().min(i64::MAX.unsigned_abs()).cast_signed(),
+        tv_nsec: i64::from(wait.subsec_nanos()),
+    }
 }
 
 impl Drop for StdTransport {
@@ -101,10 +163,7 @@ impl Transport for StdTransport {
             return None;
         }
         let wait = wait.min(self.deadline - now);
-        let timeout = Timespec {
-            tv_sec: wait.as_secs().min(i64::MAX.unsigned_abs()).cast_signed(),
-            tv_nsec: i64::from(wait.subsec_nanos()),
-        };
+        let timeout = timespec(wait);
         let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
         // a signal must not end the exchange, only the budget may
         let ready = loop {
