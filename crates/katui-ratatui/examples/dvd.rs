@@ -130,6 +130,7 @@ fn main() -> io::Result<()> {
     let mut dvd = Dvd::new(width, height, scale);
     let mut backdrop = build_backdrop(width, height);
     let mut presenter = katui_present::surface::PatchedKitty::new(700, pixel_cell);
+    let mut blocks = katui_present::surface::BlocksSurface::new();
     let mut clock = FrameClock::new(30);
     let mut out = io::stdout();
     out.write_all(b"\x1b[?25l")?;
@@ -154,7 +155,7 @@ fn main() -> io::Result<()> {
                 },
             )?;
         } else {
-            katui_present::surface::render_blocks(&mut out, &surface)?;
+            blocks.render_frame(&mut out, &surface)?;
         }
         out.flush()?;
         clock.wait_for_next_frame();
