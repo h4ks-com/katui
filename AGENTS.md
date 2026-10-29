@@ -31,6 +31,9 @@ only with its tier-1 test suite.
 - `just deny` / `just typos` / `just dupes` / `just machete`: the extra CI
   gates (licenses and advisories, spelling, copy-paste duplication, unused
   dependencies)
+- `just metrics`: per-function complexity report via rust-code-analysis
+  (`cargo install rust-code-analysis-cli` once). Report tier only; the
+  gate tier stays clippy's cognitive ceiling of 20
 - `just hooks`: install the prek hooks, once per clone
 - CI (`.github/workflows/ci.yml`) runs these same targets through just.
   Never duplicate a check in CI that is not behind a just target, and never

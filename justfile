@@ -30,6 +30,10 @@ deny:
 typos:
     command -v typos >/dev/null && typos || echo "typos not installed, skipping"
 
+# complexity and maintainability report, per function (cargo install rust-code-analysis-cli)
+metrics:
+    rust-code-analysis-cli -m -p crates -l rust -O json -o target/metrics -j 8
+
 # copy-paste duplication gate, matches CI's dupes job; config in .jscpd.json
 dupes:
     npx --yes jscpd@4 crates/
