@@ -78,18 +78,16 @@ impl Env {
                 || self.term_program.as_deref() == Some("kitty"))
     }
 
-    /// A multiplexer or an unknown terminal swallows or mangles queries,
-    /// so probing stops before it starts there. An unset `TERM` counts as
-    /// unknown.
+    /// A dumb or unknown terminal swallows or mangles queries, so probing
+    /// stops before it starts there. A multiplexer is worth probing:
+    /// tmux 3.8 answers the kitty query itself, older tmux stays silent
+    /// and the sniff decides. GNU screen and kin stay excluded.
     pub fn probing_allowed(&self) -> bool {
         let blocked = ["dumb", "unknown", "", "linux"];
         let Some(term) = self.term.as_deref() else {
             return false;
         };
-        self.tmux.is_none()
-            && !blocked.contains(&term)
-            && !term.starts_with("screen")
-            && !term.starts_with("tmux")
+        !(blocked.contains(&term) || term.starts_with("screen"))
     }
 }
 
@@ -460,13 +458,36 @@ mod tests {
     }
 
     #[test]
-    fn a_multiplexer_skips_probing_entirely() {
+    fn tmux_answers_the_probe_and_adds_what_it_supports() {
         let mut mux = env();
         mux.tmux = Some("pane".to_owned());
+        mux.term = Some("tmux-256color".to_owned());
+        // tmux 3.8: the kitty query is answered natively, DA1 reports sixel
+        let mut transport =
+            Scripted::new(&[b"\x1b_Gi=31;OK\x1b\\\x1bP>|tmux 3.8\x1b\\\x1b[6;20;10t\x1b[?62;4c"]);
+        let caps = probe(&mut transport, &mux);
+        assert_eq!(caps.trust, super::ProbeSource::Probed);
+        assert!(caps.kitty, "tmux 3.8 speaks kitty graphics natively");
+        assert!(caps.sixel);
+        assert_eq!(
+            caps.identity,
+            Some(super::Identity {
+                name: "tmux".to_owned(),
+                version: Some("3.8".to_owned()),
+            })
+        );
+    }
+
+    #[test]
+    fn a_silent_multiplexer_falls_back_to_its_sniff() {
+        let mut mux = env();
+        mux.tmux = Some("pane".to_owned());
+        mux.term = Some("tmux-256color".to_owned());
         let mut transport = Scripted::new(&[]);
         let caps = probe(&mut transport, &mux);
         assert_eq!(caps.trust, super::ProbeSource::Sniffed);
-        assert!(transport.writes.is_empty(), "no batch under tmux");
+        assert!(!caps.kitty, "an older tmux reports no graphics");
+        assert!(!transport.writes.is_empty(), "the probe was attempted");
     }
 
     #[test]
@@ -522,13 +543,21 @@ mod tests {
 
     #[test]
     fn probing_is_blocked_by_terminal_names_that_mangle_queries() {
-        for term in ["dumb", "screen-256color", "tmux-256color", "linux"] {
+        for term in ["dumb", "screen-256color", "linux"] {
             let env = Env {
                 term: Some(term.to_owned()),
                 ..Env::default()
             };
             assert!(!env.probing_allowed(), "{term} must block probing");
         }
+        let tmux = Env {
+            term: Some("tmux-256color".to_owned()),
+            ..Env::default()
+        };
+        assert!(
+            tmux.probing_allowed(),
+            "tmux answers the probe itself, so probing runs"
+        );
         assert!(
             !Env::default().probing_allowed(),
             "an unset TERM is an unknown terminal"
