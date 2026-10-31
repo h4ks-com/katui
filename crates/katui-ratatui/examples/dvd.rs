@@ -116,13 +116,20 @@ struct Backdrop {
 fn main() -> io::Result<()> {
     let caps = probe_capabilities();
     let (columns, rows) = katui_rt::tty::size().map_err(io::Error::other)?;
-    let kitty = caps.kitty && caps.cell.is_some();
-    let pixel_cell = match caps.cell {
-        Some(cell) if kitty => cell,
-        _ => CellPixels {
+    // under a multiplexer the cell pixel size never gets probed; a
+    // typical terminal cell keeps the render resolution honest, and the
+    // placement's cell span scales whatever we choose
+    let kitty = caps.kitty;
+    let pixel_cell = if kitty {
+        caps.cell.unwrap_or(CellPixels {
+            width: 10,
+            height: 20,
+        })
+    } else {
+        CellPixels {
             width: 2,
             height: 2,
-        },
+        }
     };
     let width = u32::from(columns) * u32::from(pixel_cell.width);
     let height = u32::from(rows) * u32::from(pixel_cell.height);

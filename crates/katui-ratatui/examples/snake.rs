@@ -23,14 +23,21 @@ const FOOD: Rgba = Rgba::solid(255, 80, 96);
 
 fn main() -> io::Result<()> {
     let caps = probe_capabilities();
-    let pixel_cell = match caps.cell {
-        Some(cell) if caps.kitty => cell,
-        _ => CellPixels {
+    // under a multiplexer the cell pixel size never gets probed; a
+    // typical terminal cell keeps the render resolution honest, and the
+    // placement's cell span scales whatever we choose
+    let kitty = caps.kitty;
+    let pixel_cell = if kitty {
+        caps.cell.unwrap_or(CellPixels {
+            width: 10,
+            height: 20,
+        })
+    } else {
+        CellPixels {
             width: 2,
             height: 2,
-        },
+        }
     };
-    let kitty = caps.kitty && caps.cell.is_some();
     let board_columns = u32::from(GRID_COLUMNS as u16 + 2);
     let board_rows = u32::from(GRID_ROWS as u16 + 2);
     let mut presenter = katui_present::surface::KittySurface::new(500);

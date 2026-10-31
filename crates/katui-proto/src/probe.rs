@@ -40,6 +40,8 @@ pub struct Env {
     pub kitty_window_id: Option<String>,
     /// `TMUX`.
     pub tmux: Option<String>,
+    /// `RMUX`, set by the Rust rewrite alongside the tmux variables.
+    pub rmux: Option<String>,
 }
 
 impl Env {
@@ -52,6 +54,7 @@ impl Env {
             colorterm: var("COLORTERM"),
             kitty_window_id: var("KITTY_WINDOW_ID"),
             tmux: var("TMUX"),
+            rmux: var("RMUX"),
         }
     }
 
@@ -62,11 +65,14 @@ impl Env {
             .is_some_and(|value| value.contains("truecolor") || value.contains("24bit"))
     }
 
-    /// Kitty graphics markers in the environment. A multiplexer lies
+    /// Kitty graphics markers in the environment. A plain tmux lies
     /// here: its panes inherit the outer terminal's `TERM_PROGRAM`, so
-    /// under tmux no marker counts.
+    /// under tmux no marker counts. rmux sets the tmux variables too,
+    /// but it re-emits kitty graphics to the outer terminal, so under
+    /// rmux the inherited markers count.
     pub fn kitty(&self) -> bool {
-        self.tmux.is_none()
+        let multiplexer_forwards = self.rmux.is_some() || self.tmux.is_none();
+        multiplexer_forwards
             && (self.kitty_window_id.is_some()
                 || self.term.as_deref() == Some("xterm-kitty")
                 || self.term_program.as_deref() == Some("kitty"))
@@ -373,6 +379,7 @@ mod tests {
             colorterm: Some("truecolor".to_owned()),
             kitty_window_id: None,
             tmux: None,
+            rmux: None,
         }
     }
 
@@ -499,6 +506,18 @@ mod tests {
             "tmux panes inherit TERM_PROGRAM from the outer terminal"
         );
         assert!(!sniff(&mux).kitty);
+    }
+
+    #[test]
+    fn rmux_forwards_the_inherited_markers() {
+        let mut mux = env();
+        mux.tmux = Some("pane".to_owned());
+        mux.rmux = Some("pane".to_owned());
+        assert!(
+            mux.kitty(),
+            "rmux re-emits kitty graphics to the outer terminal"
+        );
+        assert!(sniff(&mux).kitty);
     }
 
     #[test]
