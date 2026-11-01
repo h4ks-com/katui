@@ -23,21 +23,9 @@ const FOOD: Rgba = Rgba::solid(255, 80, 96);
 
 fn main() -> io::Result<()> {
     let caps = katui_rt::tty::probe_default();
-    // under a multiplexer the cell pixel size never gets probed; a
-    // typical terminal cell keeps the render resolution honest, and the
-    // placement's cell span scales whatever we choose
+    // the pixel-cell fallback lives beside the probe it belongs to
     let kitty = caps.kitty;
-    let pixel_cell = if kitty {
-        caps.cell.unwrap_or(CellPixels {
-            width: 10,
-            height: 20,
-        })
-    } else {
-        CellPixels {
-            width: 2,
-            height: 2,
-        }
-    };
+    let pixel_cell = katui_rt::tty::pixel_cell(&caps);
     let board_columns = u32::from(GRID_COLUMNS as u16 + 2);
     let board_rows = u32::from(GRID_ROWS as u16 + 2);
     let mut presenter = katui_present::surface::KittySurface::new(500);

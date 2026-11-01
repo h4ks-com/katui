@@ -5,6 +5,7 @@ use std::fs::{File, OpenOptions};
 use std::os::fd::AsFd;
 use std::time::{Duration, Instant};
 
+use katui_proto::probe::CellPixels;
 use katui_proto::probe::{Capabilities, Env};
 use katui_proto::probe::{Transport, probe, sniff};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
@@ -128,6 +129,26 @@ pub fn probe_default() -> Capabilities {
     }
 }
 
+/// The pixel size of one cell for a pixel-surface run: what the probe
+/// measured, else a typical terminal cell under kitty (under a
+/// multiplexer the cell size never gets probed, and the placement's
+/// cell span scales whatever we choose) and the 2x2 quarter-block
+/// cell on the blocks path.
+#[must_use]
+pub fn pixel_cell(caps: &Capabilities) -> CellPixels {
+    if caps.kitty {
+        caps.cell.unwrap_or(CellPixels {
+            width: 10,
+            height: 20,
+        })
+    } else {
+        CellPixels {
+            width: 2,
+            height: 2,
+        }
+    }
+}
+
 fn timespec(wait: Duration) -> Timespec {
     Timespec {
         tv_sec: wait.as_secs().min(i64::MAX.unsigned_abs()).cast_signed(),
@@ -192,12 +213,63 @@ impl Transport for StdTransport {
 mod tests {
     use std::time::Duration;
 
-    use super::StdTransport;
+    use super::{StdTransport, pixel_cell};
+    use katui_proto::probe::{Capabilities, CellPixels, ProbeSource};
 
     #[test]
     fn opening_without_a_controlling_terminal_fails_cleanly() {
         // a controlling terminal in the test environment is fine too: the
         // point is that open never panics, and both arms restore state
         if StdTransport::open(Duration::from_millis(1)).is_ok() {}
+    }
+
+    fn caps(kitty: bool, cell: Option<CellPixels>) -> Capabilities {
+        Capabilities {
+            kitty,
+            sixel: false,
+            truecolor: false,
+            identity: None,
+            cell,
+            trust: ProbeSource::Sniffed,
+        }
+    }
+
+    #[test]
+    fn a_measured_cell_wins() {
+        assert_eq!(
+            pixel_cell(&caps(
+                true,
+                Some(CellPixels {
+                    width: 8,
+                    height: 16
+                })
+            )),
+            CellPixels {
+                width: 8,
+                height: 16
+            }
+        );
+    }
+
+    #[test]
+    fn an_unprobed_kitty_cell_falls_back_to_the_typical_cell() {
+        assert_eq!(
+            pixel_cell(&caps(true, None)),
+            CellPixels {
+                width: 10,
+                height: 20
+            }
+        );
+    }
+
+    #[test]
+    fn the_blocks_path_uses_the_quarter_cell() {
+        assert_eq!(
+            pixel_cell(&caps(false, None)),
+            CellPixels {
+                width: 2,
+                height: 2
+            }
+        );
     }
 }

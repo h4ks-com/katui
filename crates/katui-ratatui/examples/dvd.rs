@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use katui_proto::probe::CellPixels;
 use katui_rt::clock::FrameClock;
 use katui_scene::placement::CellRect;
 use katui_scene::surface::{Rgba, Surface};
@@ -118,21 +117,9 @@ fn main() -> io::Result<()> {
     let caps = katui_rt::tty::probe_default();
     let size = katui_rt::tty::size().map_err(io::Error::other)?;
     let (columns, rows) = (size.columns, size.rows);
-    // under a multiplexer the cell pixel size never gets probed; a
-    // typical terminal cell keeps the render resolution honest, and the
-    // placement's cell span scales whatever we choose
+    // the pixel-cell fallback lives beside the probe it belongs to
     let kitty = caps.kitty;
-    let pixel_cell = if kitty {
-        caps.cell.unwrap_or(CellPixels {
-            width: 10,
-            height: 20,
-        })
-    } else {
-        CellPixels {
-            width: 2,
-            height: 2,
-        }
-    };
+    let pixel_cell = katui_rt::tty::pixel_cell(&caps);
     let width = u32::from(columns) * u32::from(pixel_cell.width);
     let height = u32::from(rows) * u32::from(pixel_cell.height);
     let scale = font_scale(width, height);
