@@ -94,6 +94,7 @@ pub struct Transmit<'a> {
 
 impl<'a> Transmit<'a> {
     /// Build a silent transmit command.
+    #[must_use]
     pub fn new(id: ImageId, format: Format, width: u32, height: u32, payload: &'a [u8]) -> Self {
         Self {
             id,
@@ -113,6 +114,7 @@ impl<'a> Transmit<'a> {
     /// chunk except the last meets the protocol's multiple-of-four rule by
     /// construction. Only the first frame carries control data; the rest
     /// carry the `m` continuation flag alone.
+    #[must_use]
     pub fn encode(&self) -> Vec<Vec<u8>> {
         let raw = if self.compressed {
             let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
@@ -207,6 +209,7 @@ pub struct Place {
 
 impl Place {
     /// Build a silent placement holding the cursor, the presenter default.
+    #[must_use]
     pub fn new(image: ImageId) -> Self {
         Self {
             image,
@@ -221,6 +224,7 @@ impl Place {
     }
 
     /// Encode as one APC frame.
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut command = String::from("a=p");
         if self.image.0 > 0 {
@@ -267,6 +271,7 @@ pub enum Delete {
 
 impl Delete {
     /// Encode as one APC frame.
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut command = String::from("a=d,d=i");
         match self {
@@ -319,6 +324,7 @@ pub enum Response {
 ///
 /// Malformed frames are skipped silently; parsing never fails and never
 /// panics, whatever the input.
+#[must_use]
 pub fn parse_responses(input: &[u8]) -> Vec<Response> {
     let mut responses = Vec::new();
     let mut cursor = 0;
