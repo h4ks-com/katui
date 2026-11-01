@@ -160,7 +160,9 @@ struct Replies {
 /// The sniff seeds the result and probing only ever adds: a marker the
 /// environment claims stays claimed, because markers like
 /// `KITTY_WINDOW_ID` are near certain and a lost answer proves nothing.
-/// Probing is skipped whole under a multiplexer or an unknown terminal.
+/// Probing is skipped whole under terminals whose names mangle queries
+/// (see [`Env::probing_allowed`]); a multiplexer like tmux is worth
+/// probing: tmux 3.8 answers the kitty query itself.
 pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     let mut caps = sniff(env);
     if !env.probing_allowed() {
