@@ -2,6 +2,8 @@
 //! terminal objects, per the ratty project's specification. Inside ratty
 //! the terminal renders the objects; everywhere else katui scenes fall
 //! back to images, so this codec costs nothing until a ratty answers.
+//! Command structs with `encode()` mirror the kitty codec's shape in the
+//! same crate.
 
 use std::fmt::Write as _;
 
@@ -76,36 +78,113 @@ pub fn parse_support(input: &[u8]) -> Option<Support> {
     (support.version > 0).then_some(support)
 }
 
+/// An object id, one per registered asset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectId(pub u32);
+
 /// Register an asset by path, one object id per model.
-#[must_use]
-pub fn register_path(id: u32, format: &str, path: &str) -> Vec<u8> {
-    rgp_apc(&format!("r;id={id};fmt={format};path={path}"))
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Register<'a> {
+    /// The object id the application chose.
+    pub id: ObjectId,
+    /// The asset format, `obj`, `glb` or `stl`.
+    pub format: &'a str,
+    /// The object path known to the ratty terminal.
+    pub path: &'a str,
 }
 
-/// Place a registered object: `row`/`col` name the anchor cell at the
-/// center of the placement, `w`/`h` its cell span, `ry` an optional
-/// yaw in degrees.
-#[must_use]
-pub fn place(id: u32, row: u32, col: u32, w: u32, h: u32, ry: Option<i32>) -> Vec<u8> {
-    let mut body = format!("p;id={id};row={row};col={col};w={w};h={h}");
-    if let Some(ry) = ry {
-        let _ = write!(body, ";ry={ry}");
+impl Register<'_> {
+    /// Encode as one APC frame.
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        rgp_apc(&format!(
+            "r;id={};fmt={};path={}",
+            self.id.0, self.format, self.path
+        ))
     }
-    rgp_apc(&body)
+}
+
+/// Place a registered object. The ratty spec names the anchor cell at the
+/// placement's center with `row`/`col`; this struct keeps `column`
+/// first, the ordering every other katui codec uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Place {
+    /// The registered object.
+    pub id: ObjectId,
+    /// The anchor column.
+    pub column: u32,
+    /// The anchor row.
+    pub row: u32,
+    /// The placement width in cells.
+    pub width: u32,
+    /// The placement height in cells.
+    pub height: u32,
+    /// An optional yaw in degrees.
+    pub yaw: Option<i32>,
+}
+
+impl Place {
+    /// A placement with no yaw.
+    #[must_use]
+    pub fn new(id: ObjectId, column: u32, row: u32, width: u32, height: u32) -> Self {
+        Self {
+            id,
+            column,
+            row,
+            width,
+            height,
+            yaw: None,
+        }
+    }
+
+    /// Encode as one APC frame.
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        let mut body = format!(
+            "p;id={};row={};col={};w={};h={}",
+            self.id.0, self.row, self.column, self.width, self.height
+        );
+        if let Some(yaw) = self.yaw {
+            let _ = write!(body, ";ry={yaw}");
+        }
+        rgp_apc(&body)
+    }
 }
 
 /// Update one mutable field of a placed object: its yaw in degrees.
-#[must_use]
-pub fn update_ry(id: u32, ry: i32) -> Vec<u8> {
-    rgp_apc(&format!("u;id={id};ry={ry}"))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Update {
+    /// The placed object.
+    pub id: ObjectId,
+    /// The new yaw in degrees.
+    pub yaw: i32,
 }
 
-/// Delete one object by id, or every ratty graphics object.
-#[must_use]
-pub fn delete(id: Option<u32>) -> Vec<u8> {
-    match id {
-        Some(id) => rgp_apc(&format!("d;id={id}")),
-        None => rgp_apc("d"),
+impl Update {
+    /// Encode as one APC frame.
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        rgp_apc(&format!("u;id={};ry={}", self.id.0, self.yaw))
+    }
+}
+
+/// Delete graphics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Delete {
+    /// One object by id.
+    Object(ObjectId),
+    /// Every ratty graphics object.
+    All,
+}
+
+impl Delete {
+    /// Encode as one APC frame.
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        match self {
+            Self::Object(id) => rgp_apc(&format!("d;id={}", id.0)),
+            Self::All => rgp_apc("d"),
+        }
     }
 }
 
@@ -116,7 +195,7 @@ fn rgp_apc(body: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Features, Support, delete, parse_support, place, register_path, support_query, update_ry,
+        Delete, Features, ObjectId, Place, Register, Support, Update, parse_support, support_query,
     };
 
     #[test]
@@ -152,22 +231,39 @@ mod tests {
     #[test]
     fn the_verbs_encode_to_golden_frames() {
         assert_eq!(
-            register_path(42, "obj", "rat.obj"),
+            Register {
+                id: ObjectId(42),
+                format: "obj",
+                path: "rat.obj",
+            }
+            .encode(),
             b"\x1b_ratty;g;r;id=42;fmt=obj;path=rat.obj\x1b\\".to_vec()
         );
+        let plain = Place::new(ObjectId(42), 8, 12, 4, 2);
         assert_eq!(
-            place(42, 12, 8, 4, 2, Some(45)),
+            plain.encode(),
+            b"\x1b_ratty;g;p;id=42;row=12;col=8;w=4;h=2\x1b\\".to_vec()
+        );
+        let yawed = Place {
+            yaw: Some(45),
+            ..plain
+        };
+        assert_eq!(
+            yawed.encode(),
             b"\x1b_ratty;g;p;id=42;row=12;col=8;w=4;h=2;ry=45\x1b\\".to_vec()
         );
         assert_eq!(
-            place(42, 12, 8, 4, 2, None),
-            b"\x1b_ratty;g;p;id=42;row=12;col=8;w=4;h=2\x1b\\".to_vec()
-        );
-        assert_eq!(
-            update_ry(42, 180),
+            Update {
+                id: ObjectId(42),
+                yaw: 180,
+            }
+            .encode(),
             b"\x1b_ratty;g;u;id=42;ry=180\x1b\\".to_vec()
         );
-        assert_eq!(delete(Some(42)), b"\x1b_ratty;g;d;id=42\x1b\\".to_vec());
-        assert_eq!(delete(None), b"\x1b_ratty;g;d\x1b\\".to_vec());
+        assert_eq!(
+            Delete::Object(ObjectId(42)).encode(),
+            b"\x1b_ratty;g;d;id=42\x1b\\".to_vec()
+        );
+        assert_eq!(Delete::All.encode(), b"\x1b_ratty;g;d\x1b\\".to_vec());
     }
 }
