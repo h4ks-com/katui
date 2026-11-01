@@ -28,18 +28,10 @@ pub struct CellRect {
 }
 
 /// A rectangle of the source image, in pixels. A zero-sized crop
-/// intersects the image to nothing and displays no pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct PixelRect {
-    /// Left edge of the crop.
-    pub x: u32,
-    /// Top edge of the crop.
-    pub y: u32,
-    /// Crop width.
-    pub width: u32,
-    /// Crop height.
-    pub height: u32,
-}
+/// intersects the image to nothing and displays no pixels. The one
+/// pixel rectangle the scene exports: [`crate::surface::PixelRect`],
+/// re-exported here so placement consumers need one import only.
+pub use crate::surface::PixelRect;
 
 /// One image on screen: which image, which placement of it, where, and
 /// how much of the source pixels it shows.
