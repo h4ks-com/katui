@@ -29,6 +29,40 @@ pub struct KittySurface {
     parity: bool,
 }
 
+/// One whole surface as a frame image: a compressed transmit under
+/// `image`, the cursor at the area origin, one placement filling `area`.
+/// The caller owns the sync wrapper and any previous-placement delete.
+fn write_whole_image<W: Sink>(
+    bytes: &mut W,
+    image: KittyImage,
+    surface: &Surface,
+    area: CellRect,
+) -> io::Result<()> {
+    let mut transmit = Transmit::new(
+        image,
+        Format::Rgba,
+        surface.width(),
+        surface.height(),
+        surface.pixels(),
+    );
+    transmit.compressed = true;
+    for frame in transmit.encode() {
+        bytes.write_all(&frame)?;
+    }
+    move_cursor(
+        bytes,
+        Position {
+            x: area.x,
+            y: area.y,
+        },
+    )?;
+    let mut place = Place::new(image);
+    place.placement = KittyPlacement(1);
+    place.columns = u32::from(area.columns);
+    place.rows = u32::from(area.rows);
+    bytes.write_all(&place.encode())
+}
+
 impl KittySurface {
     /// A presenter handing out image ids from `base` upward; pick a base
     /// no other katui presenter in the session uses.
@@ -52,29 +86,7 @@ impl KittySurface {
         let previous = self.base + u32::from(!self.parity);
         let mut bytes = Vec::new();
         bytes.write_all(b"\x1b[?2026h")?;
-        let mut transmit = Transmit::new(
-            KittyImage(current),
-            Format::Rgba,
-            surface.width(),
-            surface.height(),
-            surface.pixels(),
-        );
-        transmit.compressed = true;
-        for frame in transmit.encode() {
-            bytes.write_all(&frame)?;
-        }
-        move_cursor(
-            &mut bytes,
-            Position {
-                x: area.x,
-                y: area.y,
-            },
-        )?;
-        let mut place = Place::new(KittyImage(current));
-        place.placement = KittyPlacement(1);
-        place.columns = u32::from(area.columns);
-        place.rows = u32::from(area.rows);
-        bytes.write_all(&place.encode())?;
+        write_whole_image(&mut bytes, KittyImage(current), surface, area)?;
         bytes.write_all(&Delete::Placement(KittyImage(previous), KittyPlacement(1)).encode())?;
         bytes.write_all(b"\x1b[?2026l")?;
         self.parity = !self.parity;
@@ -87,7 +99,7 @@ impl KittySurface {
 /// The stateful blocks presenter: renders a pixel surface as
 /// quarter-block cells once, then repaints only the cells whose pixels
 /// changed. This is the blocks path's answer to
-/// [`PatchedKitty`](Self): a moving sprite on a static
+/// [`PatchedKitty`](PatchedKitty): a moving sprite on a static
 /// background costs a handful of cursor-addressed SGR cells per frame
 /// instead of a full-screen rewrite, which is what makes the fallback
 /// survivable inside multiplexers.
@@ -284,29 +296,7 @@ impl PatchedKitty {
 
     fn full_frame(&self, bytes: &mut Vec<u8>, surface: &Surface, area: CellRect) -> io::Result<()> {
         bytes.write_all(b"\x1b[?2026h")?;
-        let mut transmit = Transmit::new(
-            KittyImage(self.base),
-            Format::Rgba,
-            surface.width(),
-            surface.height(),
-            surface.pixels(),
-        );
-        transmit.compressed = true;
-        for frame in transmit.encode() {
-            bytes.write_all(&frame)?;
-        }
-        move_cursor(
-            bytes,
-            Position {
-                x: area.x,
-                y: area.y,
-            },
-        )?;
-        let mut place = Place::new(KittyImage(self.base));
-        place.placement = KittyPlacement(1);
-        place.columns = u32::from(area.columns);
-        place.rows = u32::from(area.rows);
-        bytes.write_all(&place.encode())?;
+        write_whole_image(bytes, KittyImage(self.base), surface, area)?;
         bytes.write_all(b"\x1b[?2026l")?;
         Ok(())
     }
@@ -429,17 +419,8 @@ mod tests {
 
     mod diffed_blocks {
         use super::super::BlocksSurface;
-        use katui_scene::surface::{Rgba, Surface};
-
-        fn solid(width: u32, height: u32, color: Rgba) -> Surface {
-            let mut surface = Surface::new(width, height);
-            for y in 0..height {
-                for x in 0..width {
-                    surface.set(katui_scene::surface::PixelPos::new(x, y), color);
-                }
-            }
-            surface
-        }
+        use super::solid;
+        use katui_scene::surface::Rgba;
 
         #[test]
         fn an_identical_frame_writes_nothing() {
