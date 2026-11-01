@@ -9,12 +9,24 @@ use katui_proto::probe::CellPixels;
 use katui_proto::probe::{Capabilities, Env};
 use katui_proto::probe::{Transport, probe, sniff};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use rustix::fd::OwnedFd;
+use rustix::fs::{Mode, OFlags};
 use rustix::termios::{
     InputModes, LocalModes, OptionalActions, QueueSelector, SpecialCodeIndex, Termios, tcflush,
     tcgetattr, tcgetwinsize, tcsetattr,
 };
 
 use crate::RtError;
+
+/// Open the controlling terminal for the read/write exchange,
+/// non-blocking: a poll that reports readable without deliverable bytes
+/// (macOS ptys do this right after the process's own write) must degrade
+/// to a retry, never to a blocked read.
+fn open_tty() -> Result<File, RtError> {
+    let flags = OFlags::RDWR | OFlags::NONBLOCK;
+    let fd: OwnedFd = rustix::fs::open("/dev/tty", flags, Mode::empty())?;
+    Ok(File::from(fd))
+}
 
 /// The shared raw-mode entry: no echo, no line buffering, no flow
 /// control, a one-byte read floor. `with_signals` keeps ISIG on for the
@@ -49,7 +61,7 @@ pub struct RawInput {
 impl RawInput {
     /// Grab the controlling terminal in raw mode.
     pub fn open() -> Result<Self, RtError> {
-        let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+        let tty = open_tty()?;
         let saved = enter_raw(&tty, false)?;
         Ok(Self { tty, saved })
     }
@@ -94,7 +106,7 @@ impl TtyTransport {
     /// Open the controlling terminal and switch it to raw mode. `budget`
     /// bounds the whole exchange, writes included.
     pub fn open(budget: Duration) -> Result<Self, RtError> {
-        let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+        let tty = open_tty()?;
         Self::from_tty(tty, budget)
     }
 
@@ -184,6 +196,11 @@ impl Transport for TtyTransport {
                 Ok(0) => break,
                 Ok(n) => written += n,
                 Err(rustix::io::Errno::INTR) => {}
+                // the fd is non-blocking; a full device buffer waits for
+                // the terminal to drain, it is not a dead channel
+                Err(rustix::io::Errno::AGAIN) => {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
                 Err(errno) => return Err(std::io::Error::from(errno)),
             }
         }
@@ -191,35 +208,43 @@ impl Transport for TtyTransport {
     }
 
     fn read_timeout(&mut self, wait: Duration) -> Option<Vec<u8>> {
-        let now = Instant::now();
-        if now >= self.deadline {
+        let start = Instant::now();
+        if start >= self.deadline {
             return None;
         }
-        let wait = wait.min(self.deadline - now);
-        let timeout = timespec(wait);
-        let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
-        // a signal must not end the exchange, only the budget may
-        let ready = loop {
-            match poll(&mut fds, Some(&timeout)) {
-                Ok(ready) => break ready,
-                Err(rustix::io::Errno::INTR) => {}
+        let end = (start + wait).min(self.deadline);
+        while Instant::now() < end {
+            let timeout = timespec(end - Instant::now());
+            let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
+            // a signal must not end the exchange, only the budget may
+            let ready = loop {
+                match poll(&mut fds, Some(&timeout)) {
+                    Ok(ready) => break ready,
+                    Err(rustix::io::Errno::INTR) => {}
+                    Err(_) => return None,
+                }
+            };
+            if ready == 0 {
+                return None;
+            }
+            let mut buffer = [0u8; 4096];
+            match rustix::io::read(self.tty.as_fd(), &mut buffer) {
+                Ok(0) => return None,
+                Ok(n) => return buffer.get(..n).map(<[u8]>::to_vec),
+                // the poll reported readable but no byte arrived; the
+                // fd is non-blocking, so spend the rest of the wait
+                // budget polling again instead of reporting silence
+                Err(rustix::io::Errno::AGAIN) => {}
                 Err(_) => return None,
             }
-        };
-        if ready == 0 {
-            return None;
         }
-        let mut buffer = [0u8; 4096];
-        match rustix::io::read(self.tty.as_fd(), &mut buffer) {
-            Ok(0) | Err(_) => None,
-            Ok(n) => buffer.get(..n).map(<[u8]>::to_vec),
-        }
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use super::{LocalModes, OpenOptions, TtyTransport, pixel_cell, tcgetattr};
     use katui_proto::probe::{Capabilities, CellPixels, ProbeSource};
@@ -273,6 +298,47 @@ mod tests {
         assert_eq!(
             before.input_modes, after.input_modes,
             "drop restores the saved input modes"
+        );
+    }
+
+    /// A silent terminal must end the exchange at the budget, never in a
+    /// blocked read: macOS ptys report readable right after the probe's
+    /// own write, so the fd is non-blocking and a lying poll retries.
+    #[allow(clippy::print_stderr)] // the skip notice belongs on stderr
+    #[test]
+    fn the_probe_budget_ends_a_silent_exchange() {
+        use rustix::pty::{OpenptFlags, openpt, ptsname, unlockpt};
+
+        use katui_proto::probe::ProbeSource;
+        use katui_proto::probe::{Env, probe};
+
+        let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)
+            .expect("opening a pty pair cannot fail");
+        unlockpt(&master).expect("unlocking the pty cannot fail");
+        let name = [0u8; 64];
+        let name = ptsname(&master, name).expect("the pty has a name");
+        let path = name.to_string_lossy().into_owned();
+        let Ok(slave) = OpenOptions::new().read(true).write(true).open(&path) else {
+            eprintln!("skipping probe budget test: no permission to open {path}");
+            return;
+        };
+
+        let env = Env {
+            term: Some("xterm-256color".to_owned()),
+            ..Env::default()
+        };
+        let mut transport = TtyTransport::from_tty(slave, Duration::from_millis(300))
+            .expect("a pty enters raw mode");
+        let start = Instant::now();
+        let caps = probe(&mut transport, &env);
+        assert_eq!(
+            caps.trust,
+            ProbeSource::Sniffed,
+            "a silent pty proves nothing"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "the budget ends the exchange, not a blocked read"
         );
     }
 

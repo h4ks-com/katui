@@ -29,7 +29,7 @@ katui-rt = { path = "crates/katui-rt" }
 katui-scene = { path = "crates/katui-scene" }
 pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = { version = "0.30", default-features = false }
-rustix = { version = "1", default-features = false, features = ["std", "termios", "event", "pty"] }
+rustix = { version = "1", default-features = false, features = ["std", "termios", "event", "pty", "fs"] }
 thiserror = "2"
 
 [workspace.lints.rust]
