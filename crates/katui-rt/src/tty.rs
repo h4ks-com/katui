@@ -95,6 +95,13 @@ impl TtyTransport {
     /// bounds the whole exchange, writes included.
     pub fn open(budget: Duration) -> Result<Self, RtError> {
         let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+        Self::from_tty(tty, budget)
+    }
+
+    /// The raw-mode lifecycle over an already-open terminal file: the
+    /// seam the pty test drives, since /dev/tty cannot be pointed
+    /// elsewhere.
+    fn from_tty(tty: File, budget: Duration) -> Result<Self, RtError> {
         let saved = enter_raw(&tty, true)?;
         Ok(Self {
             tty,
@@ -214,14 +221,59 @@ impl Transport for TtyTransport {
 mod tests {
     use std::time::Duration;
 
-    use super::{TtyTransport, pixel_cell};
+    use super::{LocalModes, OpenOptions, TtyTransport, pixel_cell, tcgetattr};
     use katui_proto::probe::{Capabilities, CellPixels, ProbeSource};
+    use std::os::fd::AsFd as _;
 
     #[test]
-    fn opening_without_a_controlling_terminal_fails_cleanly() {
+    fn opening_the_controlling_terminal_never_panics() {
         // a controlling terminal in the test environment is fine too: the
         // point is that open never panics, and both arms restore state
         if TtyTransport::open(Duration::from_millis(1)).is_ok() {}
+    }
+
+    /// The raw-mode lifecycle, verified against a real pty: attributes
+    /// flip while the transport lives and return exactly on drop.
+    #[allow(clippy::print_stderr)] // the skip notice belongs on stderr
+    #[test]
+    fn raw_mode_flips_and_restores_on_a_pty() {
+        use rustix::pty::{OpenptFlags, openpt, ptsname, unlockpt};
+
+        let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)
+            .expect("opening a pty pair cannot fail");
+        unlockpt(&master).expect("unlocking the pty cannot fail");
+        let name = [0u8; 64];
+        let name = ptsname(&master, name).expect("the pty has a name");
+        let path = name.to_string_lossy().into_owned();
+        let Ok(slave) = OpenOptions::new().read(true).write(true).open(&path) else {
+            // sandboxed runners may deny pty device nodes; wherever the
+            // device opens, CI included, the lifecycle below is asserted
+            eprintln!("skipping raw-mode lifecycle test: no permission to open {path}");
+            return;
+        };
+        let witness = slave.try_clone().expect("duplicating the fd cannot fail");
+        let before = tcgetattr(witness.as_fd()).expect("the pty answers tcgetattr");
+
+        let transport = TtyTransport::from_tty(slave, Duration::from_millis(50))
+            .expect("a pty enters raw mode");
+        let during = tcgetattr(witness.as_fd()).expect("the pty answers tcgetattr");
+        assert!(
+            !during
+                .local_modes
+                .contains(LocalModes::ICANON | LocalModes::ECHO),
+            "raw mode clears line buffering and echo"
+        );
+        drop(transport);
+
+        let after = tcgetattr(witness.as_fd()).expect("the pty answers tcgetattr");
+        assert_eq!(
+            before.local_modes, after.local_modes,
+            "drop restores the saved local modes"
+        );
+        assert_eq!(
+            before.input_modes, after.input_modes,
+            "drop restores the saved input modes"
+        );
     }
 
     fn caps(kitty: bool, cell: Option<CellPixels>) -> Capabilities {
