@@ -85,11 +85,12 @@ pub fn quarter(pixels: [[Rgb; 2]; 2]) -> Block {
             mask |= bit;
         }
     }
-    Block {
-        glyph: QUARTERS.get(usize::from(mask)).copied().unwrap_or(' '),
-        fg,
-        bg,
-    }
+    let glyph = match QUARTERS.get(usize::from(mask)) {
+        Some(glyph) => *glyph,
+        // a four-corner mask is at most 15
+        None => unreachable!("a four-corner mask fits the quarter table"),
+    };
+    Block { glyph, fg, bg }
 }
 
 /// Classify two vertically stacked pixels into one half-block cell.

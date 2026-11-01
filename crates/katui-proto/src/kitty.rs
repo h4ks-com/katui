@@ -127,11 +127,14 @@ impl<'a> Transmit<'a> {
         let chunks: Vec<&str> = if encoded.is_empty() {
             vec![""]
         } else {
-            // base64 output is ascii by construction, so this cannot fail
+            // base64 output is ascii by construction
             encoded
                 .as_bytes()
                 .chunks(CHUNK)
-                .map(|c| std::str::from_utf8(c).unwrap_or_default())
+                .map(|c| match std::str::from_utf8(c) {
+                    Ok(text) => text,
+                    Err(_) => unreachable!("base64 output is ASCII"),
+                })
                 .collect()
         };
         let last = chunks.len() - 1;
