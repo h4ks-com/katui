@@ -1,5 +1,6 @@
-//! Surface presenters: the full-frame kitty strategy with alternating
-//! image ids, and the blocks fallback every truecolor terminal runs.
+//! Surface presenters: two kitty strategies, the whole-frame baseline
+//! with alternating image ids and the tile-patched refinement, plus the
+//! damage-tracked blocks fallback every truecolor terminal runs.
 
 use crate::Sink;
 use std::io::{self, Write as _};
