@@ -37,8 +37,10 @@ same scene and presenters under all three:
 1. No layer above L1 emits bytes; presenters are the only byte producers.
 2. No layer below L2 knows what a widget is.
 3. The core (proto, scene, present, draw, layout, widgets, docs) performs
-   zero I/O: everything flows through `Sink`/`Source`/`Transport` traits
-   owned by katui-rt. The probe's `Env::capture` reading the process
+   zero I/O: everything flows through trait seams the pure crates define
+   and katui-rt implements: `Transport` lives in katui-proto, `Sink` in
+   katui-present, and `Source` (the event seam, still planned) will live
+   in katui-rt. The probe's `Env::capture` reading the process
    environment is the one sanctioned exception. That single rule is what
    makes ~90 percent of the system unit-testable without a terminal.
 4. Everything that talks to a real terminal is either an encoder test with
