@@ -27,14 +27,16 @@ pub struct RgbaImage<'a> {
 }
 
 impl<'a> RgbaImage<'a> {
-    /// An image of `width` x `height` RGBA pixels.
+    /// An image of `width` x `height` RGBA pixels; `None` when `pixels`
+    /// does not hold exactly `4 * width * height` bytes.
     #[must_use]
-    pub fn new(width: u32, height: u32, pixels: &'a [u8]) -> Self {
-        Self {
+    pub fn new(width: u32, height: u32, pixels: &'a [u8]) -> Option<Self> {
+        let expected = (4 * width).saturating_mul(height);
+        (usize::try_from(expected).is_ok_and(|expected| pixels.len() == expected)).then_some(Self {
             width,
             height,
             pixels,
-        }
+        })
     }
 }
 
@@ -212,8 +214,14 @@ mod tests {
 
     fn images() -> Images<'static> {
         let mut images = Images::default();
-        images.insert(ImageId(7), RgbaImage::new(1, 1, PIXELS));
-        images.insert(ImageId(8), RgbaImage::new(1, 1, PIXELS));
+        images.insert(
+            ImageId(7),
+            RgbaImage::new(1, 1, PIXELS).expect("the fixture payload is exact"),
+        );
+        images.insert(
+            ImageId(8),
+            RgbaImage::new(1, 1, PIXELS).expect("the fixture payload is exact"),
+        );
         images
     }
 
@@ -249,6 +257,16 @@ mod tests {
             .expect("writing to a Vec cannot fail");
         assert_eq!(written, 0);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn an_exact_payload_is_an_image_and_a_short_one_is_not() {
+        assert!(RgbaImage::new(1, 1, PIXELS).is_some());
+        assert!(RgbaImage::new(2, 1, PIXELS).is_none(), "too few bytes");
+        assert!(
+            RgbaImage::new(0, 0, &[]).is_some(),
+            "an empty image is exact"
+        );
     }
 
     #[test]

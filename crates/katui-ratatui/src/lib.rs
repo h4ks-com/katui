@@ -82,7 +82,12 @@ impl<W: io::Write> KatuiBackend<W> {
         area: CellRect,
     ) -> io::Result<usize> {
         let mut images = Images::default();
-        images.insert(image, RgbaImage::new(width, height, pixels));
+        let Some(rgba) = RgbaImage::new(width, height, pixels) else {
+            // a mismatched payload transmits nothing rather than a
+            // corrupt frame; the caller learns it by the zero bytes
+            return Ok(0);
+        };
+        images.insert(image, rgba);
         let next = vec![Placement {
             image,
             id: PlacementId(1),
