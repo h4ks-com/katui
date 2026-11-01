@@ -322,14 +322,17 @@ impl PatchedKitty {
         rect: katui_scene::surface::PixelRect,
         area: CellRect,
     ) -> io::Result<()> {
-        let columns = rect.width.div_ceil(u32::from(self.cell.width)) as u16;
-        let rows = rect.height.div_ceil(u32::from(self.cell.height)) as u16;
+        // narrowing through try_from saturating, the file's one idiom
+        let columns =
+            u16::try_from(rect.width.div_ceil(u32::from(self.cell.width))).unwrap_or(u16::MAX);
+        let rows =
+            u16::try_from(rect.height.div_ceil(u32::from(self.cell.height))).unwrap_or(u16::MAX);
         let origin_x = area
             .x
-            .saturating_add((rect.x / u32::from(self.cell.width)) as u16);
-        let origin_y = area
-            .y
-            .saturating_add((rect.y / u32::from(self.cell.height)) as u16);
+            .saturating_add(u16::try_from(rect.x / u32::from(self.cell.width)).unwrap_or(u16::MAX));
+        let origin_y = area.y.saturating_add(
+            u16::try_from(rect.y / u32::from(self.cell.height)).unwrap_or(u16::MAX),
+        );
         move_cursor(
             bytes,
             Position {
