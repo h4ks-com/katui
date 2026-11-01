@@ -184,17 +184,14 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
         return caps;
     }
     let mut stream = Vec::new();
-    loop {
-        let replies = parse_replies(&stream);
-        if replies.barrier {
-            break;
-        }
+    let mut replies = parse_replies(&stream);
+    while !replies.barrier {
         let Some(chunk) = transport.read_timeout(READ_WAIT) else {
             break;
         };
         stream.extend_from_slice(&chunk);
+        replies = parse_replies(&stream);
     }
-    let replies = parse_replies(&stream);
     let answered = replies.barrier
         || replies.kitty_ok
         || replies.sixel
