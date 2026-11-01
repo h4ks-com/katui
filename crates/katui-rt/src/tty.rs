@@ -84,13 +84,13 @@ impl Drop for RawInput {
 /// The probe transport over `/dev/tty`, raw for its lifetime and restored
 /// on drop however the exchange ends. The total listening budget lives
 /// here: reads stop returning once it is spent.
-pub struct StdTransport {
+pub struct TtyTransport {
     tty: File,
     saved: Termios,
     deadline: Instant,
 }
 
-impl StdTransport {
+impl TtyTransport {
     /// Open the controlling terminal and switch it to raw mode. `budget`
     /// bounds the whole exchange, writes included.
     pub fn open(budget: Duration) -> Result<Self, RtError> {
@@ -123,7 +123,7 @@ pub fn size() -> Result<katui_scene::CellSize, RtError> {
 /// when no terminal answers.
 pub fn probe_default() -> Capabilities {
     let env = Env::capture();
-    match StdTransport::open(Duration::from_millis(300)) {
+    match TtyTransport::open(Duration::from_millis(300)) {
         Ok(mut transport) => probe(&mut transport, &env),
         Err(_) => sniff(&env),
     }
@@ -156,7 +156,7 @@ fn timespec(wait: Duration) -> Timespec {
     }
 }
 
-impl Drop for StdTransport {
+impl Drop for TtyTransport {
     fn drop(&mut self) {
         // replies that arrived after the budget stay queued on the device
         // and would reach the parent shell as typed junk, so drain first;
@@ -166,7 +166,7 @@ impl Drop for StdTransport {
     }
 }
 
-impl Transport for StdTransport {
+impl Transport for TtyTransport {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         let mut written = 0;
         while let Some(rest) = bytes.get(written..) {
@@ -214,14 +214,14 @@ impl Transport for StdTransport {
 mod tests {
     use std::time::Duration;
 
-    use super::{StdTransport, pixel_cell};
+    use super::{TtyTransport, pixel_cell};
     use katui_proto::probe::{Capabilities, CellPixels, ProbeSource};
 
     #[test]
     fn opening_without_a_controlling_terminal_fails_cleanly() {
         // a controlling terminal in the test environment is fine too: the
         // point is that open never panics, and both arms restore state
-        if StdTransport::open(Duration::from_millis(1)).is_ok() {}
+        if TtyTransport::open(Duration::from_millis(1)).is_ok() {}
     }
 
     fn caps(kitty: bool, cell: Option<CellPixels>) -> Capabilities {
