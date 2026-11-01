@@ -86,7 +86,7 @@ impl KittySurface {
 /// The stateful blocks presenter: renders a pixel surface as
 /// quarter-block cells once, then repaints only the cells whose pixels
 /// changed. This is the blocks path's answer to
-/// [`PatchedKitty`](super::PatchedKitty): a moving sprite on a static
+/// [`PatchedKitty`](Self): a moving sprite on a static
 /// background costs a handful of cursor-addressed SGR cells per frame
 /// instead of a full-screen rewrite, which is what makes the fallback
 /// survivable inside multiplexers.

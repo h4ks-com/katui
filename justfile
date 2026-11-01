@@ -66,5 +66,9 @@ demo-snake:
 demo-dvd:
     cargo run -p katui-ratatui --example dvd
 
+# docs gate: broken intra-doc links and rustdoc warnings fail like code
+docs:
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+
 # the gate: must pass before any commit; CI runs the same targets
-ci: fmt-check clippy test typos
+ci: fmt-check clippy test docs typos
