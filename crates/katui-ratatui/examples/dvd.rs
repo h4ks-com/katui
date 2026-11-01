@@ -146,36 +146,50 @@ fn main() -> io::Result<()> {
     let running = Arc::new(AtomicBool::new(true));
     let reader = spawn_quit_reader(running.clone());
 
-    let mut frame = 0u64;
-    while frame < MAX_FRAMES && running.load(Ordering::Relaxed) {
-        dvd.step();
-        let mut surface = Surface::new(width, height);
-        draw_frame(&mut surface, &mut backdrop, &dvd, frame);
-        if kitty {
-            presenter.render_frame(
-                &mut out,
-                &surface,
-                CellRect {
-                    x: 0,
-                    y: 0,
-                    columns,
-                    rows,
-                },
-            )?;
-        } else {
-            blocks.render_frame(&mut out, &surface)?;
+    // the render loop in a closure, so the teardown after it runs on
+    // both the clean exit and the error path
+    let result = (|| {
+        let mut frame = 0u64;
+        while frame < MAX_FRAMES && running.load(Ordering::Relaxed) {
+            dvd.step();
+            let mut surface = Surface::new(width, height);
+            draw_frame(&mut surface, &mut backdrop, &dvd, frame);
+            if kitty {
+                presenter.render_frame(
+                    &mut out,
+                    &surface,
+                    CellRect {
+                        x: 0,
+                        y: 0,
+                        columns,
+                        rows,
+                    },
+                )?;
+            } else {
+                blocks.render_frame(&mut out, &surface)?;
+            }
+            out.flush()?;
+            clock.wait_for_next_frame();
+            frame += 1;
         }
-        out.flush()?;
-        clock.wait_for_next_frame();
-        frame += 1;
-    }
+        Ok(())
+    })();
 
     running.store(false, Ordering::Relaxed);
     if let Some(handle) = reader {
         let _ = handle.join();
     }
+    // the terminal is restored whatever ended the run; the original
+    // error still propagates
+    let cleanup = finish(&mut out);
+    result.and(cleanup)
+}
+
+/// The teardown: leave sync mode, show the cursor, drop the images,
+/// clear the screen.
+fn finish(out: &mut io::Stdout) -> io::Result<()> {
     out.write_all(b"\x1b[?2026l\x1b[0m")?;
-    katui_present::cells::show_cursor(&mut out)?;
+    katui_present::cells::show_cursor(out)?;
     out.write_all(&katui_proto::kitty::Delete::AllVisible.encode())?;
     out.write_all(b"\x1b[H\x1b[2J")?;
     out.flush()

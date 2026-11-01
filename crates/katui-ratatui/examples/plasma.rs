@@ -12,18 +12,24 @@ fn main() -> io::Result<()> {
     let (columns, rows) = (size.columns, size.rows);
     let mut out = io::stdout();
     out.write_all(b"\x1b[?25l")?;
-    for tick in 0..150u32 {
-        let frame = frame(tick, columns, rows);
-        out.write_all(b"\x1b[H")?;
-        for line in frame {
-            out.write_all(&line)?;
-            out.write_all(b"\r\n")?;
+    // the render loop in a closure, so the teardown after it runs on
+    // both the clean exit and the error path
+    let result = (|| {
+        for tick in 0..150u32 {
+            let frame = frame(tick, columns, rows);
+            out.write_all(b"\x1b[H")?;
+            for line in frame {
+                out.write_all(&line)?;
+                out.write_all(b"\r\n")?;
+            }
+            out.flush()?;
+            std::thread::sleep(Duration::from_millis(33));
         }
-        out.flush()?;
-        std::thread::sleep(Duration::from_millis(33));
-    }
-    out.write_all(b"\x1b[?25h")?;
-    out.flush()
+        Ok(())
+    })();
+    katui_present::cells::show_cursor(&mut out)?;
+    out.flush()?;
+    result
 }
 
 /// One terminal line per entry: two pixel rows classified into quarter

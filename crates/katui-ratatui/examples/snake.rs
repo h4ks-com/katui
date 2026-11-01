@@ -44,35 +44,48 @@ fn main() -> io::Result<()> {
     let mut clock = FrameClock::new(20);
     let mut out = io::stdout();
     out.write_all(b"\x1b[?25l")?;
-    for frame in 0..FRAMES {
-        if frame % 2 == 0 {
-            game.tick();
+    // the render loop in a closure, so the teardown after it runs on
+    // both the clean exit and the error path
+    let result = (|| {
+        for frame in 0..FRAMES {
+            if frame % 2 == 0 {
+                game.tick();
+            }
+            let mut surface = Surface::new(
+                board_columns * u32::from(pixel_cell.width),
+                board_rows * u32::from(pixel_cell.height),
+            );
+            draw(&mut surface, &game, pixel_cell);
+            if kitty {
+                presenter.render_frame(
+                    &mut out,
+                    &surface,
+                    CellRect {
+                        x: 1,
+                        y: 1,
+                        columns: board_columns as u16,
+                        rows: board_rows as u16,
+                    },
+                )?;
+            } else {
+                katui_present::surface::render_blocks(&mut out, &surface)?;
+            }
+            out.flush()?;
+            clock.wait_for_next_frame();
         }
-        let mut surface = Surface::new(
-            board_columns * u32::from(pixel_cell.width),
-            board_rows * u32::from(pixel_cell.height),
-        );
-        draw(&mut surface, &game, pixel_cell);
-        if kitty {
-            presenter.render_frame(
-                &mut out,
-                &surface,
-                CellRect {
-                    x: 1,
-                    y: 1,
-                    columns: board_columns as u16,
-                    rows: board_rows as u16,
-                },
-            )?;
-        } else {
-            katui_present::surface::render_blocks(&mut out, &surface)?;
-        }
-        out.flush()?;
-        clock.wait_for_next_frame();
-    }
+        Ok(())
+    })();
+    // the terminal is restored whatever ended the run; the original
+    // error still propagates
+    let cleanup = finish(&mut out);
+    result.and(cleanup)
+}
+
+/// The teardown: drop the images, reset styles, show the cursor, home.
+fn finish(out: &mut io::Stdout) -> io::Result<()> {
     out.write_all(&katui_proto::kitty::Delete::AllVisible.encode())?;
     out.write_all(b"\x1b[0m")?;
-    katui_present::cells::show_cursor(&mut out)?;
+    katui_present::cells::show_cursor(out)?;
     out.write_all(b"\x1b[H")?;
     out.flush()
 }
