@@ -210,7 +210,6 @@ impl<W: io::Write> Backend for KatuiBackend<W> {
     }
 
     fn clear_region(&mut self, clear_type: ClearType) -> io::Result<()> {
-        let origin = Position { x: 0, y: 0 };
         let end = Position {
             x: self.screen.size().columns.saturating_sub(1),
             y: self.screen.size().rows.saturating_sub(1),
@@ -219,18 +218,50 @@ impl<W: io::Write> Backend for KatuiBackend<W> {
             x: self.cursor.x,
             y: self.cursor.y,
         };
+        // the escapes erase reading-order ranges, not rectangles, so
+        // each arm blanks exactly the cells its escape erases
         match clear_type {
             ClearType::All => self.clear(),
             ClearType::AfterCursor => {
-                self.blank_cells(cursor, end);
+                self.blank_cells(
+                    cursor,
+                    Position {
+                        x: end.x,
+                        y: cursor.y,
+                    },
+                );
+                if cursor.y < end.y {
+                    self.blank_cells(
+                        Position {
+                            x: 0,
+                            y: cursor.y + 1,
+                        },
+                        end,
+                    );
+                }
                 clear_region(&mut self.out, ClearKind::AfterCursor)
             }
             ClearType::BeforeCursor => {
-                self.blank_cells(origin, cursor);
+                if cursor.y > 0 {
+                    self.blank_cells(
+                        Position { x: 0, y: 0 },
+                        Position {
+                            x: end.x,
+                            y: cursor.y - 1,
+                        },
+                    );
+                }
+                self.blank_cells(Position { x: 0, y: cursor.y }, cursor);
                 clear_region(&mut self.out, ClearKind::BeforeCursor)
             }
             ClearType::CurrentLine => {
-                self.blank_cells(Position { x: 0, y: cursor.y }, end);
+                self.blank_cells(
+                    Position { x: 0, y: cursor.y },
+                    Position {
+                        x: end.x,
+                        y: cursor.y,
+                    },
+                );
                 clear_region(&mut self.out, ClearKind::CurrentLine)
             }
             ClearType::UntilNewLine => {
@@ -268,7 +299,7 @@ mod tests {
     use super::KatuiBackend;
     use katui_scene::cell::{Attrs as SceneAttrs, Color as SceneColor, Position as ScenePosition};
     use ratatui::Terminal;
-    use ratatui::backend::{Backend as _, TestBackend};
+    use ratatui::backend::{Backend as _, ClearType, TestBackend};
     use ratatui::buffer::Cell as RatCell;
     use ratatui::layout::{Position as RatPosition, Size};
     use ratatui::style::{Color, Modifier, Style};
@@ -455,6 +486,96 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A 4x3 mirror full of X with the cursor at (1, 1), so each clear
+    /// type can be checked against the reading-order range its escape
+    /// erases.
+    fn filled() -> KatuiBackend<Vec<u8>> {
+        let mut backend = KatuiBackend::new(4, 3, Vec::new());
+        let mut cell = RatCell::default();
+        cell.set_symbol("X");
+        backend
+            .draw(
+                (0..3u16)
+                    .flat_map(|y| (0..4u16).map(move |x| (x, y)))
+                    .map(|(x, y)| (x, y, &cell))
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            )
+            .expect("writing to a Vec cannot fail");
+        backend
+            .set_cursor_position(RatPosition { x: 1, y: 1 })
+            .expect("writing to a Vec cannot fail");
+        backend
+    }
+
+    fn marked(backend: &KatuiBackend<Vec<u8>>, x: u16, y: u16) -> bool {
+        backend
+            .screen()
+            .get(ScenePosition { x, y })
+            .expect("inside the mirror")
+            .symbol
+            == "X"
+    }
+
+    #[test]
+    fn after_cursor_erases_to_the_screen_end_in_reading_order() {
+        let mut backend = filled();
+        backend
+            .clear_region(ClearType::AfterCursor)
+            .expect("writing to a Vec cannot fail");
+        for x in 0..4u16 {
+            assert!(marked(&backend, x, 0), "row above stays");
+            assert!(!marked(&backend, x, 2), "rows below erase whole");
+        }
+        assert!(marked(&backend, 0, 1), "the cell left of the cursor stays");
+        assert!(
+            !marked(&backend, 1, 1) && !marked(&backend, 2, 1) && !marked(&backend, 3, 1),
+            "the cursor row erases from the cursor right"
+        );
+    }
+
+    #[test]
+    fn before_cursor_erases_to_the_cursor_in_reading_order() {
+        let mut backend = filled();
+        backend
+            .clear_region(ClearType::BeforeCursor)
+            .expect("writing to a Vec cannot fail");
+        for x in 0..4u16 {
+            assert!(!marked(&backend, x, 0), "rows above erase whole");
+            assert!(marked(&backend, x, 2), "rows below stay");
+        }
+        assert!(
+            !marked(&backend, 0, 1) && !marked(&backend, 1, 1),
+            "the cursor row erases through the cursor"
+        );
+        assert!(marked(&backend, 2, 1) && marked(&backend, 3, 1));
+    }
+
+    #[test]
+    fn current_line_erases_only_the_cursor_row() {
+        let mut backend = filled();
+        backend
+            .clear_region(ClearType::CurrentLine)
+            .expect("writing to a Vec cannot fail");
+        for x in 0..4u16 {
+            assert!(marked(&backend, x, 0) && marked(&backend, x, 2));
+            assert!(!marked(&backend, x, 1), "only the cursor row erases");
+        }
+    }
+
+    #[test]
+    fn until_new_line_erases_to_the_row_end() {
+        let mut backend = filled();
+        backend
+            .clear_region(ClearType::UntilNewLine)
+            .expect("writing to a Vec cannot fail");
+        for x in 0..4u16 {
+            assert!(marked(&backend, x, 0) && marked(&backend, x, 2));
+        }
+        assert!(marked(&backend, 0, 1));
+        assert!(!marked(&backend, 1, 1) && !marked(&backend, 2, 1) && !marked(&backend, 3, 1));
     }
 
     #[test]
