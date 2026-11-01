@@ -82,13 +82,34 @@ pub fn parse_support(input: &[u8]) -> Option<Support> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectId(pub u32);
 
+/// The asset formats a ratty terminal registers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// Wavefront OBJ text.
+    Obj,
+    /// Binary glTF.
+    Glb,
+    /// Stereolithography triangles.
+    Stl,
+}
+
+impl Format {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Obj => "obj",
+            Self::Glb => "glb",
+            Self::Stl => "stl",
+        }
+    }
+}
+
 /// Register an asset by path, one object id per model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Register<'a> {
     /// The object id the application chose.
     pub id: ObjectId,
-    /// The asset format, `obj`, `glb` or `stl`.
-    pub format: &'a str,
+    /// The asset format.
+    pub format: Format,
     /// The object path known to the ratty terminal.
     pub path: &'a str,
 }
@@ -99,7 +120,9 @@ impl Register<'_> {
     pub fn encode(&self) -> Vec<u8> {
         rgp_apc(&format!(
             "r;id={};fmt={};path={}",
-            self.id.0, self.format, self.path
+            self.id.0,
+            self.format.key(),
+            self.path
         ))
     }
 }
@@ -195,7 +218,8 @@ fn rgp_apc(body: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Delete, Features, ObjectId, Place, Register, Support, Update, parse_support, support_query,
+        Delete, Features, Format, ObjectId, Place, Register, Support, Update, parse_support,
+        support_query,
     };
     use crate::fuzz::XorShift;
 
@@ -250,7 +274,7 @@ mod tests {
         assert_eq!(
             Register {
                 id: ObjectId(42),
-                format: "obj",
+                format: Format::Obj,
                 path: "rat.obj",
             }
             .encode(),
