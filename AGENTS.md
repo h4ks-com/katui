@@ -11,8 +11,9 @@ writing code; it is the contract this guide enforces.
 crates/katui-proto/     L0: protocol codecs (kitty, rgp), capability probes (pure, no I/O)
 crates/katui-scene/     L2: cell plane, placements, RGBA surfaces with tile damage (pure state)
 crates/katui-present/   L1: presenters: cells, blocks, kitty placements, full-frame surfaces (pure)
-crates/katui-ratatui/   ratatui Backend adapter, image decode/fit, the demos
-crates/katui-rt/        the impure layer: /dev/tty transport, frame clock, session guard
+crates/katui-ratatui/   ratatui Backend adapter, image decode/fit, the gallery demo
+crates/katui-rt/        the impure layer: /dev/tty transport, frame clock, session guard,
+                        the engine demos (dvd, snake, plasma)
 crates/katui-layout/    L4: constraint splitting of cell rectangles (pure)
 crates/katui-content/   L6: documents to scene cells, markdown today (pure)
 scripts/                repo tooling (the commit-message gate)

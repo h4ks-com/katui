@@ -326,6 +326,7 @@ dependencies = [
 name = "katui-rt"
 version = "0.1.0"
 dependencies = [
+ "image",
  "katui-present",
  "katui-proto",
  "katui-scene",

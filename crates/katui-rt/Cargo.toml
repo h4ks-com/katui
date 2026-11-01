@@ -16,5 +16,9 @@ thiserror.workspace = true
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
 
+# the snake demo's soak test builds its frames with the image crate
+[dev-dependencies]
+image.workspace = true
+
 [lints]
 workspace = true

@@ -56,15 +56,15 @@ demo-gallery:
 
 # the plasma demo: quarter-block animation on any truecolor terminal
 demo-plasma:
-    cargo run -p katui-ratatui --example plasma
+    cargo run -p katui-rt --example plasma
 
 # the snake demo: a self-playing game on a pixel surface
 demo-snake:
-    cargo run -p katui-ratatui --example snake
+    cargo run -p katui-rt --example snake
 
 # the dvd demo: the immortal bouncing logo, color per bounce, corner-hit flash
 demo-dvd:
-    cargo run -p katui-ratatui --example dvd
+    cargo run -p katui-rt --example dvd
 
 # docs gate: broken intra-doc links and rustdoc warnings fail like code
 docs:
