@@ -14,7 +14,7 @@ use std::io::{self, Write as _};
 
 use katui_proto::kitty::{self, ImageId as KittyImage, PlacementId as KittyPlacement};
 use katui_scene::cell::Position;
-use katui_scene::placement::{ImageId, Placement, PlacementDelta};
+use katui_scene::placement::{ImageId, Placement, PlacementDelta, PlacementId};
 use katui_scene::surface::PixelRect;
 
 /// One image's RGBA payload, ready to transmit. `pixels` holds exactly
@@ -41,26 +41,27 @@ impl<'a> RgbaImage<'a> {
 /// The images a diff's added placements draw from, keyed by scene id.
 #[derive(Debug, Default)]
 pub struct Images<'a> {
-    map: std::collections::HashMap<u32, RgbaImage<'a>>,
+    map: std::collections::HashMap<ImageId, RgbaImage<'a>>,
 }
 
 impl<'a> Images<'a> {
     /// Register an image under its scene id.
     pub fn insert(&mut self, id: ImageId, image: RgbaImage<'a>) {
-        self.map.insert(id.0, image);
+        self.map.insert(id, image);
     }
 
     fn get(&self, id: ImageId) -> Option<RgbaImage<'_>> {
-        self.map.get(&id.0).copied()
+        self.map.get(&id).copied()
     }
 }
 
 /// The kitty presenter. Holds wire state only: which images were sent and
-/// which placement pairs are live.
+/// which placement pairs are live. Scene ids throughout; the wrap into
+/// protocol ids happens once, at each encode.
 #[derive(Debug, Default)]
 pub struct Kitty {
-    sent: HashSet<u32>,
-    live: HashSet<(u32, u32)>,
+    sent: HashSet<ImageId>,
+    live: HashSet<(ImageId, PlacementId)>,
 }
 
 impl Kitty {
@@ -92,11 +93,11 @@ impl Kitty {
         }
         let mut bytes = Vec::new();
         bytes.write_all(b"\x1b[?2026h")?;
-        let mut transmitted: HashSet<u32> = HashSet::new();
+        let mut transmitted: HashSet<ImageId> = HashSet::new();
         for placement in &delta.added {
             let image = placement.image;
-            if !self.sent.contains(&image.0)
-                && !transmitted.contains(&image.0)
+            if !self.sent.contains(&image)
+                && !transmitted.contains(&image)
                 && let Some(payload) = images.get(image)
             {
                 let transmit = kitty::Transmit::new(
@@ -109,20 +110,20 @@ impl Kitty {
                 for frame in transmit.encode()? {
                     bytes.write_all(&frame)?;
                 }
-                transmitted.insert(image.0);
+                transmitted.insert(image);
             }
-            if self.sent.contains(&image.0) || transmitted.contains(&image.0) {
+            if self.sent.contains(&image) || transmitted.contains(&image) {
                 place(&mut bytes, placement)?;
-                self.live.insert((image.0, placement.id.0));
+                self.live.insert((image, placement.id));
             }
         }
         for placement in &delta.moved {
-            if self.live.contains(&(placement.image.0, placement.id.0)) {
+            if self.live.contains(&(placement.image, placement.id)) {
                 place(&mut bytes, placement)?;
             }
         }
         for removed in &delta.removed {
-            let pair = (removed.image.0, removed.id.0);
+            let pair = (removed.image, removed.id);
             self.live.remove(&pair);
             bytes.write_all(
                 &kitty::Delete::Placement(
@@ -132,15 +133,15 @@ impl Kitty {
                 .encode(),
             )?;
         }
-        let mut emptied: Vec<u32> = self
+        let mut emptied: Vec<ImageId> = self
             .sent
             .iter()
             .copied()
-            .filter(|image| !self.live.iter().any(|(i, _)| i == image))
+            .filter(|image| !self.live.iter().any(|(sent, _)| sent == image))
             .collect();
         emptied.sort_unstable();
         for image in emptied {
-            bytes.write_all(&kitty::Delete::Image(KittyImage(image)).encode())?;
+            bytes.write_all(&kitty::Delete::Image(KittyImage(image.0)).encode())?;
             self.sent.remove(&image);
         }
         self.sent.extend(transmitted);

@@ -4,12 +4,12 @@
 //! the protocol ids there.
 
 /// An image id, stable for the image's lifetime on screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImageId(pub u32);
 
 /// A placement id, unique per image. Re-sending the same image and
 /// placement pair moves the placement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PlacementId(pub u32);
 
 /// A rectangle of cells: origin plus extent. Zero columns or rows leave
