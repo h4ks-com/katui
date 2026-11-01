@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 katui-present.workspace = true
 katui-proto.workspace = true
+katui-scene.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(unix)'.dependencies]

@@ -328,6 +328,7 @@ version = "0.1.0"
 dependencies = [
  "katui-present",
  "katui-proto",
+ "katui-scene",
  "rustix",
  "thiserror",
 ]

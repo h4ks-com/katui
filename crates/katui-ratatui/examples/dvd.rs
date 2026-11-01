@@ -115,7 +115,8 @@ struct Backdrop {
 
 fn main() -> io::Result<()> {
     let caps = katui_rt::tty::probe_default();
-    let (columns, rows) = katui_rt::tty::size().map_err(io::Error::other)?;
+    let size = katui_rt::tty::size().map_err(io::Error::other)?;
+    let (columns, rows) = (size.columns, size.rows);
     // under a multiplexer the cell pixel size never gets probed; a
     // typical terminal cell keeps the render resolution honest, and the
     // placement's cell span scales whatever we choose

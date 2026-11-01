@@ -13,7 +13,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Widget as _};
 
 fn main() -> io::Result<()> {
-    let (columns, rows) = katui_rt::tty::size().map_err(io::Error::other)?;
+    let size = katui_rt::tty::size().map_err(io::Error::other)?;
+    let (columns, rows) = (size.columns, size.rows);
     let caps = katui_rt::tty::probe_default();
     let mut terminal =
         Terminal::new(KatuiBackend::new(columns, rows, io::stdout())).map_err(io::Error::other)?;

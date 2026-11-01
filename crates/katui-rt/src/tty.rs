@@ -118,11 +118,14 @@ impl StdTransport {
 }
 
 /// The terminal's size in columns and rows, asked of the controlling
-/// terminal.
-pub fn size() -> Result<(u16, u16), RtError> {
+/// terminal, as the named [`katui_scene::CellSize`] the scene uses.
+pub fn size() -> Result<katui_scene::CellSize, RtError> {
     let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
     let winsize = tcgetwinsize(tty.as_fd())?;
-    Ok((winsize.ws_col, winsize.ws_row))
+    Ok(katui_scene::CellSize {
+        columns: winsize.ws_col,
+        rows: winsize.ws_row,
+    })
 }
 
 /// The one probe every demo and binary runs: the standard 300 ms budget

@@ -8,7 +8,8 @@ use std::time::Duration;
 use katui_present::blocks::{Rgb, render_line};
 
 fn main() -> io::Result<()> {
-    let (columns, rows) = katui_rt::tty::size().map_err(io::Error::other)?;
+    let size = katui_rt::tty::size().map_err(io::Error::other)?;
+    let (columns, rows) = (size.columns, size.rows);
     let mut out = io::stdout();
     out.write_all(b"\x1b[?25l")?;
     for tick in 0..150u32 {
