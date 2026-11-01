@@ -39,21 +39,13 @@ fn main() -> io::Result<()> {
                 )),
                 Line::from(format!(
                     "terminal: {}",
-                    match &caps.identity {
-                        Some(identity) => match &identity.version {
-                            Some(version) => format!("{} {}", identity.name, version),
-                            None => identity.name.clone(),
-                        },
-                        None => "unknown".to_owned(),
-                    }
+                    caps.identity
+                        .as_ref()
+                        .map_or_else(|| "unknown".to_owned(), ToString::to_string)
                 )),
                 Line::from(format!(
                     "graphics: {}",
-                    match katui_present::select::select(&caps) {
-                        katui_present::select::Backend::Kitty => "kitty protocol",
-                        katui_present::select::Backend::Sixel => "sixel",
-                        katui_present::select::Backend::Blocks => "blocks only",
-                    }
+                    katui_present::select::select(&caps).name()
                 )),
             ])
             .block(Block::bordered())

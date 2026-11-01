@@ -30,6 +30,19 @@ pub fn select(caps: &Capabilities) -> Backend {
     }
 }
 
+impl Backend {
+    /// The backend's canonical lowercase name, the one string form every
+    /// consumer prints.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Kitty => "kitty",
+            Self::Sixel => "sixel",
+            Self::Blocks => "blocks",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Backend, select};

@@ -8,20 +8,11 @@ use katui_proto::probe::{Capabilities, ProbeSource};
 /// Render the card for `caps`.
 #[must_use]
 pub fn card(caps: &Capabilities) -> String {
-    use katui_present::select::Backend;
-
-    let graphics = match select(caps) {
-        Backend::Kitty => "kitty",
-        Backend::Sixel => "sixel",
-        Backend::Blocks => "blocks",
-    };
-    let identity = match &caps.identity {
-        Some(identity) => match &identity.version {
-            Some(version) => format!("{} {}", identity.name, version),
-            None => identity.name.clone(),
-        },
-        None => "unknown".to_owned(),
-    };
+    let graphics = select(caps).name();
+    let identity = caps
+        .identity
+        .as_ref()
+        .map_or_else(|| "unknown".to_owned(), ToString::to_string);
     let cell = match caps.cell {
         Some(cell) => format!("{}x{} px", cell.width, cell.height),
         None => "unknown".to_owned(),

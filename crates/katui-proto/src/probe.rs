@@ -114,6 +114,15 @@ pub struct Identity {
     pub version: Option<String>,
 }
 
+impl std::fmt::Display for Identity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.version {
+            Some(version) => write!(f, "{} {}", self.name, version),
+            None => f.write_str(&self.name),
+        }
+    }
+}
+
 /// One cell in pixels, the geometry every image placement needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CellPixels {
