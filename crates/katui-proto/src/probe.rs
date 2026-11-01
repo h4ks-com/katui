@@ -60,7 +60,7 @@ impl Env {
     }
 
     /// `TrueColor` detection from `COLORTERM`.
-    pub fn truecolor(&self) -> bool {
+    pub fn has_truecolor(&self) -> bool {
         self.colorterm
             .as_ref()
             .is_some_and(|value| value.contains("truecolor") || value.contains("24bit"))
@@ -71,7 +71,7 @@ impl Env {
     /// under tmux no marker counts. rmux sets the tmux variables too,
     /// but it re-emits kitty graphics to the outer terminal, so under
     /// rmux the inherited markers count.
-    pub fn kitty(&self) -> bool {
+    pub fn supports_kitty(&self) -> bool {
         let multiplexer_forwards = self.rmux.is_some() || self.tmux.is_none();
         multiplexer_forwards
             && (self.kitty_window_id.is_some()
@@ -214,9 +214,9 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
 /// Seed capabilities from environment markers alone.
 pub fn sniff(env: &Env) -> Capabilities {
     Capabilities {
-        kitty: env.kitty(),
+        kitty: env.supports_kitty(),
         sixel: false,
-        truecolor: env.truecolor(),
+        truecolor: env.has_truecolor(),
         identity: None,
         cell: None,
         trust: ProbeSource::Sniffed,
@@ -426,7 +426,7 @@ mod tests {
         let mut transport = Scripted::new(&[b"\x1b[?64;1;2;4;6;9;15c"]);
         let caps = probe(&mut transport, &env());
         assert!(caps.sixel);
-        assert_eq!(caps.kitty, env().kitty(), "DA1 alone adds nothing");
+        assert_eq!(caps.kitty, env().supports_kitty(), "DA1 alone adds nothing");
         assert_eq!(caps.trust, super::ProbeSource::Probed);
     }
 
@@ -554,7 +554,7 @@ mod tests {
         let mut mux = env();
         mux.tmux = Some("pane".to_owned());
         assert!(
-            !mux.kitty(),
+            !mux.supports_kitty(),
             "tmux panes inherit TERM_PROGRAM from the outer terminal"
         );
         assert!(!sniff(&mux).kitty);
@@ -566,7 +566,7 @@ mod tests {
         mux.tmux = Some("pane".to_owned());
         mux.rmux = Some("pane".to_owned());
         assert!(
-            mux.kitty(),
+            mux.supports_kitty(),
             "rmux re-emits kitty graphics to the outer terminal"
         );
         assert!(sniff(&mux).kitty);
