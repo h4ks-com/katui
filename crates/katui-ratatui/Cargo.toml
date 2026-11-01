@@ -11,10 +11,14 @@ repository.workspace = true
 image.workspace = true
 katui-present.workspace = true
 katui-proto.workspace = true
-katui-rt.workspace = true
 katui-scene.workspace = true
 ratatui.workspace = true
 thiserror.workspace = true
+
+# examples only: the library itself stays pure, the demos need the
+# impure runtime
+[dev-dependencies]
+katui-rt.workspace = true
 
 [lints]
 workspace = true
