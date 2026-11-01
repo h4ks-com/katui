@@ -104,6 +104,7 @@ pub struct Buffer {
 
 impl Buffer {
     /// A buffer of default cells: spaces in default colors.
+    #[must_use]
     pub fn blank(size: CellSize) -> Self {
         Self {
             size,

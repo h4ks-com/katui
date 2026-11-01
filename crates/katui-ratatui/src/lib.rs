@@ -34,6 +34,7 @@ pub struct KatuiBackend<W: io::Write> {
 
 impl<W: io::Write> KatuiBackend<W> {
     /// A backend for a `columns` x `rows` terminal, writing to `out`.
+    #[must_use]
     pub fn new(columns: u16, rows: u16, out: W) -> Self {
         Self {
             out,
