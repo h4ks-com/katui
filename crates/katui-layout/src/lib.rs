@@ -1,7 +1,9 @@
 //! Constraint layout: splitting a cell rectangle along one axis into
-//! sized children. Percentages round down, lengths hold, fills share the
-//! rest, and the last child always ends at the far edge, so a split
-//! covers its area exactly once.
+//! sized children. Percentages round down, lengths hold, fills share
+//! the rest. A Fill absorbs whatever the other constraints leave, so
+//! a split containing a Fill covers its area exactly once; length-only
+//! splits cover only what they claim, and overlong claims saturate
+//! rather than wrap.
 
 use katui_scene::placement::CellRect;
 
