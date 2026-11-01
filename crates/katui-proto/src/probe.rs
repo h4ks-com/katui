@@ -153,7 +153,17 @@ pub struct Capabilities {
 
 /// The query batch. DA1 comes last and acts as the barrier: a terminal
 /// that supports graphics answers the query before it.
-const BATCH: &[u8] = b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[>0q\x1b[16t\x1b[c";
+/// The image id the probe's query transmits under; answers naming it
+/// prove the kitty protocol listened.
+const PROBE_IMAGE_ID: u32 = 31;
+
+/// The query batch: the kitty query under [`PROBE_IMAGE_ID`] with its
+/// four-pixel RGBA payload, XTGETTCAP, the cell size and DA1 last as
+/// the barrier.
+fn batch() -> Vec<u8> {
+    format!("\x1b_Gi={PROBE_IMAGE_ID},s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[>0q\x1b[16t\x1b[c")
+        .into_bytes()
+}
 
 /// Everything the reply stream told us.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -180,7 +190,7 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     }
     // a dead channel proves nothing beyond the sniff; stop before the
     // budget instead of waiting out a tty that cannot answer
-    if transport.write(BATCH).is_err() {
+    if transport.write(&batch()).is_err() {
         return caps;
     }
     let mut stream = Vec::new();
@@ -233,7 +243,7 @@ fn parse_replies(stream: &[u8]) -> Replies {
         .into_iter()
         .any(|answer| match answer {
             kitty::Response::Ok { image, .. } | kitty::Response::Error { image, .. } => {
-                image == kitty::ImageId(31)
+                image == kitty::ImageId(PROBE_IMAGE_ID)
             }
         });
     let mut replies = Replies {
@@ -503,6 +513,14 @@ mod tests {
         assert_eq!(caps.trust, super::ProbeSource::Sniffed);
         assert!(!caps.kitty, "an older tmux reports no graphics");
         assert!(!transport.writes.is_empty(), "the probe was attempted");
+    }
+
+    #[test]
+    fn the_query_batch_is_one_exact_byte_string() {
+        assert_eq!(
+            super::batch(),
+            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[>0q\x1b[16t\x1b[c".to_vec()
+        );
     }
 
     #[test]
