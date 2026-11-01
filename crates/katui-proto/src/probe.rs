@@ -309,7 +309,8 @@ fn csi_split(seq: &[u8]) -> (String, u8) {
     (String::from_utf8_lossy(&params).into_owned(), final_byte)
 }
 
-/// DA1 reports sixel as the fourth parameter.
+/// DA1 reports sixel as feature parameter 4; some terminals order
+/// features freely, so it counts anywhere in the reply.
 fn has_sixel(params: &str) -> bool {
     params.split(';').any(|p| p == "4")
 }
