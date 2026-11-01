@@ -529,6 +529,30 @@ mod tests {
     }
 
     #[test]
+    fn random_reply_streams_never_panic() {
+        let mut rng = crate::fuzz::XorShift::new(0xf00d_beef_cafe_1234);
+        for _ in 0..3000 {
+            let chunks: Vec<Vec<u8>> = (0..rng.next() % 4)
+                .map(|_| {
+                    let len = (rng.next() % 96) as usize;
+                    let mut bytes: Vec<u8> = (0..len).map(|_| rng.byte()).collect();
+                    if rng.next().is_multiple_of(2) {
+                        let at = (rng.next() as usize) % (len + 1);
+                        bytes.splice(at..at, b"\x1b_Gi=".iter().copied());
+                    }
+                    bytes
+                })
+                .collect();
+            let refs: Vec<&[u8]> = chunks.iter().map(std::vec::Vec::as_slice).collect();
+            let mut transport = Scripted::new(&refs);
+            let caps = probe(&mut transport, &env());
+            // a barrier among the noise upgrades trust; garbage alone
+            // must still answer with the sniff
+            let _ = caps.trust;
+        }
+    }
+
+    #[test]
     fn probing_only_adds_to_the_sniff() {
         let mut env = env();
         env.term = Some("xterm-256color".to_owned());

@@ -197,6 +197,23 @@ mod tests {
     use super::{
         Delete, Features, ObjectId, Place, Register, Support, Update, parse_support, support_query,
     };
+    use crate::fuzz::XorShift;
+
+    #[test]
+    fn random_byte_streams_report_no_support_without_panicking() {
+        let mut rng = XorShift::new(0x0123_4567_89ab_cdef);
+        for _ in 0..3000 {
+            let len = (rng.next() % 128) as usize;
+            let mut bytes: Vec<u8> = (0..len).map(|_| rng.byte()).collect();
+            if rng.next().is_multiple_of(2) {
+                let at = (rng.next() as usize) % (len + 1);
+                bytes.splice(at..at, b"\x1b_ratty;g;s;".iter().copied());
+            }
+            // whatever the noise, a reply that does not carry v>1 is no
+            // ratty; a panic here would be the failure
+            let _ = parse_support(&bytes);
+        }
+    }
 
     #[test]
     fn the_support_query_is_one_exact_frame() {

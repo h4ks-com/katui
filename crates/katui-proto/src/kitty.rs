@@ -392,10 +392,33 @@ fn apc(command: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::parse_responses;
     use super::{CHUNK, Delete, Format, ImageId, Place, PlacementId, Quiet, Response, Transmit};
+    use crate::fuzz::XorShift;
 
     fn transmit() -> Transmit<'static> {
         Transmit::new(ImageId(1), Format::Rgba, 1, 1, &[0, 0, 0, 0xff])
+    }
+
+    #[test]
+    fn random_byte_streams_parse_without_panicking() {
+        let mut rng = XorShift::new(0x9e37_79b9_7f4a_7c15);
+        for _ in 0..3000 {
+            let len = (rng.next() % 128) as usize;
+            // half the streams stay pure noise, half carry real frame
+            // markers so the parser walks its deepest paths too
+            let mut bytes: Vec<u8> = (0..len).map(|_| rng.byte()).collect();
+            if rng.next().is_multiple_of(2) {
+                let at = (rng.next() as usize) % (len + 1);
+                bytes.splice(at..at, b"\x1b_G".iter().copied());
+            }
+            for response in parse_responses(&bytes) {
+                assert!(
+                    matches!(response, Response::Ok { .. } | Response::Error { .. }),
+                    "only the two answer shapes exist"
+                );
+            }
+        }
     }
 
     /// The concatenated base64 payload of every frame, terminators and
