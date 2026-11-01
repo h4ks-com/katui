@@ -83,13 +83,28 @@ fn draw_gradient(
     }
     let width = u32::from(area_columns) * u32::from(cell.width);
     let height = u32::from(area_rows) * u32::from(cell.height);
-    let pixels = gradient(width, height);
     let area = CellRect {
         x: 1,
         y: rows / 2,
         columns: area_columns,
         rows: area_rows,
     };
+    // the gallery's pixels take the same trip an image asset takes:
+    // encoded PNG bytes, decoded and fitted to the area
+    let Some(source) = image::RgbaImage::from_raw(width, height, gradient(width, height)) else {
+        return;
+    };
+    let mut png = Vec::new();
+    if source
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .is_err()
+    {
+        return;
+    }
+    let Ok(decoded) = katui_ratatui::image::decode(&png) else {
+        return;
+    };
+    let pixels = katui_ratatui::image::fit_to_area(&decoded, area, cell);
     let result = terminal
         .backend_mut()
         .draw_image(ImageId(1), &pixels, width, height, area);
