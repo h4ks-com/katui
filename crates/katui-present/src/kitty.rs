@@ -105,7 +105,7 @@ impl Kitty {
                     payload.height,
                     payload.pixels,
                 );
-                for frame in transmit.encode() {
+                for frame in transmit.encode()? {
                     bytes.write_all(&frame)?;
                 }
                 transmitted.insert(image.0);
@@ -210,8 +210,9 @@ mod tests {
     }
 
     fn transmit_frame(id: u32) -> String {
-        let frames =
-            kitty::Transmit::new(KittyImage(id), kitty::Format::Rgba, 1, 1, PIXELS).encode();
+        let frames = kitty::Transmit::new(KittyImage(id), kitty::Format::Rgba, 1, 1, PIXELS)
+            .encode()
+            .expect("a Vec encoder cannot fail");
         let mut joined = String::new();
         for frame in frames {
             joined.push_str(&String::from_utf8_lossy(&frame));

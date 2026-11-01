@@ -46,7 +46,7 @@ fn write_whole_image<W: Sink>(
         surface.pixels(),
     );
     transmit.compressed = true;
-    for frame in transmit.encode() {
+    for frame in transmit.encode()? {
         bytes.write_all(&frame)?;
     }
     move_cursor(

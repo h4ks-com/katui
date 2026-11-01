@@ -107,20 +107,19 @@ impl<'a> Transmit<'a> {
         }
     }
 
-    /// Encode as APC frames, one per chunk.
+    /// Encode as APC frames, one per chunk. Compression failures
+    /// propagate: a frame declaring `o=z` never carries raw bytes.
     ///
     /// The payload is base64 encoded and cut into chunks of at most
     /// [`CHUNK`] characters. Base64 length is a multiple of four, so every
     /// chunk except the last meets the protocol's multiple-of-four rule by
     /// construction. Only the first frame carries control data; the rest
     /// carry the `m` continuation flag alone.
-    #[must_use]
-    pub fn encode(&self) -> Vec<Vec<u8>> {
+    pub fn encode(&self) -> std::io::Result<Vec<Vec<u8>>> {
         let raw = if self.compressed {
             let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-            // a ZlibEncoder over a Vec cannot fail, only its finish reports
-            let _ = encoder.write_all(self.payload);
-            encoder.finish().unwrap_or_else(|_| self.payload.to_vec())
+            encoder.write_all(self.payload)?;
+            encoder.finish()?
         } else {
             self.payload.to_vec()
         };
@@ -136,7 +135,7 @@ impl<'a> Transmit<'a> {
                 .collect()
         };
         let last = chunks.len() - 1;
-        chunks
+        let frames = chunks
             .iter()
             .enumerate()
             .map(|(index, chunk)| {
@@ -165,7 +164,8 @@ impl<'a> Transmit<'a> {
                 }
                 apc(&command).into_bytes()
             })
-            .collect()
+            .collect();
+        Ok(frames)
     }
 }
 
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn transmit_encodes_one_golden_frame() {
-        let frames = transmit().encode();
+        let frames = transmit().encode().expect("encoding cannot fail");
         assert_eq!(
             frames,
             vec![b"\x1b_Ga=t,f=32,t=d,s=1,v=1,i=1,q=2,m=0;AAAA/w==\x1b\\".to_vec()]
@@ -421,7 +421,7 @@ mod tests {
     fn transmit_emits_the_control_data_only_on_the_first_chunk() {
         let payload = vec![0xa5; 2 * CHUNK * 3 / 4 + 1];
         let command = Transmit::new(ImageId(9), Format::Rgb, 10, 20, &payload);
-        let frames = command.encode();
+        let frames = command.encode().expect("encoding cannot fail");
         assert_eq!(frames.len(), 3);
         let first = String::from_utf8_lossy(&frames[0]).into_owned();
         assert!(first.starts_with("\x1b_Ga=t,f=24,t=d,s=10,v=20,i=9,q=2,m=1;"));
@@ -439,7 +439,9 @@ mod tests {
     fn chunks_respect_the_size_and_multiple_of_four_rules() {
         for size in [0, 1, 2, 3, 3071, 3072, 3073, 8192] {
             let payload = vec![0u8; size];
-            let frames = Transmit::new(ImageId(2), Format::Rgba, size as u32, 1, &payload).encode();
+            let frames = Transmit::new(ImageId(2), Format::Rgba, size as u32, 1, &payload)
+                .encode()
+                .expect("encoding cannot fail in tests");
             let expected = size.div_ceil(3) * 4;
             assert_eq!(
                 frames.len(),
@@ -470,7 +472,7 @@ mod tests {
         let payload: Vec<u8> = (0..600u32).map(|i| (i % 7) as u8).collect();
         let mut command = Transmit::new(ImageId(5), Format::Rgba, 10, 20, &payload);
         command.compressed = true;
-        let frames = command.encode();
+        let frames = command.encode().expect("encoding cannot fail");
         let first = String::from_utf8_lossy(&frames[0]).into_owned();
         assert!(first.contains("o=z"), "the wire declares compression");
         let joined = joined_payload(&frames);
@@ -495,7 +497,9 @@ mod tests {
     fn png_omits_dimensions_and_quiet_controls_the_q_key() {
         let mut command = Transmit::new(ImageId(3), Format::Png, 0, 0, b"png");
         command.quiet = Quiet::Normal;
-        let text = String::from_utf8_lossy(&command.encode()[0]).into_owned();
+        let text =
+            String::from_utf8_lossy(&command.encode().expect("encoding cannot fail in tests")[0])
+                .into_owned();
         assert!(text.contains("f=100"));
         assert!(!text.contains("s="));
         assert!(!text.contains("v="));
@@ -563,7 +567,9 @@ mod tests {
         use base64::Engine as _;
 
         let payload: Vec<u8> = (0..5000u32).map(|i| (i % 256) as u8).collect();
-        let frames = Transmit::new(ImageId(4), Format::Rgba, 100, 25, &payload).encode();
+        let frames = Transmit::new(ImageId(4), Format::Rgba, 100, 25, &payload)
+            .encode()
+            .expect("encoding cannot fail in tests");
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(joined_payload(&frames))
             .expect("concatenated chunks are valid base64");
