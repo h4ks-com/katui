@@ -136,7 +136,14 @@ impl Buffer {
     /// Write `text` left to right from `at`, one character per cell,
     /// clipped at the right edge. Graphemes wider than one cell land with
     /// the text layer. Returns the number of cells written.
-    pub fn set_string(&mut self, at: Position, text: &str, fg: Color, bg: Color) -> usize {
+    pub fn set_string(
+        &mut self,
+        at: Position,
+        text: &str,
+        fg: Color,
+        bg: Color,
+        attrs: Attrs,
+    ) -> usize {
         let mut written = 0;
         for (step, symbol) in text.chars().enumerate() {
             let x = at.x.saturating_add(u16::try_from(step).unwrap_or(u16::MAX));
@@ -144,7 +151,7 @@ impl Buffer {
                 symbol: symbol.to_string(),
                 fg,
                 bg,
-                attrs: crate::cell::Attrs::EMPTY,
+                attrs,
             };
             if !self.set(Position { x, y: at.y }, cell) {
                 break;
@@ -205,7 +212,7 @@ fn position_of(size: CellSize, index: usize) -> Position {
 
 #[cfg(test)]
 mod tests {
-    use super::{Buffer, Cell, Color, Position, diff};
+    use super::{Attrs, Buffer, Cell, Color, Position, diff};
     use crate::CellSize;
 
     fn size() -> CellSize {
@@ -276,8 +283,13 @@ mod tests {
     #[test]
     fn set_string_clips_at_the_right_edge() {
         let mut buffer = Buffer::blank(size());
-        let written =
-            buffer.set_string(Position { x: 2, y: 0 }, "hello", Color::Reset, Color::Reset);
+        let written = buffer.set_string(
+            Position { x: 2, y: 0 },
+            "hello",
+            Color::Reset,
+            Color::Reset,
+            Attrs::EMPTY,
+        );
         assert_eq!(written, 2);
         assert_eq!(buffer.get(Position { x: 2, y: 0 }), Some(&text_cell("h")));
         assert_eq!(buffer.get(Position { x: 3, y: 0 }), Some(&text_cell("e")));

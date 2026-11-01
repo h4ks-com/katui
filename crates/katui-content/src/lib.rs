@@ -38,14 +38,9 @@ pub fn markdown(markdown: &str, width: u16) -> Buffer {
                 &span.text,
                 span.color,
                 Color::Reset,
+                span.attrs,
             ))
             .unwrap_or(0);
-            for column in x..x.saturating_add(written) {
-                let position = Position { x: column, y };
-                let mut cell = buffer.get(position).cloned().unwrap_or_default();
-                cell.attrs = span.attrs;
-                buffer.set(position, cell);
-            }
             x = x.saturating_add(written);
         }
     }
