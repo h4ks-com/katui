@@ -117,27 +117,37 @@ impl BlocksSurface {
     }
 
     /// Write one frame's cells and return the bytes written. A fresh or
-    /// resized frame repaints every cell cursor-addressed; a later frame
-    /// repaints only the cells whose pixels changed, inside synchronized
-    /// output. An unchanged frame writes nothing.
+    /// resized frame clears the screen and repaints every cell; a later
+    /// frame repaints only the cells whose pixels changed, inside
+    /// synchronized output, with no clear that would erase the rest.
+    /// An unchanged frame writes nothing.
     pub fn render_frame<W: Sink>(&mut self, out: &mut W, surface: &Surface) -> io::Result<usize> {
         let next = cells_for_surface(surface);
-        let changed: Vec<(Position, katui_scene::cell::Cell)> = match self.prev.as_ref() {
-            Some(prev) if prev.size() == next.size() => diff(prev, &next)
-                .into_iter()
-                .map(|(position, cell)| (position, cell.clone()))
-                .collect(),
-            Some(_) | None => all_cells(&next)
-                .into_iter()
-                .map(|(position, cell)| (position, cell.clone()))
-                .collect(),
+        let (changed, full): (Vec<_>, bool) = match self.prev.as_ref() {
+            Some(prev) if prev.size() == next.size() => (
+                diff(prev, &next)
+                    .into_iter()
+                    .map(|(position, cell)| (position, cell.clone()))
+                    .collect(),
+                false,
+            ),
+            Some(_) | None => (
+                all_cells(&next)
+                    .into_iter()
+                    .map(|(position, cell)| (position, cell.clone()))
+                    .collect(),
+                true,
+            ),
         };
         self.prev = Some(next);
         if changed.is_empty() {
             return Ok(0);
         }
         let mut bytes = Vec::new();
-        bytes.write_all(b"\x1b[?2026h\x1b[H\x1b[2J")?;
+        bytes.write_all(b"\x1b[?2026h")?;
+        if full {
+            bytes.write_all(b"\x1b[H\x1b[2J")?;
+        }
         for (position, cell) in &changed {
             crate::cells::render_cell(&mut bytes, *position, cell)?;
         }
@@ -460,6 +470,10 @@ mod tests {
                 "one pixel change is far cheaper than a full frame"
             );
             let text = String::from_utf8_lossy(&second);
+            assert!(
+                !text.contains("\x1b[2J"),
+                "a diffed frame never erases the screen"
+            );
             assert!(
                 text.matches("\x1b[").count() < 10,
                 "a couple of cells repaint, not the screen"
