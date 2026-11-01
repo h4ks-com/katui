@@ -2,7 +2,6 @@
 //! in raw mode for the exchange and restored after it.
 
 use std::fs::{File, OpenOptions};
-use std::io;
 use std::os::fd::AsFd;
 use std::time::{Duration, Instant};
 
@@ -14,17 +13,7 @@ use rustix::termios::{
     tcgetattr, tcgetwinsize, tcsetattr,
 };
 
-/// Failures of the terminal lifecycle.
-#[derive(Debug, thiserror::Error)]
-pub enum RtError {
-    /// Opening or configuring `/dev/tty` failed, typically because no
-    /// controlling terminal exists.
-    #[error("opening the controlling terminal failed")]
-    Open(#[from] io::Error),
-    /// A termios or poll operation failed mid-exchange.
-    #[error("terminal control failed: {0}")]
-    Control(#[from] rustix::io::Errno),
-}
+use crate::RtError;
 
 /// The shared raw-mode entry: no echo, no line buffering, no flow
 /// control, a one-byte read floor. `with_signals` keeps ISIG on for the

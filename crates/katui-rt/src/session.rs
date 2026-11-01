@@ -6,13 +6,7 @@ use std::io;
 
 use katui_present::session;
 
-/// Failures of entering a session.
-#[derive(Debug, thiserror::Error)]
-pub enum SessionError {
-    /// Writing the enter sequences failed.
-    #[error("entering the session failed")]
-    Enter(#[from] io::Error),
-}
+use crate::RtError;
 
 /// An alternate-screen session. Drop leaves the screen, whatever ended
 /// it: normal return, error, panic.
@@ -22,12 +16,10 @@ pub struct Session<W: io::Write> {
 
 impl<W: io::Write> Session<W> {
     /// Enter the alternate screen on `out`.
-    pub fn enter(out: W) -> Result<Self, SessionError> {
+    pub fn enter(out: W) -> Result<Self, RtError> {
         let mut session = Self { out: Some(out) };
-        if let Some(out) = session.out.as_mut()
-            && let Err(error) = session::enter(out)
-        {
-            return Err(SessionError::Enter(error));
+        if let Some(out) = session.out.as_mut() {
+            session::enter(out)?;
         }
         Ok(session)
     }
