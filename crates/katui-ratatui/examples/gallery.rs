@@ -1,6 +1,7 @@
 //! The katui gallery: styled cells through the ratatui adapter, and a
 //! generated gradient over the kitty graphics protocol when the terminal
 //! speaks it. Run with `just demo-gallery`.
+#![cfg(unix)] // the demos drive /dev/tty through katui-rt's unix layer
 
 use std::io::{self, Write as _};
 
@@ -16,6 +17,11 @@ fn main() -> io::Result<()> {
     let size = katui_rt::tty::size().map_err(io::Error::other)?;
     let (columns, rows) = (size.columns, size.rows);
     let caps = katui_rt::tty::probe_default();
+    // the stage hides the cursor for the run and restores it after; the
+    // backend draws through its own stdout handle, the same terminal
+    let stage =
+        katui_rt::session::Stage::enter(io::stdout(), katui_rt::session::Teardown::default())
+            .map_err(io::Error::other)?;
     let mut terminal =
         Terminal::new(KatuiBackend::new(columns, rows, io::stdout())).map_err(io::Error::other)?;
     terminal
@@ -62,7 +68,7 @@ fn main() -> io::Result<()> {
     out.flush()?;
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
-    katui_present::cells::show_cursor(&mut out)?;
+    let mut out = stage.leave().map_err(io::Error::other)?;
     out.write_all(b"\n")?;
     out.flush()
 }

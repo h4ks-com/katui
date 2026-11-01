@@ -1,6 +1,7 @@
 //! The katui plasma: a quarter-block animation through the blocks
 //! presenter, the pixel path every truecolor terminal understands. Run
 //! with `just demo-plasma`; it plays for a few seconds and leaves.
+#![cfg(unix)] // the demos drive /dev/tty through katui-rt's unix layer
 
 use std::io::{self, Write as _};
 use std::time::Duration;
@@ -10,11 +11,13 @@ use katui_present::blocks::{Rgb, render_line};
 fn main() -> io::Result<()> {
     let size = katui_rt::tty::size().map_err(io::Error::other)?;
     let (columns, rows) = (size.columns, size.rows);
-    let mut out = io::stdout();
-    out.write_all(b"\x1b[?25l")?;
-    // the render loop in a closure, so the teardown after it runs on
-    // both the clean exit and the error path
+    let mut stage =
+        katui_rt::session::Stage::enter(io::stdout(), katui_rt::session::Teardown::default())
+            .map_err(io::Error::other)?;
+    // the render loop in a closure, so the stage restore after it runs
+    // on both the clean exit and the error path
     let result = (|| {
+        let out = stage.writer();
         for tick in 0..150u32 {
             let frame = frame(tick, columns, rows);
             out.write_all(b"\x1b[H")?;
@@ -27,9 +30,10 @@ fn main() -> io::Result<()> {
         }
         Ok(())
     })();
-    katui_present::cells::show_cursor(&mut out)?;
-    out.flush()?;
-    result
+    // the stage restores the terminal whatever ended the run; the
+    // original error still propagates
+    let cleanup = stage.leave().map_err(io::Error::other).map(|_| ());
+    result.and(cleanup)
 }
 
 /// One terminal line per entry: two pixel rows classified into quarter

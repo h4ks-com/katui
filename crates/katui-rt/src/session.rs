@@ -4,7 +4,9 @@
 
 use std::io;
 
+use katui_present::cells;
 use katui_present::session;
+use katui_proto::kitty;
 
 use crate::RtError;
 
@@ -44,11 +46,90 @@ impl<W: io::Write> Drop for Session<W> {
     }
 }
 
+/// What a [`Stage`] run owes the terminal when it ends: which teardown
+/// pieces to send after the always-on resets.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Teardown {
+    /// Delete every visible kitty image; runs that transmitted any.
+    pub graphics: bool,
+    /// Home the cursor; runs that kept painting the screen.
+    pub home: bool,
+    /// Clear the whole screen after homing.
+    pub clear: bool,
+}
+
+impl Teardown {
+    /// Send the restore sequence: leave sync mode, reset styles, show
+    /// the cursor, then whatever this teardown still owes.
+    fn finish<W: io::Write>(self, out: &mut W) -> io::Result<()> {
+        out.write_all(b"\x1b[?2026l\x1b[0m")?;
+        cells::show_cursor(out)?;
+        if self.graphics {
+            out.write_all(&kitty::Delete::AllVisible.encode())?;
+        }
+        if self.home {
+            out.write_all(b"\x1b[H")?;
+        }
+        if self.clear {
+            out.write_all(b"\x1b[2J")?;
+        }
+        out.flush()
+    }
+}
+
+/// The main-screen stage: hides the cursor on enter and restores the
+/// terminal on [`Stage::leave`] or drop. Unlike [`Session`] it never
+/// switches to the alternate screen: a run draws beside it, through
+/// [`Stage::writer`], on the same stdout.
+pub struct Stage<W: io::Write> {
+    out: Option<W>,
+    teardown: Teardown,
+}
+
+impl<W: io::Write> Stage<W> {
+    /// Hide the cursor and hold `out` for the run.
+    pub fn enter(mut out: W, teardown: Teardown) -> Result<Self, RtError> {
+        cells::hide_cursor(&mut out)?;
+        Ok(Self {
+            out: Some(out),
+            teardown,
+        })
+    }
+
+    /// The writer the run draws through.
+    pub fn writer(&mut self) -> &mut W {
+        let Some(out) = self.out.as_mut() else {
+            unreachable!("only leave takes the writer and it runs once");
+        };
+        out
+    }
+
+    /// Restore the terminal and return the writer.
+    pub fn leave(mut self) -> io::Result<W> {
+        let teardown = self.teardown;
+        let Some(mut out) = self.out.take() else {
+            unreachable!("only leave takes the writer and it runs once");
+        };
+        teardown.finish(&mut out)?;
+        Ok(out)
+    }
+}
+
+impl<W: io::Write> Drop for Stage<W> {
+    fn drop(&mut self) {
+        // drop cannot report, so the restore is best effort; it only
+        // runs when leave never did, on a panic for example
+        if let Some(out) = &mut self.out {
+            let _ = self.teardown.finish(out);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io;
 
-    use super::Session;
+    use super::{Session, Stage, Teardown};
 
     /// A writer that records into shared storage, so bytes survive the
     /// session's drop.
@@ -100,5 +181,49 @@ mod tests {
             }
         }
         assert!(Session::enter(Broken).is_err());
+    }
+
+    #[test]
+    fn a_full_stage_restores_everything_it_owes() {
+        let stage = Stage::enter(
+            Vec::new(),
+            Teardown {
+                graphics: true,
+                home: true,
+                clear: true,
+            },
+        )
+        .expect("writing to a Vec cannot fail");
+        let bytes = stage.leave().expect("writing to a Vec cannot fail");
+        assert_eq!(
+            String::from_utf8_lossy(&bytes),
+            "\x1b[?25l\x1b[?2026l\x1b[0m\x1b[?25h\x1b_Ga=d,d=a,q=2\x1b\\\x1b[H\x1b[2J",
+            "hide on enter; sync off, styles, cursor, graphics, home, clear on leave"
+        );
+    }
+
+    #[test]
+    fn a_bare_stage_only_resets_the_basics() {
+        let stage =
+            Stage::enter(Vec::new(), Teardown::default()).expect("writing to a Vec cannot fail");
+        let bytes = stage.leave().expect("writing to a Vec cannot fail");
+        assert_eq!(
+            String::from_utf8_lossy(&bytes),
+            "\x1b[?25l\x1b[?2026l\x1b[0m\x1b[?25h",
+            "no graphics, home or clear owed"
+        );
+    }
+
+    #[test]
+    fn a_stage_left_unleft_still_restores_on_drop() {
+        let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let stage =
+            Stage::enter(Recorder(log.clone()), Teardown::default()).expect("recorder cannot fail");
+        drop(stage);
+        assert_eq!(
+            String::from_utf8_lossy(&log.borrow()),
+            "\x1b[?25l\x1b[?2026l\x1b[0m\x1b[?25h",
+            "drop restores when leave never ran"
+        );
     }
 }

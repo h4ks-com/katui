@@ -2,6 +2,7 @@
 //! self-escalating, exit any time with `q`, `Esc` or `Ctrl-C`. Pixel
 //! surfaces over the kitty protocol, quarter blocks everywhere else.
 //! Run with `just demo-dvd`.
+#![cfg(unix)] // the demos drive /dev/tty through katui-rt's unix layer
 
 use std::collections::VecDeque;
 use std::io::{self, Write as _};
@@ -140,15 +141,23 @@ fn main() -> io::Result<()> {
     let mut presenter = katui_present::surface::PatchedKitty::new(700, pixel_cell);
     let mut blocks = katui_present::surface::BlocksSurface::new();
     let mut clock = FrameClock::new(30);
-    let mut out = io::stdout();
-    out.write_all(b"\x1b[?25l")?;
+    let mut stage = katui_rt::session::Stage::enter(
+        io::stdout(),
+        katui_rt::session::Teardown {
+            graphics: true,
+            home: true,
+            clear: true,
+        },
+    )
+    .map_err(io::Error::other)?;
 
     let running = Arc::new(AtomicBool::new(true));
     let reader = spawn_quit_reader(running.clone());
 
-    // the render loop in a closure, so the teardown after it runs on
-    // both the clean exit and the error path
+    // the render loop in a closure, so the stage restore after it runs
+    // on both the clean exit and the error path
     let result = (|| {
+        let out = stage.writer();
         let mut frame = 0u64;
         while frame < MAX_FRAMES && running.load(Ordering::Relaxed) {
             dvd.step();
@@ -156,7 +165,7 @@ fn main() -> io::Result<()> {
             draw_frame(&mut surface, &mut backdrop, &dvd, frame);
             if kitty {
                 presenter.render_frame(
-                    &mut out,
+                    out,
                     &surface,
                     CellRect {
                         x: 0,
@@ -166,7 +175,7 @@ fn main() -> io::Result<()> {
                     },
                 )?;
             } else {
-                blocks.render_frame(&mut out, &surface)?;
+                blocks.render_frame(out, &surface)?;
             }
             out.flush()?;
             clock.wait_for_next_frame();
@@ -179,20 +188,10 @@ fn main() -> io::Result<()> {
     if let Some(handle) = reader {
         let _ = handle.join();
     }
-    // the terminal is restored whatever ended the run; the original
-    // error still propagates
-    let cleanup = finish(&mut out);
+    // the stage restores the terminal whatever ended the run; the
+    // original error still propagates
+    let cleanup = stage.leave().map_err(io::Error::other).map(|_| ());
     result.and(cleanup)
-}
-
-/// The teardown: leave sync mode, show the cursor, drop the images,
-/// clear the screen.
-fn finish(out: &mut io::Stdout) -> io::Result<()> {
-    out.write_all(b"\x1b[?2026l\x1b[0m")?;
-    katui_present::cells::show_cursor(out)?;
-    out.write_all(&katui_proto::kitty::Delete::AllVisible.encode())?;
-    out.write_all(b"\x1b[H\x1b[2J")?;
-    out.flush()
 }
 
 /// The quit keys, read on their own thread so the render loop never

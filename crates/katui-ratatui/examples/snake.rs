@@ -1,6 +1,7 @@
 //! The katui snake demo: a self-playing game on a pixel surface, full
 //! frames over the kitty graphics protocol, quarter blocks everywhere
 //! else. Run with `just demo-snake`.
+#![cfg(unix)] // the demos drive /dev/tty through katui-rt's unix layer
 
 use std::io::{self, Write as _};
 
@@ -42,11 +43,19 @@ fn main() -> io::Result<()> {
     let mut presenter = katui_present::surface::KittySurface::new(500);
     let mut game = Game::new();
     let mut clock = FrameClock::new(20);
-    let mut out = io::stdout();
-    out.write_all(b"\x1b[?25l")?;
-    // the render loop in a closure, so the teardown after it runs on
-    // both the clean exit and the error path
+    let mut stage = katui_rt::session::Stage::enter(
+        io::stdout(),
+        katui_rt::session::Teardown {
+            graphics: true,
+            home: true,
+            clear: false,
+        },
+    )
+    .map_err(io::Error::other)?;
+    // the render loop in a closure, so the stage restore after it runs
+    // on both the clean exit and the error path
     let result = (|| {
+        let out = stage.writer();
         for frame in 0..FRAMES {
             if frame % 2 == 0 {
                 game.tick();
@@ -58,7 +67,7 @@ fn main() -> io::Result<()> {
             draw(&mut surface, &game, pixel_cell);
             if kitty {
                 presenter.render_frame(
-                    &mut out,
+                    out,
                     &surface,
                     CellRect {
                         x: 1,
@@ -68,26 +77,17 @@ fn main() -> io::Result<()> {
                     },
                 )?;
             } else {
-                katui_present::surface::render_blocks(&mut out, &surface)?;
+                katui_present::surface::render_blocks(out, &surface)?;
             }
             out.flush()?;
             clock.wait_for_next_frame();
         }
         Ok(())
     })();
-    // the terminal is restored whatever ended the run; the original
-    // error still propagates
-    let cleanup = finish(&mut out);
+    // the stage restores the terminal whatever ended the run; the
+    // original error still propagates
+    let cleanup = stage.leave().map_err(io::Error::other).map(|_| ());
     result.and(cleanup)
-}
-
-/// The teardown: drop the images, reset styles, show the cursor, home.
-fn finish(out: &mut io::Stdout) -> io::Result<()> {
-    out.write_all(&katui_proto::kitty::Delete::AllVisible.encode())?;
-    out.write_all(b"\x1b[0m")?;
-    katui_present::cells::show_cursor(out)?;
-    out.write_all(b"\x1b[H")?;
-    out.flush()
 }
 
 /// One snake run: body head-first, a direction, food, and a tiny
