@@ -18,8 +18,9 @@ const READ_WAIT: Duration = Duration::from_millis(50);
 /// The channel a probe talks through. The real one is the controlling tty
 /// in raw mode; tests script it with recorded replies.
 pub trait Transport {
-    /// Send bytes to the terminal.
-    fn write(&mut self, bytes: &[u8]);
+    /// Send bytes to the terminal. A failed write means the channel is
+    /// dead; the probe reports nothing rather than wait out its budget.
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<()>;
     /// Read the next reply chunk, waiting at most `wait`. `None` means
     /// nothing arrived in time and the probe stops waiting.
     fn read_timeout(&mut self, wait: Duration) -> Option<Vec<u8>>;
@@ -177,7 +178,11 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     if !env.probing_allowed() {
         return caps;
     }
-    transport.write(BATCH);
+    // a dead channel proves nothing beyond the sniff; stop before the
+    // budget instead of waiting out a tty that cannot answer
+    if transport.write(BATCH).is_err() {
+        return caps;
+    }
     let mut stream = Vec::new();
     loop {
         let replies = parse_replies(&stream);
@@ -368,8 +373,9 @@ mod tests {
     }
 
     impl Transport for Scripted {
-        fn write(&mut self, bytes: &[u8]) {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<()> {
             self.writes.push(bytes.to_vec());
+            Ok(())
         }
 
         fn read_timeout(&mut self, _wait: Duration) -> Option<Vec<u8>> {
@@ -499,6 +505,22 @@ mod tests {
         assert_eq!(caps.trust, super::ProbeSource::Sniffed);
         assert!(!caps.kitty, "an older tmux reports no graphics");
         assert!(!transport.writes.is_empty(), "the probe was attempted");
+    }
+
+    #[test]
+    fn a_dead_channel_returns_the_sniff_without_waiting() {
+        struct Dead;
+        impl Transport for Dead {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<()> {
+                Err(std::io::Error::other("no device"))
+            }
+            fn read_timeout(&mut self, _: Duration) -> Option<Vec<u8>> {
+                panic!("a failed write must stop the probe before any read")
+            }
+        }
+        let mut dead = Dead;
+        let caps = probe(&mut dead, &env());
+        assert_eq!(caps.trust, super::ProbeSource::Sniffed);
     }
 
     #[test]

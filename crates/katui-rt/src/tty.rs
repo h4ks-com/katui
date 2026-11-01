@@ -167,7 +167,7 @@ impl Drop for StdTransport {
 }
 
 impl Transport for StdTransport {
-    fn write(&mut self, bytes: &[u8]) {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         let mut written = 0;
         while let Some(rest) = bytes.get(written..) {
             if rest.is_empty() {
@@ -177,9 +177,10 @@ impl Transport for StdTransport {
                 Ok(0) => break,
                 Ok(n) => written += n,
                 Err(rustix::io::Errno::INTR) => {}
-                Err(_) => break,
+                Err(errno) => return Err(std::io::Error::from(errno)),
             }
         }
+        Ok(())
     }
 
     fn read_timeout(&mut self, wait: Duration) -> Option<Vec<u8>> {
