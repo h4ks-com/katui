@@ -21,8 +21,9 @@ use crate::cells::move_cursor;
 /// The full-frame kitty surface presenter: every frame transmits the
 /// whole surface compressed under one of two alternating image ids and
 /// places it, deleting the previous frame's placement, so the terminal
-/// never shows a half-updated image. Patched tile presenters refine this
-/// later; whole-frame is the correctness baseline.
+/// never shows a half-updated image. Patched tile presenters refine
+/// this with damage repaints; whole-frame stays the correctness
+/// baseline.
 #[derive(Debug)]
 pub struct KittySurface {
     base: u32,

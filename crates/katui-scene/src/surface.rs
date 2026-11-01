@@ -1,6 +1,5 @@
 //! An RGBA pixel surface: a scene plane holding real pixels, plus the
-//! tile damage that keeps full-frame retransmits honest until patched
-//! presenters arrive.
+//! tile damage the patched presenters repaint from.
 
 /// One opaque or transparent pixel color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
