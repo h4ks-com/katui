@@ -158,7 +158,7 @@ fn cells_for_surface(surface: &Surface) -> Buffer {
                 let x = u32::from(column) * 2 + dx;
                 let y = u32::from(row) * 2 + dy;
                 surface
-                    .get(x, y)
+                    .get(katui_scene::surface::PixelPos::new(x, y))
                     .map_or(Rgb { r: 0, g: 0, b: 0 }, |color| Rgb {
                         r: color.r,
                         g: color.g,
@@ -200,11 +200,13 @@ pub fn render_blocks<W: Sink>(out: &mut W, surface: &Surface) -> io::Result<usiz
 fn pixel_row(surface: &Surface, y: u32) -> Vec<Rgb> {
     (0..surface.width())
         .filter_map(|x| {
-            surface.get(x, y).map(|pixel| Rgb {
-                r: pixel.r,
-                g: pixel.g,
-                b: pixel.b,
-            })
+            surface
+                .get(katui_scene::surface::PixelPos::new(x, y))
+                .map(|pixel| Rgb {
+                    r: pixel.r,
+                    g: pixel.g,
+                    b: pixel.b,
+                })
         })
         .collect()
 }
@@ -359,7 +361,7 @@ mod tests {
         let mut surface = Surface::new(width, height);
         for y in 0..height {
             for x in 0..width {
-                surface.set(x, y, color);
+                surface.set(katui_scene::surface::PixelPos::new(x, y), color);
             }
         }
         surface
@@ -432,7 +434,7 @@ mod tests {
             let mut surface = Surface::new(width, height);
             for y in 0..height {
                 for x in 0..width {
-                    surface.set(x, y, color);
+                    surface.set(katui_scene::surface::PixelPos::new(x, y), color);
                 }
             }
             surface
@@ -462,7 +464,10 @@ mod tests {
             presenter
                 .render_frame(&mut first, &surface)
                 .expect("writing to a Vec cannot fail");
-            surface.set(20, 20, Rgba::solid(255, 0, 0));
+            surface.set(
+                katui_scene::surface::PixelPos::new(20, 20),
+                Rgba::solid(255, 0, 0),
+            );
             let mut second = Vec::new();
             let written = presenter
                 .render_frame(&mut second, &surface)
@@ -520,7 +525,10 @@ mod tests {
             let mut surface = Surface::new(width, height);
             for y in 0..height {
                 for x in 0..width {
-                    surface.set(x, y, Rgba::solid(10, 10, 30));
+                    surface.set(
+                        katui_scene::surface::PixelPos::new(x, y),
+                        Rgba::solid(10, 10, 30),
+                    );
                 }
             }
             surface
@@ -563,7 +571,10 @@ mod tests {
             presenter
                 .render_frame(&mut warmup, &surface, area())
                 .expect("writing to a Vec cannot fail");
-            surface.set(40, 40, Rgba::solid(255, 255, 255));
+            surface.set(
+                katui_scene::surface::PixelPos::new(40, 40),
+                Rgba::solid(255, 255, 255),
+            );
             let mut out = Vec::new();
             presenter
                 .render_frame(&mut out, &surface, area())
@@ -592,7 +603,10 @@ mod tests {
                 .expect("writing to a Vec cannot fail");
             for y in 0..128u32 {
                 for x in 0..128u32 {
-                    surface.set(x, y, Rgba::solid(200, 40, 40));
+                    surface.set(
+                        katui_scene::surface::PixelPos::new(x, y),
+                        Rgba::solid(200, 40, 40),
+                    );
                 }
             }
             let mut out = Vec::new();

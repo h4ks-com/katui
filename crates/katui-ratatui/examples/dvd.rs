@@ -360,8 +360,7 @@ fn draw_frame(surface: &mut Surface, backdrop: &mut Backdrop, dvd: &Dvd, frame: 
     for star in &mut backdrop.stars {
         star.repaint(frame);
         surface.set(
-            star.x,
-            star.y,
+            katui_scene::surface::PixelPos::new(star.x, star.y),
             Rgba::solid(star.shine, star.shine, star.shine),
         );
     }
@@ -476,7 +475,12 @@ mod tests {
         draw_frame(&mut surface, &mut backdrop, &Dvd::new(160, 90, 4), 0);
         for y in 0..90 {
             for x in 0..160 {
-                assert!(surface.get(x, y).is_some(), "every pixel is painted");
+                assert!(
+                    surface
+                        .get(katui_scene::surface::PixelPos::new(x, y))
+                        .is_some(),
+                    "every pixel is painted"
+                );
             }
         }
         let first = surface;
@@ -485,7 +489,9 @@ mod tests {
         let mut changed = 0;
         for y in 0..90 {
             for x in 0..160 {
-                if first.get(x, y) != second.get(x, y) {
+                if first.get(katui_scene::surface::PixelPos::new(x, y))
+                    != second.get(katui_scene::surface::PixelPos::new(x, y))
+                {
                     changed += 1;
                 }
             }
@@ -501,7 +507,9 @@ mod tests {
             let mut lit = 0usize;
             for y in 0..900u32 {
                 for x in 0..1600u32 {
-                    if surface.get(x, y) == Some(Rgba::solid(255, 0, 0)) {
+                    if surface.get(katui_scene::surface::PixelPos::new(x, y))
+                        == Some(Rgba::solid(255, 0, 0))
+                    {
                         lit += 1;
                     }
                 }

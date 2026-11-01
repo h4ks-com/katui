@@ -22,6 +22,25 @@ impl Rgba {
     }
 }
 
+/// A pixel coordinate: `x` counts pixels from the left, `y` from the
+/// top. The pixel plane's answer to the cell plane's
+/// [`Position`](crate::cell::Position).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PixelPos {
+    /// Column.
+    pub x: u32,
+    /// Row.
+    pub y: u32,
+}
+
+impl PixelPos {
+    /// A point at (`x`, `y`).
+    #[must_use]
+    pub const fn new(x: u32, y: u32) -> Self {
+        Self { x, y }
+    }
+}
+
 /// A rectangle of pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PixelRect {
@@ -93,8 +112,8 @@ impl Surface {
 
     /// Read one pixel; `None` outside.
     #[must_use]
-    pub fn get(&self, x: u32, y: u32) -> Option<Rgba> {
-        let base = self.index(x, y)?;
+    pub fn get(&self, at: PixelPos) -> Option<Rgba> {
+        let base = self.index(at.x, at.y)?;
         Some(Rgba {
             r: *self.pixels.get(base)?,
             g: *self.pixels.get(base + 1)?,
@@ -104,8 +123,8 @@ impl Surface {
     }
 
     /// Write one pixel; `false` and no change outside.
-    pub fn set(&mut self, x: u32, y: u32, color: Rgba) -> bool {
-        match self.index(x, y) {
+    pub fn set(&mut self, at: PixelPos, color: Rgba) -> bool {
+        match self.index(at.x, at.y) {
             Some(base) => {
                 for (offset, channel) in
                     [color.r, color.g, color.b, color.a].into_iter().enumerate()
@@ -124,7 +143,7 @@ impl Surface {
     pub fn fill_rect(&mut self, rect: PixelRect, color: Rgba) {
         for y in rect.y..rect.y.saturating_add(rect.height) {
             for x in rect.x..rect.x.saturating_add(rect.width) {
-                self.set(x, y, color);
+                self.set(PixelPos::new(x, y), color);
             }
         }
     }
@@ -135,8 +154,11 @@ impl Surface {
     pub fn blit(&mut self, source: &Surface, x: u32, y: u32) {
         for row in 0..source.height() {
             for column in 0..source.width() {
-                if let Some(color) = source.get(column, row) {
-                    self.set(x.saturating_add(column), y.saturating_add(row), color);
+                if let Some(color) = source.get(PixelPos::new(column, row)) {
+                    self.set(
+                        PixelPos::new(x.saturating_add(column), y.saturating_add(row)),
+                        color,
+                    );
                 }
             }
         }
@@ -189,7 +211,7 @@ fn tile_differs(prev: &Surface, next: &Surface, x: u32, y: u32, tile: u32) -> bo
     while row < y.saturating_add(tile).min(next.height) {
         let mut column = x;
         while column < x.saturating_add(tile).min(next.width) {
-            if prev.get(column, row) != next.get(column, row) {
+            if prev.get(PixelPos::new(column, row)) != next.get(PixelPos::new(column, row)) {
                 return true;
             }
             column += 1;
@@ -201,7 +223,7 @@ fn tile_differs(prev: &Surface, next: &Surface, x: u32, y: u32, tile: u32) -> bo
 
 #[cfg(test)]
 mod tests {
-    use super::{PixelRect, Rgba, Surface, diff_tiles};
+    use super::{PixelPos, PixelRect, Rgba, Surface, diff_tiles};
 
     const RED: Rgba = Rgba::solid(255, 0, 0);
     const BLUE: Rgba = Rgba::solid(0, 0, 255);
@@ -211,7 +233,7 @@ mod tests {
         let surface = Surface::new(2, 2);
         assert_eq!(surface.pixels(), &[0; 16]);
         assert_eq!(
-            surface.get(0, 0),
+            surface.get(PixelPos::new(0, 0)),
             Some(Rgba {
                 r: 0,
                 g: 0,
@@ -230,10 +252,10 @@ mod tests {
     #[test]
     fn writes_clip_to_the_surface() {
         let mut surface = Surface::new(2, 2);
-        assert!(surface.set(1, 1, RED));
-        assert!(!surface.set(2, 1, RED));
-        assert!(!surface.set(1, 2, RED));
-        assert_eq!(surface.get(1, 1), Some(RED));
+        assert!(surface.set(PixelPos::new(1, 1), RED));
+        assert!(!surface.set(PixelPos::new(2, 1), RED));
+        assert!(!surface.set(PixelPos::new(1, 2), RED));
+        assert_eq!(surface.get(PixelPos::new(1, 1)), Some(RED));
     }
 
     #[test]
@@ -260,7 +282,7 @@ mod tests {
                         a: 0,
                     }
                 };
-                assert_eq!(surface.get(x, y), Some(expected), "{x},{y}");
+                assert_eq!(surface.get(PixelPos::new(x, y)), Some(expected), "{x},{y}");
             }
         }
     }
@@ -270,10 +292,16 @@ mod tests {
         let stamp = Surface::from_rgba(2, 2, [255, 0, 0, 255].repeat(4)).expect("16 bytes");
         let mut surface = Surface::new(4, 4);
         surface.blit(&stamp, 1, 1);
-        assert_eq!(surface.get(1, 1), Some(Rgba::solid(255, 0, 0)));
-        assert_eq!(surface.get(2, 2), Some(Rgba::solid(255, 0, 0)));
         assert_eq!(
-            surface.get(0, 0),
+            surface.get(PixelPos::new(1, 1)),
+            Some(Rgba::solid(255, 0, 0))
+        );
+        assert_eq!(
+            surface.get(PixelPos::new(2, 2)),
+            Some(Rgba::solid(255, 0, 0))
+        );
+        assert_eq!(
+            surface.get(PixelPos::new(0, 0)),
             Some(Rgba {
                 r: 0,
                 g: 0,
@@ -284,9 +312,12 @@ mod tests {
 
         let mut corner = Surface::new(4, 4);
         corner.blit(&stamp, 3, 3);
-        assert_eq!(corner.get(3, 3), Some(Rgba::solid(255, 0, 0)));
         assert_eq!(
-            corner.get(0, 3),
+            corner.get(PixelPos::new(3, 3)),
+            Some(Rgba::solid(255, 0, 0))
+        );
+        assert_eq!(
+            corner.get(PixelPos::new(0, 3)),
             Some(Rgba {
                 r: 0,
                 g: 0,
@@ -306,7 +337,7 @@ mod tests {
     fn one_changed_pixel_damages_only_its_tile() {
         let prev = Surface::new(8, 8);
         let mut next = prev.clone();
-        next.set(6, 5, RED);
+        next.set(PixelPos::new(6, 5), RED);
         assert_eq!(
             diff_tiles(&prev, &next, 4),
             vec![PixelRect {
@@ -337,7 +368,7 @@ mod tests {
     fn edge_tiles_clip_to_the_surface() {
         let prev = Surface::new(6, 6);
         let mut next = prev.clone();
-        next.set(5, 5, RED);
+        next.set(PixelPos::new(5, 5), RED);
         assert_eq!(
             diff_tiles(&prev, &next, 4),
             vec![PixelRect {
