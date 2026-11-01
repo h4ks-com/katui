@@ -342,12 +342,7 @@ impl PatchedKitty {
         place.placement = KittyPlacement(2 + tile_index.0 + tile_index.1 * 4096);
         place.columns = u32::from(columns);
         place.rows = u32::from(rows);
-        place.crop = Some(katui_proto::kitty::PixelRect {
-            x: rect.x,
-            y: rect.y,
-            width: rect.width,
-            height: rect.height,
-        });
+        place.crop = Some(crate::kitty::crop_rect(rect));
         bytes.write_all(&place.encode())
     }
 }

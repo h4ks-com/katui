@@ -15,6 +15,7 @@ use std::io::{self, Write as _};
 use katui_proto::kitty::{self, ImageId as KittyImage, PlacementId as KittyPlacement};
 use katui_scene::cell::Position;
 use katui_scene::placement::{ImageId, Placement, PlacementDelta};
+use katui_scene::surface::PixelRect;
 
 /// One image's RGBA payload, ready to transmit. `pixels` holds exactly
 /// `4 * width * height` bytes.
@@ -150,6 +151,17 @@ impl Kitty {
     }
 }
 
+/// Scene crop rectangle to protocol crop rectangle: the one place the
+/// layer-parallel types meet, so presenters never field-copy.
+pub(crate) fn crop_rect(crop: PixelRect) -> kitty::PixelRect {
+    kitty::PixelRect {
+        x: crop.x,
+        y: crop.y,
+        width: crop.width,
+        height: crop.height,
+    }
+}
+
 /// Address the placement origin, then anchor the place frame there.
 fn place(bytes: &mut Vec<u8>, placement: &Placement) -> io::Result<()> {
     crate::cells::move_cursor(
@@ -163,12 +175,7 @@ fn place(bytes: &mut Vec<u8>, placement: &Placement) -> io::Result<()> {
     command.placement = KittyPlacement(placement.id.0);
     command.columns = u32::from(placement.area.columns);
     command.rows = u32::from(placement.area.rows);
-    command.crop = placement.crop.map(|crop| kitty::PixelRect {
-        x: crop.x,
-        y: crop.y,
-        width: crop.width,
-        height: crop.height,
-    });
+    command.crop = placement.crop.map(crop_rect);
     bytes.write_all(&command.encode())
 }
 
