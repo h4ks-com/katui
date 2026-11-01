@@ -16,6 +16,8 @@ edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/matheusfillipe/katui"
+categories = ["command-line-interface", "gui"]
+keywords = ["terminal", "tui", "kitty-graphics", "ratatui"]
 
 [workspace.dependencies]
 base64 = "0.22"
