@@ -1,16 +1,17 @@
 //! Terminal session sequences: alternate screen and cursor state, one
 //! enter, one leave, nothing between.
 
+use crate::Sink;
 use std::io;
 
 /// Enter the alternate screen with the cursor hidden; everything drawn
 /// afterwards leaves the user's scrollback untouched.
-pub fn enter<W: io::Write>(out: &mut W) -> io::Result<()> {
+pub fn enter<W: Sink>(out: &mut W) -> io::Result<()> {
     out.write_all(b"\x1b[?1049h\x1b[?25l")
 }
 
 /// Leave the alternate screen with the cursor back.
-pub fn leave<W: io::Write>(out: &mut W) -> io::Result<()> {
+pub fn leave<W: Sink>(out: &mut W) -> io::Result<()> {
     out.write_all(b"\x1b[?25h\x1b[?1049l")
 }
 

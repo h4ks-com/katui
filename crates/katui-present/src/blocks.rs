@@ -2,6 +2,7 @@
 //! glyphs over SGR truecolor, the one pixel path every color terminal
 //! understands.
 
+use crate::Sink;
 use std::fmt::Write as _;
 
 /// An opaque color, the pixel the classifiers work with.
@@ -111,11 +112,7 @@ pub fn half(top: Rgb, bottom: Rgb) -> Block {
 /// classifies the 2x2 pixel block under it, a trailing odd column becomes
 /// a half block. SGR truecolor only; palette degradation belongs to the
 /// fidelity ladders. Rows of different lengths stop at the shorter one.
-pub fn render_line<W: std::io::Write>(
-    out: &mut W,
-    top: &[Rgb],
-    bottom: &[Rgb],
-) -> std::io::Result<()> {
+pub fn render_line<W: Sink>(out: &mut W, top: &[Rgb], bottom: &[Rgb]) -> std::io::Result<()> {
     let mut text = String::new();
     for (top_pair, bottom_pair) in top.chunks(2).zip(bottom.chunks(2)) {
         let block = match (top_pair, bottom_pair) {

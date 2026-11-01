@@ -8,6 +8,7 @@
 //! and which pairs are live, and retires an image once its last placement
 //! leaves.
 
+use crate::Sink;
 use std::collections::HashSet;
 use std::io::{self, Write as _};
 
@@ -79,7 +80,7 @@ impl Kitty {
     /// the wire. Moves re-place their pair at the new origin. Removed
     /// pairs delete themselves, and an image whose last placement left is
     /// deleted whole.
-    pub fn render<W: io::Write>(
+    pub fn render<W: Sink>(
         &mut self,
         out: &mut W,
         delta: &PlacementDelta,

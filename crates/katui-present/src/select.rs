@@ -2,12 +2,15 @@
 
 use katui_proto::probe::Capabilities;
 
-/// The graphics backend a presenter strategy drives.
+/// The graphics backend a presenter strategy drives. [`Backend::Sixel`]
+/// is reserved: no sixel presenter ships yet, and a terminal reporting
+/// sixel alone still renders through the blocks floor until one does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Backend {
     /// The kitty graphics protocol: images, placements, animation.
     Kitty,
-    /// Sixel: paletted bands, one shot per image.
+    /// Sixel: paletted bands, one shot per image. Reserved, no presenter
+    /// ships yet.
     Sixel,
     /// Half and quarter block glyphs over SGR truecolor, the floor every
     /// color terminal understands.

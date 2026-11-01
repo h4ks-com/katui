@@ -3,6 +3,7 @@
 //! re-establishes its whole style because it cannot know what the cell
 //! before it left behind; run coalescing belongs to the frame presenter.
 
+use crate::Sink;
 use std::fmt::Write as _;
 
 use katui_scene::cell::{Attrs, Cell, Color, Position};
@@ -37,11 +38,7 @@ pub enum ClearKind {
 
 /// Write `cell` at `at`: cursor addressing, reset, colors, attributes,
 /// symbol.
-pub fn render_cell<W: std::io::Write>(
-    out: &mut W,
-    at: Position,
-    cell: &Cell,
-) -> std::io::Result<()> {
+pub fn render_cell<W: Sink>(out: &mut W, at: Position, cell: &Cell) -> std::io::Result<()> {
     let mut text = String::new();
     push_cursor(&mut text, at);
     text.push_str("\x1b[0m");
@@ -58,24 +55,24 @@ pub fn render_cell<W: std::io::Write>(
 
 /// Address the cursor to `at`, one-based through `u32` so the extremes
 /// cannot wrap.
-pub fn move_cursor<W: std::io::Write>(out: &mut W, at: Position) -> std::io::Result<()> {
+pub fn move_cursor<W: Sink>(out: &mut W, at: Position) -> std::io::Result<()> {
     let mut text = String::new();
     push_cursor(&mut text, at);
     out.write_all(text.as_bytes())
 }
 
 /// Hide the cursor.
-pub fn hide_cursor<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
+pub fn hide_cursor<W: Sink>(out: &mut W) -> std::io::Result<()> {
     out.write_all(b"\x1b[?25l")
 }
 
 /// Show the cursor.
-pub fn show_cursor<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
+pub fn show_cursor<W: Sink>(out: &mut W) -> std::io::Result<()> {
     out.write_all(b"\x1b[?25h")
 }
 
 /// Erase `kind`'s region.
-pub fn clear_region<W: std::io::Write>(out: &mut W, kind: ClearKind) -> std::io::Result<()> {
+pub fn clear_region<W: Sink>(out: &mut W, kind: ClearKind) -> std::io::Result<()> {
     let sequence = match kind {
         ClearKind::All => "\x1b[2J",
         ClearKind::AfterCursor => "\x1b[0J",

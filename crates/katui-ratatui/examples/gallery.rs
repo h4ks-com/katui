@@ -4,7 +4,7 @@
 
 use std::io::{self, Write as _};
 
-use katui_proto::probe::{Capabilities, Env};
+use katui_proto::probe::Capabilities;
 use katui_ratatui::KatuiBackend;
 use katui_scene::placement::{CellRect, ImageId};
 use ratatui::Terminal;
@@ -14,7 +14,7 @@ use ratatui::widgets::{Block, Paragraph, Widget as _};
 
 fn main() -> io::Result<()> {
     let (columns, rows) = katui_rt::tty::size().map_err(io::Error::other)?;
-    let caps = probe_capabilities();
+    let caps = katui_rt::tty::probe_default();
     let mut terminal =
         Terminal::new(KatuiBackend::new(columns, rows, io::stdout())).map_err(io::Error::other)?;
     terminal
@@ -42,12 +42,10 @@ fn main() -> io::Result<()> {
                 )),
                 Line::from(format!(
                     "graphics: {}",
-                    if caps.kitty {
-                        "kitty protocol"
-                    } else if caps.sixel {
-                        "sixel"
-                    } else {
-                        "blocks only"
+                    match katui_present::select::select(&caps) {
+                        katui_present::select::Backend::Kitty => "kitty protocol",
+                        katui_present::select::Backend::Sixel => "sixel",
+                        katui_present::select::Backend::Blocks => "blocks only",
                     }
                 )),
             ])
@@ -63,16 +61,9 @@ fn main() -> io::Result<()> {
     out.flush()?;
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
-    out.write_all(b"\x1b[?25h\n")?;
+    katui_present::cells::show_cursor(&mut out)?;
+    out.write_all(b"\n")?;
     out.flush()
-}
-
-fn probe_capabilities() -> Capabilities {
-    let env = Env::capture();
-    match katui_rt::tty::StdTransport::open(std::time::Duration::from_millis(300)) {
-        Ok(mut transport) => katui_proto::probe::probe(&mut transport, &env),
-        Err(_) => katui_proto::probe::sniff(&env),
-    }
 }
 
 /// A horizontal gradient across the bottom half, through the image

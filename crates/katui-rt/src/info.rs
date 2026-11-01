@@ -1,17 +1,19 @@
 //! The capability card `katui-info` prints: one line per fact, the
-//! graphics backend first.
+//! graphics backend first, chosen through the same selection every other
+//! consumer uses.
 
+use katui_present::select::select;
 use katui_proto::probe::{Capabilities, ProbeSource};
 
 /// Render the card for `caps`.
 #[must_use]
 pub fn card(caps: &Capabilities) -> String {
-    let graphics = if caps.kitty {
-        "kitty"
-    } else if caps.sixel {
-        "sixel"
-    } else {
-        "blocks"
+    use katui_present::select::Backend;
+
+    let graphics = match select(caps) {
+        Backend::Kitty => "kitty",
+        Backend::Sixel => "sixel",
+        Backend::Blocks => "blocks",
     };
     let identity = match &caps.identity {
         Some(identity) => match &identity.version {

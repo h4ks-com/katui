@@ -9,10 +9,11 @@ pub mod select;
 pub mod session;
 pub mod surface;
 
-/// Where a presenter writes its output.
-///
-/// A bare extension of [`std::io::Write`] so every writer is a sink and
-/// tests capture output in a `Vec<u8>`.
+/// Where a presenter writes its output: the presenters' one output seam.
+/// Every presenter entry point in this crate bounds on [`Sink`], not on
+/// [`io::Write`] directly, so the write path always goes through this
+/// contract; a bare blanket impl keeps every writer a sink, so tests
+/// capture output in a `Vec<u8>` and stdout needs no wrapping.
 pub trait Sink: std::io::Write {}
 
 impl<T: std::io::Write> Sink for T {}

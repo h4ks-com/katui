@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use katui_proto::probe::{Capabilities, CellPixels, Env};
+use katui_proto::probe::CellPixels;
 use katui_rt::clock::FrameClock;
 use katui_scene::placement::CellRect;
 use katui_scene::surface::{Rgba, Surface};
@@ -114,7 +114,7 @@ struct Backdrop {
 }
 
 fn main() -> io::Result<()> {
-    let caps = probe_capabilities();
+    let caps = katui_rt::tty::probe_default();
     let (columns, rows) = katui_rt::tty::size().map_err(io::Error::other)?;
     // under a multiplexer the cell pixel size never gets probed; a
     // typical terminal cell keeps the render resolution honest, and the
@@ -173,16 +173,11 @@ fn main() -> io::Result<()> {
     if let Some(handle) = reader {
         let _ = handle.join();
     }
-    out.write_all(b"\x1b[?2026l\x1b[0m\x1b[?25h\x1b_Ga=d,d=a,q=2\x1b\\\x1b[H\x1b[2J")?;
+    out.write_all(b"\x1b[?2026l\x1b[0m")?;
+    katui_present::cells::show_cursor(&mut out)?;
+    out.write_all(&katui_proto::kitty::Delete::AllVisible.encode())?;
+    out.write_all(b"\x1b[H\x1b[2J")?;
     out.flush()
-}
-
-fn probe_capabilities() -> Capabilities {
-    let env = Env::capture();
-    match katui_rt::tty::StdTransport::open(Duration::from_millis(300)) {
-        Ok(mut transport) => katui_proto::probe::probe(&mut transport, &env),
-        Err(_) => katui_proto::probe::sniff(&env),
-    }
 }
 
 /// The quit keys, read on their own thread so the render loop never

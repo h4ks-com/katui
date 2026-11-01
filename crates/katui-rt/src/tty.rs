@@ -6,7 +6,8 @@ use std::io;
 use std::os::fd::AsFd;
 use std::time::{Duration, Instant};
 
-use katui_proto::probe::Transport;
+use katui_proto::probe::{Capabilities, Env};
+use katui_proto::probe::{Transport, probe, sniff};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::termios::{
     InputModes, LocalModes, OptionalActions, QueueSelector, SpecialCodeIndex, Termios, tcflush,
@@ -122,6 +123,17 @@ pub fn size() -> Result<(u16, u16), RtError> {
     let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
     let winsize = tcgetwinsize(tty.as_fd())?;
     Ok((winsize.ws_col, winsize.ws_row))
+}
+
+/// The one probe every demo and binary runs: the standard 300 ms budget
+/// over the controlling terminal, falling back to the environment sniff
+/// when no terminal answers.
+pub fn probe_default() -> Capabilities {
+    let env = Env::capture();
+    match StdTransport::open(Duration::from_millis(300)) {
+        Ok(mut transport) => probe(&mut transport, &env),
+        Err(_) => sniff(&env),
+    }
 }
 
 fn timespec(wait: Duration) -> Timespec {

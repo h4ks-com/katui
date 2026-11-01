@@ -1,6 +1,7 @@
 //! Surface presenters: the full-frame kitty strategy with alternating
 //! image ids, and the blocks fallback every truecolor terminal runs.
 
+use crate::Sink;
 use std::io::{self, Write as _};
 
 use katui_proto::kitty::{
@@ -40,7 +41,7 @@ impl KittySurface {
 
     /// Write `surface` scaled into `area` cells as one synchronized
     /// frame and return the bytes written.
-    pub fn render_frame<W: io::Write>(
+    pub fn render_frame<W: Sink>(
         &mut self,
         out: &mut W,
         surface: &Surface,
@@ -105,11 +106,7 @@ impl BlocksSurface {
     /// resized frame repaints every cell cursor-addressed; a later frame
     /// repaints only the cells whose pixels changed, inside synchronized
     /// output. An unchanged frame writes nothing.
-    pub fn render_frame<W: io::Write>(
-        &mut self,
-        out: &mut W,
-        surface: &Surface,
-    ) -> io::Result<usize> {
+    pub fn render_frame<W: Sink>(&mut self, out: &mut W, surface: &Surface) -> io::Result<usize> {
         let next = cells_for_surface(surface);
         let changed: Vec<(Position, katui_scene::cell::Cell)> = match self.prev.as_ref() {
             Some(prev) if prev.size() == next.size() => diff(prev, &next)
@@ -184,7 +181,7 @@ fn cells_for_surface(surface: &Surface) -> Buffer {
 /// Write a surface as quarter-block lines from the home cursor, the
 /// pixel path for terminals without a graphics protocol. Alpha is
 /// ignored: block glyphs carry no transparency.
-pub fn render_blocks<W: io::Write>(out: &mut W, surface: &Surface) -> io::Result<usize> {
+pub fn render_blocks<W: Sink>(out: &mut W, surface: &Surface) -> io::Result<usize> {
     let mut bytes = Vec::new();
     bytes.write_all(b"\x1b[H")?;
     let mut y = 0;
@@ -243,7 +240,7 @@ impl PatchedKitty {
     }
 
     /// Write one frame into `area` cells and return the bytes written.
-    pub fn render_frame<W: io::Write>(
+    pub fn render_frame<W: Sink>(
         &mut self,
         out: &mut W,
         surface: &Surface,
