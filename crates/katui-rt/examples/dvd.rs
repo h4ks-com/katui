@@ -6,11 +6,7 @@
 
 use std::collections::VecDeque;
 use std::io::{self, Write as _};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
-use katui_rt::clock::FrameClock;
 use katui_scene::placement::CellRect;
 use katui_scene::surface::{Rgba, Surface};
 
@@ -127,8 +123,7 @@ fn main() -> io::Result<()> {
     let mut backdrop = build_backdrop(width, height);
     let mut presenter = katui_present::surface::PatchedKitty::new(700, pixel_cell);
     let mut blocks = katui_present::surface::BlocksSurface::new();
-    let mut clock = FrameClock::new(30);
-    let mut stage = katui_rt::session::Stage::enter(
+    let stage = katui_rt::session::Stage::enter(
         io::stdout(),
         katui_rt::session::Teardown {
             graphics: true,
@@ -138,15 +133,8 @@ fn main() -> io::Result<()> {
     )
     .map_err(io::Error::other)?;
 
-    let running = Arc::new(AtomicBool::new(true));
-    let reader = spawn_quit_reader(running.clone());
-
-    // the render loop in a closure, so the stage restore after it runs
-    // on both the clean exit and the error path
-    let result = (|| {
-        let out = stage.writer();
-        let mut frame = 0u64;
-        while frame < MAX_FRAMES && running.load(Ordering::Relaxed) {
+    stage
+        .run(30, MAX_FRAMES, |out, frame| {
             dvd.step();
             let mut surface = Surface::new(width, height);
             draw_frame(&mut surface, &mut backdrop, &dvd, frame);
@@ -165,37 +153,9 @@ fn main() -> io::Result<()> {
                 blocks.render_frame(out, &surface)?;
             }
             out.flush()?;
-            clock.wait_for_next_frame();
-            frame += 1;
-        }
-        Ok(())
-    })();
-
-    running.store(false, Ordering::Relaxed);
-    if let Some(handle) = reader {
-        let _ = handle.join();
-    }
-    // the stage restores the terminal whatever ended the run; the
-    // original error still propagates
-    let cleanup = stage.leave().map_err(io::Error::other).map(|_| ());
-    result.and(cleanup)
-}
-
-/// The quit keys, read on their own thread so the render loop never
-/// blocks on input.
-fn spawn_quit_reader(running: Arc<AtomicBool>) -> Option<std::thread::JoinHandle<()>> {
-    let Ok(mut input) = katui_rt::tty::RawInput::open() else {
-        return None;
-    };
-    Some(std::thread::spawn(move || {
-        while running.load(Ordering::Relaxed) {
-            // q, Esc, Ctrl-C
-            if let Some(0x71 | 0x1b | 0x03) = input.read_timeout(Duration::from_millis(50)) {
-                running.store(false, Ordering::Relaxed);
-                break;
-            }
-        }
-    }))
+            Ok(true)
+        })
+        .map_err(io::Error::other)
 }
 
 /// One font pixel covers `scale` screen pixels; size the logo to roughly

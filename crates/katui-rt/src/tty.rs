@@ -168,6 +168,27 @@ pub fn pixel_cell(caps: &Capabilities) -> CellPixels {
     }
 }
 
+/// The quit keys `q`, `Esc` and `Ctrl-C` on their own thread, so a
+/// render loop never blocks on input; clearing `running` stops it and
+/// a quit key clears `running` itself.
+pub fn spawn_quit_reader(
+    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Option<std::thread::JoinHandle<()>> {
+    use std::sync::atomic::Ordering;
+
+    let Ok(mut input) = RawInput::open() else {
+        return None;
+    };
+    Some(std::thread::spawn(move || {
+        while running.load(Ordering::Relaxed) {
+            if let Some(0x71 | 0x1b | 0x03) = input.read_timeout(Duration::from_millis(50)) {
+                running.store(false, Ordering::Relaxed);
+                break;
+            }
+        }
+    }))
+}
+
 fn timespec(wait: Duration) -> Timespec {
     Timespec {
         tv_sec: wait.as_secs().min(i64::MAX.unsigned_abs()).cast_signed(),
@@ -250,6 +271,27 @@ mod tests {
     use katui_proto::probe::{Capabilities, CellPixels, ProbeSource};
     use std::os::fd::AsFd as _;
 
+    /// A pty pair for the terminal tests: the master keeps the device
+    /// alive, the slave gets driven. `None` where the sandbox denies
+    /// device nodes.
+    #[allow(clippy::print_stderr)] // the skip notice belongs on stderr
+    fn pty_slave() -> Option<(rustix::fd::OwnedFd, std::fs::File)> {
+        use rustix::pty::{OpenptFlags, openpt, ptsname, unlockpt};
+
+        let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)
+            .expect("opening a pty pair cannot fail");
+        unlockpt(&master).expect("unlocking the pty cannot fail");
+        let name = [0u8; 64];
+        let name = ptsname(&master, name).expect("the pty has a name");
+        let path = name.to_string_lossy().into_owned();
+        if let Ok(slave) = OpenOptions::new().read(true).write(true).open(&path) {
+            Some((master, slave))
+        } else {
+            eprintln!("skipping pty test: no permission to open {path}");
+            None
+        }
+    }
+
     #[test]
     fn opening_the_controlling_terminal_never_panics() {
         // a controlling terminal in the test environment is fine too: the
@@ -259,21 +301,9 @@ mod tests {
 
     /// The raw-mode lifecycle, verified against a real pty: attributes
     /// flip while the transport lives and return exactly on drop.
-    #[allow(clippy::print_stderr)] // the skip notice belongs on stderr
     #[test]
     fn raw_mode_flips_and_restores_on_a_pty() {
-        use rustix::pty::{OpenptFlags, openpt, ptsname, unlockpt};
-
-        let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)
-            .expect("opening a pty pair cannot fail");
-        unlockpt(&master).expect("unlocking the pty cannot fail");
-        let name = [0u8; 64];
-        let name = ptsname(&master, name).expect("the pty has a name");
-        let path = name.to_string_lossy().into_owned();
-        let Ok(slave) = OpenOptions::new().read(true).write(true).open(&path) else {
-            // sandboxed runners may deny pty device nodes; wherever the
-            // device opens, CI included, the lifecycle below is asserted
-            eprintln!("skipping raw-mode lifecycle test: no permission to open {path}");
+        let Some((_master, slave)) = pty_slave() else {
             return;
         };
         let witness = slave.try_clone().expect("duplicating the fd cannot fail");
@@ -304,22 +334,12 @@ mod tests {
     /// A silent terminal must end the exchange at the budget, never in a
     /// blocked read: macOS ptys report readable right after the probe's
     /// own write, so the fd is non-blocking and a lying poll retries.
-    #[allow(clippy::print_stderr)] // the skip notice belongs on stderr
     #[test]
     fn the_probe_budget_ends_a_silent_exchange() {
-        use rustix::pty::{OpenptFlags, openpt, ptsname, unlockpt};
-
         use katui_proto::probe::ProbeSource;
         use katui_proto::probe::{Env, probe};
 
-        let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY)
-            .expect("opening a pty pair cannot fail");
-        unlockpt(&master).expect("unlocking the pty cannot fail");
-        let name = [0u8; 64];
-        let name = ptsname(&master, name).expect("the pty has a name");
-        let path = name.to_string_lossy().into_owned();
-        let Ok(slave) = OpenOptions::new().read(true).write(true).open(&path) else {
-            eprintln!("skipping probe budget test: no permission to open {path}");
+        let Some((_master, slave)) = pty_slave() else {
             return;
         };
 

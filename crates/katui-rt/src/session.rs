@@ -113,6 +113,44 @@ impl<W: io::Write> Stage<W> {
         teardown.finish(&mut out)?;
         Ok(out)
     }
+
+    /// Draw at `frames_per_second` for at most `frames`, stopping early
+    /// when `draw` returns `false` or a quit key (`q`, `Esc`, `Ctrl-C`)
+    /// lands on its own thread. The stage is restored on every exit
+    /// path and the drawing error propagates.
+    #[cfg(unix)] // the quit-key reader rides the unix raw-input guard
+    pub fn run<F>(self, frames_per_second: u32, frames: u64, mut draw: F) -> io::Result<()>
+    where
+        F: FnMut(&mut W, u64) -> io::Result<bool>,
+    {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let running = Arc::new(AtomicBool::new(true));
+        let reader = crate::tty::spawn_quit_reader(running.clone());
+        let mut clock = crate::clock::FrameClock::new(frames_per_second);
+        let mut stage = self;
+        let result = (|| {
+            for frame in 0..frames {
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+                if !draw(stage.writer(), frame)? {
+                    break;
+                }
+                clock.wait_for_next_frame();
+            }
+            Ok(())
+        })();
+        running.store(false, Ordering::Relaxed);
+        if let Some(handle) = reader {
+            let _ = handle.join();
+        }
+        // the stage restores the terminal whatever ended the run; the
+        // original error still propagates
+        let cleanup = stage.leave().map(|_| ());
+        result.and(cleanup)
+    }
 }
 
 impl<W: io::Write> Drop for Stage<W> {
@@ -128,9 +166,9 @@ impl<W: io::Write> Drop for Stage<W> {
 #[cfg(test)]
 mod tests {
     use std::io;
+    use std::io::Write as _;
 
     use super::{Session, Stage, Teardown};
-
     /// A writer that records into shared storage, so bytes survive the
     /// session's drop.
     #[derive(Clone)]
@@ -225,5 +263,30 @@ mod tests {
             "\x1b[?25l\x1b[?2026l\x1b[0m\x1b[?25h",
             "drop restores when leave never ran"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_run_draws_until_the_callback_stops() {
+        let stage =
+            Stage::enter(Vec::new(), Teardown::default()).expect("writing to a Vec cannot fail");
+        let mut drawn = 0;
+        stage
+            .run(1000, 100, |out, frame| {
+                drawn = frame + 1;
+                out.write_all(b"x")?;
+                Ok(frame < 3)
+            })
+            .expect("writing to a Vec cannot fail");
+        assert_eq!(drawn, 4, "the callback's false ends the run");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_run_propagates_a_drawing_error_and_still_restores() {
+        let stage =
+            Stage::enter(Vec::new(), Teardown::default()).expect("writing to a Vec cannot fail");
+        let result = stage.run(1000, 10, |_, _| Err(io::Error::other("broken")));
+        assert!(result.is_err(), "the drawing error propagates");
     }
 }
