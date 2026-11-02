@@ -334,7 +334,10 @@ impl FrameTransmit<'_> {
     }
 
     /// Encode as APC frames, one per chunk, sharing the transmit
-    /// chunking. Opaque pixels make the composition a replacement.
+    /// chunking. Opaque pixels make the composition a replacement. A
+    /// partial frame's rectangle keys already name the payload size:
+    /// the data covers that rectangle one to one, so `s` and `v` are
+    /// never emitted twice.
     pub fn encode(&self) -> std::io::Result<Vec<Vec<u8>>> {
         let mut head = String::from("a=f");
         let _ = write!(head, ",i={}", self.id.0);
@@ -353,12 +356,13 @@ impl FrameTransmit<'_> {
                 ",x={},y={},s={},v={}",
                 rect.x, rect.y, rect.width, rect.height
             );
+        } else {
+            let _ = write!(head, ",s={},v={}", self.width, self.height);
         }
         let _ = write!(head, ",f={},t=d", Format::Rgba.key());
         if self.compressed {
             head.push_str(",o=z");
         }
-        let _ = write!(head, ",s={},v={}", self.width, self.height);
         let _ = write!(head, ",q=2");
         if let Some(gap) = self.gap_ms {
             let _ = write!(head, ",z={gap}");
@@ -804,8 +808,12 @@ mod tests {
         };
         let frames = root.encode().expect("encoding cannot fail");
         let text = String::from_utf8_lossy(&frames[0]).into_owned();
-        assert!(text.starts_with("\x1b_Ga=f,i=3,f=32,t=d,o=z,s=1,v=1,q=2,z=50,m=0;"));
+        assert!(text.starts_with("\x1b_Ga=f,i=3,s=1,v=1,f=32,t=d,o=z,q=2,z=50,m=0;"));
         assert!(text.ends_with("\x1b\\"));
+        // a frame declares its size exactly once: rect keys and payload
+        // keys are the same keys
+        assert_eq!(text.matches(",s=").count(), 1);
+        assert_eq!(text.matches(",v=").count(), 1);
 
         let edit = super::FrameTransmit {
             id: super::ImageId(3),

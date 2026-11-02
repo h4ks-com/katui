@@ -42,11 +42,19 @@ impl PixelScreen {
         }
     }
 
-    /// The same screen driven by a terminal-side animation instead.
+    /// The same screen driven by a terminal-side animation, falling back
+    /// to `fallback` patches when the terminal speaks graphics but not
+    /// the animation extension, a multiplexer that swallows frames
+    /// included.
     #[must_use]
-    pub fn animated(caps: &Capabilities, animated: AnimatedKitty) -> Self {
+    pub fn animated(caps: &Capabilities, animated: AnimatedKitty, fallback: PatchedKitty) -> Self {
+        let strategy = if caps.animation {
+            PixelStrategy::Animated(animated)
+        } else {
+            PixelStrategy::Patched(fallback)
+        };
         Self {
-            kitty: caps.kitty.then_some(PixelStrategy::Animated(animated)),
+            kitty: caps.kitty.then_some(strategy),
             blocks: BlocksSurface::new(),
         }
     }
@@ -81,6 +89,7 @@ mod tests {
     fn caps(kitty: bool) -> Capabilities {
         Capabilities {
             kitty,
+            animation: false,
             sixel: false,
             truecolor: false,
             identity: None,
@@ -138,5 +147,49 @@ mod tests {
         let text = String::from_utf8_lossy(&out);
         assert!(!text.contains("a=t"), "no graphics on a plain terminal");
         assert!(text.contains("\x1b[38;2;"), "quarter blocks render");
+    }
+
+    #[test]
+    fn an_animation_averse_graphics_terminal_gets_patches() {
+        let mut no_animation = caps(true);
+        no_animation.animation = false;
+        let animated = crate::surface::AnimatedKitty::new(90, 20, 8, 16);
+        let fallback = crate::surface::PatchedKitty::new(
+            90,
+            CellPixels {
+                width: 2,
+                height: 4,
+            },
+        );
+        let mut screen = PixelScreen::animated(&no_animation, animated, fallback);
+        let mut out = Vec::new();
+        screen
+            .render_frame(&mut out, &plain(8, 8), 4, 2)
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&out);
+        assert!(!text.contains("a=f"), "no animation frames");
+        assert!(text.contains("a=t"), "patch transmits carry the surface");
+    }
+
+    #[test]
+    fn an_animation_capable_terminal_gets_frames() {
+        let mut animated_caps = caps(true);
+        animated_caps.animation = true;
+        let animated = crate::surface::AnimatedKitty::new(90, 20, 8, 16);
+        let fallback = crate::surface::PatchedKitty::new(
+            90,
+            CellPixels {
+                width: 2,
+                height: 4,
+            },
+        );
+        let mut screen = PixelScreen::animated(&animated_caps, animated, fallback);
+        let mut out = Vec::new();
+        screen
+            .render_frame(&mut out, &plain(8, 8), 4, 2)
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&out);
+        assert!(text.contains("a=f"), "the root frame transmits");
+        assert!(text.contains("a=a"), "playback is terminal-driven");
     }
 }

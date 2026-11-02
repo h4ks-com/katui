@@ -32,9 +32,9 @@ const RESET_EVERY: u32 = 96;
 /// compositor's rate rather than the client's. An unchanged frame
 /// writes nothing.
 ///
-/// Frames accumulate terminal-side, so every [`RESET_EVERY`] frames the
-/// animation stops, the image is deleted, and a fresh root frame
-/// (one whole compressed transmit) starts the next reel.
+/// Frames accumulate terminal-side, so every 96 frames the animation
+/// stops, the image is deleted, and a fresh root frame (one whole
+/// compressed transmit) starts the next reel.
 #[derive(Debug)]
 pub struct AnimatedKitty {
     base: u32,
@@ -334,7 +334,7 @@ mod tests {
             "the reel stops before a fresh root"
         );
         assert!(
-            text.matches("a=f,i=90,f=32,t=d,o=z,s=32,v=32").count() >= 2,
+            text.matches("a=f,i=90,s=32,v=32,f=32,t=d,o=z").count() >= 2,
             "a fresh root frame starts the next reel"
         );
     }

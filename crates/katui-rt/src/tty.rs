@@ -170,7 +170,9 @@ pub fn pixel_cell(caps: &Capabilities) -> CellPixels {
 
 /// The quit keys `q`, `Esc` and `Ctrl-C` on their own thread, so a
 /// render loop never blocks on input; clearing `running` stops it and
-/// a quit key clears `running` itself.
+/// a quit key clears `running` itself. Terminal answer envelopes
+/// (`ESC _G ... ESC \`) are swallowed whole: their leading escape must
+/// not masquerade as the Esc key and kill the run over an error report.
 pub fn spawn_quit_reader(
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<std::thread::JoinHandle<()>> {
@@ -181,7 +183,24 @@ pub fn spawn_quit_reader(
     };
     Some(std::thread::spawn(move || {
         while running.load(Ordering::Relaxed) {
-            if let Some(0x71 | 0x1b | 0x03) = input.read_timeout(Duration::from_millis(50)) {
+            let Some(byte) = input.read_timeout(Duration::from_millis(50)) else {
+                continue;
+            };
+            if byte == 0x1b
+                && matches!(input.read_timeout(Duration::from_millis(10)), Some(b'_'))
+                && matches!(input.read_timeout(Duration::from_millis(10)), Some(b'G'))
+            {
+                let mut previous_was_escape = false;
+                while let Some(byte) = input.read_timeout(Duration::from_millis(50)) {
+                    if previous_was_escape && byte == b'\\' {
+                        break;
+                    }
+                    previous_was_escape = byte == 0x1b;
+                }
+                continue;
+            }
+            // q, Esc, Ctrl-C
+            if matches!(byte, 0x71 | 0x1b | 0x03) {
                 running.store(false, Ordering::Relaxed);
                 break;
             }
@@ -365,6 +384,7 @@ mod tests {
     fn caps(kitty: bool, cell: Option<CellPixels>) -> Capabilities {
         Capabilities {
             kitty,
+            animation: false,
             sixel: false,
             truecolor: false,
             identity: None,

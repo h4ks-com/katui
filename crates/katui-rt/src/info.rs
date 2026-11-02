@@ -23,8 +23,9 @@ pub fn card(caps: &Capabilities) -> String {
         ProbeSource::Declared => "declared",
     };
     format!(
-        "graphics: {graphics}\nidentity: {identity}\ntruecolor: {}\ncell: {cell}\nsource: {source}\n",
-        if caps.truecolor { "yes" } else { "no" }
+        "graphics: {graphics}\nidentity: {identity}\ntruecolor: {}\nanimation: {}\ncell: {cell}\nsource: {source}\n",
+        if caps.truecolor { "yes" } else { "no" },
+        if caps.animation { "yes" } else { "no" }
     )
 }
 
@@ -37,6 +38,7 @@ mod tests {
     fn a_probed_kitty_session_prints_every_fact() {
         let caps = Capabilities {
             kitty: true,
+            animation: false,
             sixel: false,
             truecolor: true,
             identity: Some(Identity {
@@ -51,7 +53,7 @@ mod tests {
         };
         assert_eq!(
             card(&caps),
-            "graphics: kitty\nidentity: kitty 0.29.0\ntruecolor: yes\ncell: 7x14 px\nsource: probed\n"
+            "graphics: kitty\nidentity: kitty 0.29.0\ntruecolor: yes\nanimation: no\ncell: 7x14 px\nsource: probed\n"
         );
     }
 
@@ -63,7 +65,7 @@ mod tests {
         };
         assert_eq!(
             card(&caps),
-            "graphics: blocks\nidentity: unknown\ntruecolor: no\ncell: unknown\nsource: sniffed\n"
+            "graphics: blocks\nidentity: unknown\ntruecolor: no\nanimation: no\ncell: unknown\nsource: sniffed\n"
         );
     }
 }

@@ -134,10 +134,16 @@ pub struct CellPixels {
 }
 
 /// What the terminal can do, and how we know.
+#[allow(clippy::struct_excessive_bools)] // a capability report is flags
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Capabilities {
     /// Kitty graphics protocol support.
     pub kitty: bool,
+    /// The animation extension works: frames transmit, the terminal
+    /// answers nothing, and the control commands stick. False under a
+    /// multiplexer that swallows animation frames or forwards them
+    /// without their images.
+    pub animation: bool,
     /// Sixel support, from the fourth DA1 parameter.
     pub sixel: bool,
     /// `TrueColor`, from the environment sniff.
@@ -157,15 +163,27 @@ pub struct Capabilities {
 /// prove the kitty protocol listened.
 const PROBE_IMAGE_ID: u32 = 31;
 
+/// The image id the animation probe plays under; an error naming it
+/// proves the terminal (or its multiplexer) refuses animation frames.
+const PROBE_ANIMATION_ID: u32 = 30;
+
 /// The query batch: the kitty query under [`PROBE_IMAGE_ID`] with its
-/// four-pixel RGBA payload, XTGETTCAP, the cell size and DA1 last as
-/// the barrier.
+/// four-pixel RGBA payload, an animation probe that transmits one
+/// frame, stops and deletes it, XTGETTCAP, the cell size and DA1 last
+/// as the barrier.
 fn batch() -> Vec<u8> {
-    format!("\x1b_Gi={PROBE_IMAGE_ID},s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[>0q\x1b[16t\x1b[c")
-        .into_bytes()
+    format!(
+        "\x1b_Gi={PROBE_IMAGE_ID},s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
+         \x1b_Ga=f,i={PROBE_ANIMATION_ID},s=1,v=1,f=32,t=d,q=2;AAAA\x1b\\\
+         \x1b_Ga=a,i={PROBE_ANIMATION_ID},s=1\x1b\\\
+         \x1b_Ga=d,d=i,i={PROBE_ANIMATION_ID}\x1b\\\
+         \x1b[>0q\x1b[16t\x1b[c"
+    )
+    .into_bytes()
 }
 
 /// Everything the reply stream told us.
+#[allow(clippy::struct_excessive_bools)] // a reply scan is flags
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Replies {
     kitty_ok: bool,
@@ -173,6 +191,7 @@ struct Replies {
     cell: Option<CellPixels>,
     sixel: bool,
     barrier: bool,
+    animation_error: bool,
 }
 
 /// Probe the terminal over `transport`.
@@ -211,6 +230,9 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
         caps.trust = ProbeSource::Probed;
     }
     caps.kitty |= replies.kitty_ok;
+    // only a terminal that proved the graphics protocol and raised no
+    // animation objection gets the animation path
+    caps.animation = replies.kitty_ok && !replies.animation_error;
     caps.sixel |= replies.sixel;
     if let Some(identity) = replies.identity {
         caps.identity = Some(identity);
@@ -225,6 +247,7 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
 pub fn sniff(env: &Env) -> Capabilities {
     Capabilities {
         kitty: env.supports_kitty(),
+        animation: false,
         sixel: false,
         truecolor: env.has_truecolor(),
         identity: None,
@@ -246,8 +269,21 @@ fn parse_replies(stream: &[u8]) -> Replies {
                 image == kitty::ImageId(PROBE_IMAGE_ID)
             }
         });
+    // an error naming the animation probe means the terminal rejects
+    // animation frames or the control commands, a multiplexer that
+    // swallows them included
+    let animation_error = kitty::parse_responses(stream).into_iter().any(|answer| {
+        matches!(
+            answer,
+            kitty::Response::Error {
+                image: kitty::ImageId(PROBE_ANIMATION_ID),
+                ..
+            }
+        )
+    });
     let mut replies = Replies {
         kitty_ok,
+        animation_error,
         ..Replies::default()
     };
     let mut cursor = 0;
@@ -416,6 +452,9 @@ mod tests {
             caps,
             Capabilities {
                 kitty: true,
+                // the graphics protocol answered and no animation frame
+                // was rejected: the extension is there
+                animation: true,
                 sixel: false,
                 truecolor: true,
                 identity: Some(Identity {
@@ -428,6 +467,20 @@ mod tests {
                 }),
                 trust: super::ProbeSource::Probed,
             }
+        );
+    }
+
+    #[test]
+    fn an_animation_rejection_disables_the_extension() {
+        let mut transport = Scripted::new(&[
+            b"\x1b_Gi=31;OK\x1b\\",
+            b"\x1b_Gi=30,r=1;ENOENT:Animation command refers to non-existent image\x1b\\\x1b[?62c",
+        ]);
+        let caps = probe(&mut transport, &env());
+        assert!(caps.kitty, "graphics still work");
+        assert!(
+            !caps.animation,
+            "a multiplexer that loses frames is no animation terminal"
         );
     }
 
@@ -519,7 +572,12 @@ mod tests {
     fn the_query_batch_is_one_exact_byte_string() {
         assert_eq!(
             super::batch(),
-            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[>0q\x1b[16t\x1b[c".to_vec()
+            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
+              \x1b_Ga=f,i=30,s=1,v=1,f=32,t=d,q=2;AAAA\x1b\\\
+              \x1b_Ga=a,i=30,s=1\x1b\\\
+              \x1b_Ga=d,d=i,i=30\x1b\\\
+              \x1b[>0q\x1b[16t\x1b[c"
+                .to_vec()
         );
     }
 

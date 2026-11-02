@@ -51,6 +51,7 @@ mod tests {
     fn caps(kitty: bool, sixel: bool) -> Capabilities {
         Capabilities {
             kitty,
+            animation: false,
             sixel,
             truecolor: true,
             identity: None,

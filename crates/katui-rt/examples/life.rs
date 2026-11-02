@@ -48,7 +48,7 @@ fn main() -> io::Result<()> {
     let size = katui_rt::tty::size().map_err(io::Error::other)?;
     let (columns, rows) = (size.columns, size.rows);
     let kitty = caps.kitty;
-    let _cell = katui_rt::tty::pixel_cell(&caps);
+    let cell = katui_rt::tty::pixel_cell(&caps);
     let width = u32::from(columns) * u32::from(SUBPIXEL);
     let height = u32::from(rows) * u32::from(SUBPIXEL);
 
@@ -64,10 +64,13 @@ fn main() -> io::Result<()> {
 
     // one animation, played by the terminal: each generation is a frame
     // copied from its predecessor plus the rectangles that changed, so
-    // the compositor owns the pacing and the wire stays a buffer
+    // the compositor owns the pacing and the wire stays a buffer; under
+    // a multiplexer that swallows animation frames the same loop runs
+    // on patch retransmits
     let mut screen = katui_present::surface::PixelScreen::animated(
         &caps,
         katui_present::surface::AnimatedKitty::new(700, FPS, u32::from(SUBPIXEL) * 8, 4096),
+        katui_present::surface::PatchedKitty::with_tiles(700, cell, u32::from(SUBPIXEL) * 8, 4096),
     );
     let mut life = Life::new(width, height, seed());
 
