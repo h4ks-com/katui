@@ -3,10 +3,12 @@
 //! damage-tracked blocks fallback every truecolor terminal runs.
 
 mod blocks;
+mod buffer;
 mod full;
 mod patched;
 
 pub use blocks::{BlocksSurface, render_blocks};
+pub use buffer::BufferSurface;
 pub use full::KittySurface;
 pub use patched::PatchedKitty;
 
