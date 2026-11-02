@@ -1,10 +1,13 @@
-//! The patched kitty strategy: one whole transmit, then per-frame crop
-//! placements of the tiles that changed.
+//! The patched kitty strategy: one whole transmit, then per-frame
+//! retransmits of only the tiles whose pixels changed, each under a
+//! stable tile image id whose placement it replaces.
 
 use crate::Sink;
 use std::io::{self, Write as _};
 
-use katui_proto::kitty::{ImageId as KittyImage, Place, PlacementId as KittyPlacement};
+use katui_proto::kitty::{
+    Format, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
+};
 use katui_proto::probe::CellPixels;
 use katui_scene::cell::Position;
 use katui_scene::placement::CellRect;
@@ -15,31 +18,55 @@ use super::write_whole_image;
 use crate::cells::move_cursor;
 
 /// The patched kitty surface presenter: transmits the whole surface once,
-/// then per frame re-places only the tiles whose pixels changed, as crop
-/// placements of the transmitted image. A frame with more than 64
-/// damaged tiles, a resize, or anything that invalidates the base image
-/// falls back to one whole retransmit, which is cheaper than hundreds of
-/// placements. An unchanged frame writes nothing.
+/// then per frame retransmits only the tiles whose pixels changed, each
+/// as its own small image under a stable tile id, placed over the base.
+/// The kitty protocol has no in-place pixel update (retransmitting an id
+/// replaces the image and its placements), so a tile id is simply
+/// retransmitted and its placement replaced without flicker. A frame
+/// with more damaged tiles than the patch budget, a resize, or anything
+/// that invalidates the base image falls back to one whole retransmit.
+/// An unchanged frame writes nothing.
 ///
-/// The tile side is `cell.width * cell.height` pixels, a multiple of both
-/// cell axes, so every tile maps to whole cells and patch edges never
-/// tear. This is the bandwidth workhorse: a moving sprite on a static
-/// background costs a handful of small placements per frame.
+/// The default tile side is `cell.width * cell.height` pixels, a
+/// multiple of both cell axes, so every tile maps to whole cells and
+/// patch edges never tear. This is the bandwidth workhorse: a moving
+/// sprite on a static background costs a handful of small tile
+/// retransmits per frame.
 #[derive(Debug)]
 pub struct PatchedKitty {
     base: u32,
     cell: CellPixels,
+    tile_side: u32,
+    budget: usize,
     prev: Option<Surface>,
 }
 
 impl PatchedKitty {
     /// A presenter for surfaces drawn at `cell` pixel resolution, handing
-    /// out image ids from `base` upward.
+    /// out image ids from `base` upward, tiling at the cell-derived side
+    /// with the sprite-friendly budget of 64 tiles.
     #[must_use]
     pub fn new(base: u32, cell: CellPixels) -> Self {
+        Self::with_tiles(
+            base,
+            cell,
+            u32::from(cell.width) * u32::from(cell.height),
+            64,
+        )
+    }
+
+    /// A presenter with an explicit `tile_side` in surface pixels (a
+    /// multiple of both cell axes keeps tile edges on cell boundaries)
+    /// and `budget`, the damaged-tile count past which one whole
+    /// retransmit wins. Fine-grained surfaces want small tiles and a
+    /// high budget.
+    #[must_use]
+    pub fn with_tiles(base: u32, cell: CellPixels, tile_side: u32, budget: usize) -> Self {
         Self {
             base,
             cell,
+            tile_side: tile_side.max(1),
+            budget,
             prev: None,
         }
     }
@@ -54,12 +81,11 @@ impl PatchedKitty {
         let fresh_start = self.prev.as_ref().is_none_or(|prev| {
             prev.width() != surface.width() || prev.height() != surface.height()
         });
-        let tile = self.tile_side();
         let damage = match self.prev.as_ref() {
-            Some(prev) if !fresh_start => diff_tiles(prev, surface, tile),
+            Some(prev) if !fresh_start => diff_tiles(prev, surface, self.tile_side),
             _ => Vec::new(),
         };
-        let patching = !fresh_start && damage.len() <= 64;
+        let patching = !fresh_start && damage.len() <= self.budget;
 
         let mut bytes = Vec::new();
         if !patching {
@@ -70,7 +96,7 @@ impl PatchedKitty {
         } else {
             bytes.write_all(b"\x1b[?2026h")?;
             for rect in &damage {
-                self.patch(&mut bytes, *rect, area)?;
+                self.patch(&mut bytes, surface, *rect, area)?;
             }
             bytes.write_all(b"\x1b[?2026l")?;
         }
@@ -80,10 +106,6 @@ impl PatchedKitty {
         Ok(written)
     }
 
-    fn tile_side(&self) -> u32 {
-        u32::from(self.cell.width) * u32::from(self.cell.height)
-    }
-
     fn full_frame(&self, bytes: &mut Vec<u8>, surface: &Surface, area: CellRect) -> io::Result<()> {
         bytes.write_all(b"\x1b[?2026h")?;
         write_whole_image(bytes, KittyImage(self.base), surface, area)?;
@@ -91,13 +113,15 @@ impl PatchedKitty {
         Ok(())
     }
 
-    /// One damaged tile as a crop placement of the base image: the source
-    /// rectangle selects the tile's pixels, the cell rectangle says where
-    /// they land, the stable placement id makes re-paints overwrite in
-    /// place.
+    /// One damaged tile as its own small image: the tile's pixels are
+    /// retransmitted under a stable tile id (which the protocol defines
+    /// as replacing that image and its placements), then placed over the
+    /// base at the tile's cell rectangle. No flicker: the replacement
+    /// placement shares the id pair with the one it replaces.
     fn patch(
         &self,
         bytes: &mut Vec<u8>,
+        surface: &Surface,
         rect: katui_scene::surface::PixelRect,
         area: CellRect,
     ) -> io::Result<()> {
@@ -112,6 +136,15 @@ impl PatchedKitty {
         let origin_y = area.y.saturating_add(
             u16::try_from(rect.y / u32::from(self.cell.height)).unwrap_or(u16::MAX),
         );
+        let tile_index = (rect.x / self.tile_side, rect.y / self.tile_side);
+        let image = KittyImage(self.base + 2 + tile_index.0 + tile_index.1 * 4096);
+
+        let pixels = tile_pixels(surface, rect);
+        let mut transmit = Transmit::new(image, Format::Rgba, rect.width, rect.height, &pixels);
+        transmit.compressed = true;
+        for frame in transmit.encode()? {
+            bytes.write_all(&frame)?;
+        }
         move_cursor(
             bytes,
             Position {
@@ -119,14 +152,30 @@ impl PatchedKitty {
                 y: origin_y,
             },
         )?;
-        let tile_index = (rect.x / self.tile_side(), rect.y / self.tile_side());
-        let mut place = Place::new(KittyImage(self.base));
+        let mut place = Place::new(image);
         place.placement = KittyPlacement(2 + tile_index.0 + tile_index.1 * 4096);
         place.columns = u32::from(columns);
         place.rows = u32::from(rows);
-        place.crop = Some(crate::kitty::crop_rect(rect));
         bytes.write_all(&place.encode())
     }
+}
+
+/// The tile's RGBA rows out of the surface, row-major, tile width per
+/// row: exactly the payload a tile transmit declares.
+fn tile_pixels(surface: &Surface, rect: katui_scene::surface::PixelRect) -> Vec<u8> {
+    let row_bytes = (surface.width() * 4) as usize;
+    let mut tile = Vec::with_capacity((rect.width * rect.height * 4) as usize);
+    for (row_index, row) in surface.pixels().chunks(row_bytes).enumerate() {
+        if (row_index as u32) < rect.y || (row_index as u32) >= rect.y + rect.height {
+            continue;
+        }
+        let start = (rect.x * 4) as usize;
+        let end = start + (rect.width * 4) as usize;
+        if let Some(slice) = row.get(start..end) {
+            tile.extend_from_slice(slice);
+        }
+    }
+    tile
 }
 
 #[cfg(test)]
@@ -196,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn a_small_change_patches_only_its_tile() {
+    fn a_small_change_retransmits_only_its_tile() {
         let mut presenter = PatchedKitty::new(90, cell());
         let mut surface = plain(64, 64);
         let mut warmup = Vec::new();
@@ -212,9 +261,18 @@ mod tests {
             .render_frame(&mut out, &surface, area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&out);
-        assert!(!text.contains("a=t"), "no retransmit");
-        assert!(text.contains("a=p,i=90"), "a crop placement runs");
-        assert!(text.contains("x=40,y=40"), "the crop names its tile");
+        assert!(
+            !text.contains("s=64"),
+            "the whole surface does not travel again"
+        );
+        assert!(
+            text.contains("s=8,v=8"),
+            "the damaged tile travels, 8x8 pixels at tile side 8"
+        );
+        assert!(
+            text.contains("a=p,i=20577") && text.contains("c=4,r=2"),
+            "the tile image is placed over its 4x2 cells"
+        );
     }
 
     #[test]

@@ -510,10 +510,16 @@ mod tests {
                 .expect("writing to a Vec cannot fail");
         }
         let text = String::from_utf8_lossy(&wire);
+        // whole-surface transmits (s=320) stop after the first frame;
+        // tile transmits are the small ones and keep coming
         assert!(
-            text.matches("a=t").count() <= 2,
+            text.matches("s=320,v=180").count() <= 2,
             "at most the first frame and one flash retransmit whole"
         );
-        assert!(text.contains("a=p,i=700"), "later frames patch in place");
+        assert!(
+            text.matches("a=t").count() > 2,
+            "every moving frame retransmits its damaged tiles"
+        );
+        assert!(text.contains("a=p,i=700"), "the base stays placed");
     }
 }
