@@ -27,17 +27,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use katui_scene::surface::{PixelPos, Rgba, Surface};
 
 /// Generations per second.
-const FPS: u32 = 14;
+const FPS: u32 = 11;
 /// The whole show, in generations, when nobody presses a quit key.
 const GENERATIONS: u64 = 1500;
 /// A universe with no births and no deaths for this many generations
 /// gets a fresh nebula. Oscillators and gliders never trigger it.
 const STALE_GENERATIONS: u32 = 40;
 /// How long a dead pixel's ash glows, in generations.
-const EMBER_TOP: u8 = 26;
+const EMBER_TOP: u8 = 14;
+/// Ash dims this fast per generation.
+const EMBER_DECAY: u8 = 2;
+/// The ember's one fixed color, a dim additive red.
+const EMBER: [u8; 3] = [170, 55, 30];
 /// Surface pixels per terminal cell, each axis: the automaton's
-/// resolution. A typical 100x35 terminal renders a 500x280 universe.
-const SUBPIXEL: u16 = 5;
+/// resolution, balanced against the wire: every living pixel that
+/// changes is a byte that travels.
+const SUBPIXEL: u16 = 4;
 
 fn main() -> io::Result<()> {
     let caps = katui_rt::tty::probe_default();
@@ -58,8 +63,8 @@ fn main() -> io::Result<()> {
     )
     .map_err(io::Error::other)?;
 
-    // small tiles and a high budget: this universe changes everywhere at
-    // once, and one whole retransmit only wins on the first frame
+    // tiles span whole actions, not single cells: the action is sparse
+    // once the soup burns in, and flat neighbors compress to nothing
     let mut screen = katui_present::surface::PixelScreen::new(
         &caps,
         katui_present::surface::PatchedKitty::with_tiles(700, cell, u32::from(SUBPIXEL) * 8, 4096),
@@ -199,7 +204,7 @@ impl Life {
     fn step(&mut self) {
         let stride = (self.width + 2) as usize;
         self.ember.iter_mut().for_each(|heat| {
-            *heat = heat.saturating_sub((EMBER_TOP / 8).max(1));
+            *heat = heat.saturating_sub(EMBER_DECAY);
         });
         let mut next_alive = vec![0u8; self.alive.len()];
         let mut next_age = vec![0u8; self.age.len()];
@@ -245,13 +250,15 @@ impl Life {
         };
     }
 
-    /// The universe as one image: the nebula breathing under additive
-    /// heat. New pixels are white-hot, cool through gold and fire as
-    /// they age, and their ash fades through ember red into the
-    /// background, so the whole field reads as fire crawling over a
-    /// nebula.
+    /// The universe as one image: a static nebula under additive heat.
+    /// New pixels are white-hot, cool through gold and fire as they age,
+    /// and their death leaves a fixed ember that blinks out whole. Every
+    /// color a pixel can hold is event-based: bytes change on birth, on
+    /// a bucket transition, and twice per death, never gradually, which
+    /// is what keeps the tile damage the size of the action.
     fn draw(&self, surface: &mut Surface, pulse: f32) {
-        let breath = 0.85 + 0.15 * pulse;
+        // quantized so the glow breathes in steps, not every frame
+        let breath = 0.85 + 0.15 * ((pulse * 16.0).floor() / 16.0);
         for y in 0..self.height {
             for x in 0..self.width {
                 let inner = self.index(x, y);
@@ -259,15 +266,13 @@ impl Life {
                 let (dr, dg, db) = if self.age[inner] > 0 {
                     heat(self.age[inner])
                 } else if self.ember[inner] > 0 {
-                    ash(self.ember[inner])
+                    (EMBER[0], EMBER[1], EMBER[2])
                 } else {
                     (0, 0, 0)
                 };
-                let r = ((f32::from(br) * breath) + f32::from(dr))
-                    .round()
-                    .min(255.0) as u8;
-                let g = (f32::from(bg) + f32::from(dg)).min(255.0) as u8;
-                let b = (f32::from(bb) + f32::from(db)).min(255.0) as u8;
+                let r = (f32::from(br) + f32::from(dr) * breath).round().min(255.0) as u8;
+                let g = (f32::from(bg) + f32::from(dg) * breath).round().min(255.0) as u8;
+                let b = (f32::from(bb) + f32::from(db) * breath).round().min(255.0) as u8;
                 surface.set(PixelPos::new(x, y), Rgba { r, g, b, a: 255 });
             }
         }
@@ -288,29 +293,18 @@ impl Life {
     }
 }
 
-/// The additive glow of a pixel alive for `age` generations.
+/// The additive glow of a pixel alive for `age` generations. Coarse
+/// buckets: an old cell settles to one color and stops costing bytes.
 fn heat(age: u8) -> (u8, u8, u8) {
     match u32::from(age) {
         1 => (255, 255, 235),
         2 => (255, 240, 170),
-        3..=5 => (255, 210, 90),
-        6..=12 => (255, 160, 50),
-        13..=30 => (240, 95, 35),
-        31..=70 => (200, 55, 40),
+        3..=4 => (255, 210, 90),
+        5..=9 => (255, 160, 50),
+        10..=24 => (240, 95, 35),
+        25..=60 => (200, 55, 40),
         _ => (150, 40, 60),
     }
-}
-
-/// The additive glow of ash cooling through the last `heat` steps.
-fn ash(heat: u8) -> (u8, u8, u8) {
-    let fade = u16::from(heat.min(EMBER_TOP));
-    let scale = fade * fade / u16::from(EMBER_TOP) / u16::from(EMBER_TOP);
-    let glow = (scale * 190) as u8;
-    (
-        glow,
-        (u16::from(glow) * 3 / 8) as u8,
-        (u16::from(glow) * 2 / 9) as u8,
-    )
 }
 
 /// The nebula under everything: two hue anchors blended along the
@@ -354,7 +348,7 @@ impl SplitMix64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{EMBER_TOP, Life, ash, heat};
+    use super::{EMBER_TOP, Life, heat};
 
     fn dish(columns: u32, rows: u32, alive: &[(u32, u32)]) -> Life {
         let mut life = Life::new(columns, rows, 7);
@@ -467,13 +461,14 @@ mod tests {
     }
 
     #[test]
-    fn heat_runs_hot_to_cold_and_ash_decays_to_black() {
+    #[test]
+    fn heat_runs_hot_to_cold_and_the_ember_is_a_fixed_red() {
         assert_eq!(heat(1), (255, 255, 235), "born white-hot");
         assert!(heat(20).0 > heat(50).0, "cooling dims");
-        assert_eq!(ash(0), (0, 0, 0), "cold ash is invisible");
-        assert!(ash(EMBER_TOP).0 > ash(EMBER_TOP / 2).0, "fresh ash glows");
-        let (r, g, b) = ash(EMBER_TOP);
-        assert!(r > g && g > b, "ash leans ember red");
+        let [r, g, b] = super::EMBER;
+        assert!(r > g && g > b, "the ember leans red");
+        // old cells settle: no bytes change past the last bucket
+        assert_eq!(heat(80), heat(200), "age saturates its color");
     }
 
     #[test]
