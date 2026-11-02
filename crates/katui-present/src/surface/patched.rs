@@ -35,7 +35,6 @@ use crate::cells::move_cursor;
 #[derive(Debug)]
 pub struct PatchedKitty {
     base: u32,
-    cell: CellPixels,
     tile_side: u32,
     budget: usize,
     prev: Option<Surface>,
@@ -55,16 +54,14 @@ impl PatchedKitty {
         )
     }
 
-    /// A presenter with an explicit `tile_side` in surface pixels (a
-    /// multiple of both cell axes keeps tile edges on cell boundaries)
-    /// and `budget`, the damaged-tile count past which one whole
-    /// retransmit wins. Fine-grained surfaces want small tiles and a
-    /// high budget.
+    /// A presenter with an explicit `tile_side` in surface pixels and
+    /// `budget`, the damaged-tile count past which one whole retransmit
+    /// wins. Fine-grained surfaces want small tiles and a high budget;
+    /// the tile's cell span always follows the surface-to-area scale.
     #[must_use]
-    pub fn with_tiles(base: u32, cell: CellPixels, tile_side: u32, budget: usize) -> Self {
+    pub fn with_tiles(base: u32, _cell: CellPixels, tile_side: u32, budget: usize) -> Self {
         Self {
             base,
-            cell,
             tile_side: tile_side.max(1),
             budget,
             prev: None,
@@ -125,16 +122,18 @@ impl PatchedKitty {
         rect: katui_scene::surface::PixelRect,
         area: CellRect,
     ) -> io::Result<()> {
-        // narrowing through try_from saturating, the file's one idiom
-        let columns =
-            u16::try_from(rect.width.div_ceil(u32::from(self.cell.width))).unwrap_or(u16::MAX);
-        let rows =
-            u16::try_from(rect.height.div_ceil(u32::from(self.cell.height))).unwrap_or(u16::MAX);
-        let origin_x = area
-            .x
-            .saturating_add(u16::try_from(rect.x / u32::from(self.cell.width)).unwrap_or(u16::MAX));
+        // the tile's cell span comes from the surface-to-area scale, not
+        // the terminal's cell pixels: the caller's surface may run at any
+        // resolution and the base image already proved the scale
+        let columns = u16::try_from(rect.width * u32::from(area.columns) / surface.width())
+            .unwrap_or(u16::MAX);
+        let rows = u16::try_from(rect.height * u32::from(area.rows) / surface.height())
+            .unwrap_or(u16::MAX);
+        let origin_x = area.x.saturating_add(
+            u16::try_from(rect.x * u32::from(area.columns) / surface.width()).unwrap_or(u16::MAX),
+        );
         let origin_y = area.y.saturating_add(
-            u16::try_from(rect.y / u32::from(self.cell.height)).unwrap_or(u16::MAX),
+            u16::try_from(rect.y * u32::from(area.rows) / surface.height()).unwrap_or(u16::MAX),
         );
         let tile_index = (rect.x / self.tile_side, rect.y / self.tile_side);
         let image = KittyImage(self.base + 2 + tile_index.0 + tile_index.1 * 4096);
@@ -265,8 +264,8 @@ mod tests {
             "the damaged tile travels, 8x8 pixels at tile side 8"
         );
         assert!(
-            text.contains("a=p,i=20577") && text.contains("c=4,r=2"),
-            "the tile image is placed over its 4x2 cells"
+            text.contains("a=p,i=20577") && text.contains("c=2,r=2"),
+            "the tile covers its 2x2 cells at the surface's scale"
         );
     }
 
