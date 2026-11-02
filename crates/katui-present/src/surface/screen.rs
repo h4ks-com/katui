@@ -8,17 +8,26 @@ use katui_proto::probe::Capabilities;
 use katui_scene::placement::CellRect;
 use katui_scene::surface::Surface;
 
-use super::{BlocksSurface, PatchedKitty};
+use super::{AnimatedKitty, BlocksSurface, PatchedKitty};
+
+/// The pixel strategy a [`PixelScreen`] drives on a graphics terminal.
+#[derive(Debug)]
+pub(super) enum PixelStrategy {
+    /// Patched tile retransmits, each frame displayed as it arrives.
+    Patched(PatchedKitty),
+    /// Terminal-side animation frames, played by the compositor.
+    Animated(AnimatedKitty),
+}
 
 /// The demo-grade pixel presenter for a terminal: one object that
 /// renders a pixel surface full-screen through whatever the terminal
 /// offers, so callers stop hand-picking strategies per capability. The
-/// kitty strategy comes pre-built by the caller (tile side and budget
-/// are policy); it is used only when the terminal actually speaks
+/// kitty strategy comes pre-built by the caller (tiles and budget are
+/// policy); it is used only when the terminal actually speaks
 /// graphics, and the blocks path carries every other terminal.
 #[derive(Debug, Default)]
 pub struct PixelScreen {
-    kitty: Option<PatchedKitty>,
+    kitty: Option<PixelStrategy>,
     blocks: BlocksSurface,
 }
 
@@ -28,7 +37,16 @@ impl PixelScreen {
     #[must_use]
     pub fn new(caps: &Capabilities, patched: PatchedKitty) -> Self {
         Self {
-            kitty: caps.kitty.then_some(patched),
+            kitty: caps.kitty.then_some(PixelStrategy::Patched(patched)),
+            blocks: BlocksSurface::new(),
+        }
+    }
+
+    /// The same screen driven by a terminal-side animation instead.
+    #[must_use]
+    pub fn animated(caps: &Capabilities, animated: AnimatedKitty) -> Self {
+        Self {
+            kitty: caps.kitty.then_some(PixelStrategy::Animated(animated)),
             blocks: BlocksSurface::new(),
         }
     }
@@ -43,7 +61,12 @@ impl PixelScreen {
         rows: u16,
     ) -> io::Result<usize> {
         match &mut self.kitty {
-            Some(patched) => patched.render_frame(out, surface, CellRect::full(columns, rows)),
+            Some(PixelStrategy::Patched(patched)) => {
+                patched.render_frame(out, surface, CellRect::full(columns, rows))
+            }
+            Some(PixelStrategy::Animated(animated)) => {
+                animated.render_frame(out, surface, CellRect::full(columns, rows))
+            }
             None => self.blocks.render_frame(out, surface),
         }
     }

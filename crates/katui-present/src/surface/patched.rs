@@ -161,7 +161,7 @@ impl PatchedKitty {
 
 /// The tile's RGBA rows out of the surface, row-major, tile width per
 /// row: exactly the payload a tile transmit declares.
-fn tile_pixels(surface: &Surface, rect: katui_scene::surface::PixelRect) -> Vec<u8> {
+pub(super) fn tile_pixels(surface: &Surface, rect: katui_scene::surface::PixelRect) -> Vec<u8> {
     let row_bytes = (surface.width() * 4) as usize;
     let mut tile = Vec::with_capacity((rect.width * rect.height * 4) as usize);
     for (row_index, row) in surface.pixels().chunks(row_bytes).enumerate() {
@@ -180,6 +180,10 @@ fn tile_pixels(surface: &Surface, rect: katui_scene::surface::PixelRect) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::PatchedKitty;
+
+    fn plain_surface(width: u32, height: u32) -> Surface {
+        crate::surface::test_support::solid(width, height, Rgba::solid(10, 10, 30))
+    }
     use katui_proto::probe::CellPixels;
     use katui_scene::placement::CellRect;
     use katui_scene::surface::{Rgba, Surface};
@@ -196,25 +200,12 @@ mod tests {
         CellRect::full(16, 16)
     }
 
-    fn plain(width: u32, height: u32) -> Surface {
-        let mut surface = Surface::new(width, height);
-        for y in 0..height {
-            for x in 0..width {
-                surface.set(
-                    katui_scene::surface::PixelPos::new(x, y),
-                    Rgba::solid(10, 10, 30),
-                );
-            }
-        }
-        surface
-    }
-
     #[test]
     fn the_first_frame_transmits_the_whole_surface() {
         let mut presenter = PatchedKitty::new(90, cell());
         let mut out = Vec::new();
         presenter
-            .render_frame(&mut out, &plain(64, 64), area())
+            .render_frame(&mut out, &plain_surface(64, 64), area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&out);
         assert!(text.contains("a=t"), "the whole image travels");
@@ -225,7 +216,7 @@ mod tests {
     #[test]
     fn an_identical_frame_writes_nothing() {
         let mut presenter = PatchedKitty::new(90, cell());
-        let surface = plain(64, 64);
+        let surface = plain_surface(64, 64);
         let mut first = Vec::new();
         presenter
             .render_frame(&mut first, &surface, area())
@@ -241,7 +232,7 @@ mod tests {
     #[test]
     fn a_small_change_retransmits_only_its_tile() {
         let mut presenter = PatchedKitty::new(90, cell());
-        let mut surface = plain(64, 64);
+        let mut surface = plain_surface(64, 64);
         let mut warmup = Vec::new();
         presenter
             .render_frame(&mut warmup, &surface, area())
@@ -274,7 +265,7 @@ mod tests {
         // 128x128 at 8px tiles is 256 tiles: everything dirty blows
         // the patch budget
         let mut presenter = PatchedKitty::new(90, cell());
-        let mut surface = plain(128, 128);
+        let mut surface = plain_surface(128, 128);
         let big_area = CellRect {
             x: 0,
             y: 0,
@@ -309,11 +300,11 @@ mod tests {
         let mut presenter = PatchedKitty::new(90, cell());
         let mut out = Vec::new();
         presenter
-            .render_frame(&mut out, &plain(64, 64), area())
+            .render_frame(&mut out, &plain_surface(64, 64), area())
             .expect("writing to a Vec cannot fail");
         let mut resized = Vec::new();
         presenter
-            .render_frame(&mut resized, &plain(32, 32), area())
+            .render_frame(&mut resized, &plain_surface(32, 32), area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&resized);
         assert!(text.contains("a=t"), "a resize retransmits whole");

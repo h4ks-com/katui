@@ -2,12 +2,14 @@
 //! with alternating image ids and the tile-patched refinement, plus the
 //! damage-tracked blocks fallback every truecolor terminal runs.
 
+mod animated;
 mod blocks;
 mod buffer;
 mod full;
 mod patched;
 mod screen;
 
+pub use animated::AnimatedKitty;
 pub use blocks::{BlocksSurface, render_blocks};
 pub use buffer::BufferSurface;
 pub use full::KittySurface;
