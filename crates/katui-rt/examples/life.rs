@@ -48,7 +48,7 @@ fn main() -> io::Result<()> {
     let size = katui_rt::tty::size().map_err(io::Error::other)?;
     let (columns, rows) = (size.columns, size.rows);
     let kitty = caps.kitty;
-    let cell = katui_rt::tty::pixel_cell(&caps);
+    let _cell = katui_rt::tty::pixel_cell(&caps);
     let width = u32::from(columns) * u32::from(SUBPIXEL);
     let height = u32::from(rows) * u32::from(SUBPIXEL);
 
@@ -62,11 +62,12 @@ fn main() -> io::Result<()> {
     )
     .map_err(io::Error::other)?;
 
-    // tiles span whole actions, not single cells: the action is sparse
-    // once the soup burns in, and flat neighbors compress to nothing
-    let mut screen = katui_present::surface::PixelScreen::new(
+    // one animation, played by the terminal: each generation is a frame
+    // copied from its predecessor plus the rectangles that changed, so
+    // the compositor owns the pacing and the wire stays a buffer
+    let mut screen = katui_present::surface::PixelScreen::animated(
         &caps,
-        katui_present::surface::PatchedKitty::with_tiles(700, cell, u32::from(SUBPIXEL) * 8, 4096),
+        katui_present::surface::AnimatedKitty::new(700, FPS, u32::from(SUBPIXEL) * 8, 4096),
     );
     let mut life = Life::new(width, height, seed());
 
@@ -513,6 +514,56 @@ mod tests {
         assert!(
             text.matches("a=t").count() > 1,
             "tile patches carry the generations"
+        );
+    }
+}
+
+#[cfg(test)]
+mod ab {
+    use super::Life;
+    use katui_proto::probe::CellPixels;
+    use katui_scene::placement::CellRect;
+    use katui_scene::surface::Surface;
+
+    /// Same surfaces through both presenters: the rect counts must
+    /// match, the strategies only package damage differently.
+    #[test]
+    fn both_strategies_diff_the_same_rectangles() {
+        let mut life = Life::new(200, 140, 4242);
+        let cell = CellPixels {
+            width: 5,
+            height: 5,
+        };
+        let mut patched = katui_present::surface::PatchedKitty::with_tiles(700, cell, 40, 4096);
+        let mut animated = katui_present::surface::AnimatedKitty::new(700, 20, 40, 4096);
+        let area = CellRect::full(40, 28);
+        let mut patched_wire = Vec::new();
+        let mut animated_wire = Vec::new();
+        for frame in 0..80 {
+            life.step();
+            if life.stagnant() {
+                life.reseed();
+            }
+            let mut surface = Surface::new(200, 140);
+            life.draw(&mut surface, frame as f32 * 0.004);
+            patched
+                .render_frame(&mut patched_wire, &surface, area)
+                .expect("writing to a Vec cannot fail");
+            animated
+                .render_frame(&mut animated_wire, &surface, area)
+                .expect("writing to a Vec cannot fail");
+        }
+        let patched_tiles = String::from_utf8_lossy(&patched_wire)
+            .split("\x1b_G")
+            .filter(|frame| frame.starts_with("a=t,") && !frame.contains("s=200,v=140"))
+            .count();
+        let animated_edits = String::from_utf8_lossy(&animated_wire)
+            .split("\x1b_G")
+            .filter(|frame| frame.starts_with("a=f,") && frame.contains(",r="))
+            .count();
+        assert_eq!(
+            patched_tiles, animated_edits,
+            "tile retransmits and frame edits carry the same damage"
         );
     }
 }
