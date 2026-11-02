@@ -7,7 +7,6 @@
 use std::collections::VecDeque;
 use std::io::{self, Write as _};
 
-use katui_scene::placement::CellRect;
 use katui_scene::surface::{Rgba, Surface};
 
 /// 5x7 bitmap glyphs, one `u8` per row, high bit left. The whole font
@@ -114,15 +113,16 @@ fn main() -> io::Result<()> {
     let size = katui_rt::tty::size().map_err(io::Error::other)?;
     let (columns, rows) = (size.columns, size.rows);
     // the pixel-cell fallback lives beside the probe it belongs to
-    let kitty = caps.kitty;
     let pixel_cell = katui_rt::tty::pixel_cell(&caps);
     let width = u32::from(columns) * u32::from(pixel_cell.width);
     let height = u32::from(rows) * u32::from(pixel_cell.height);
     let scale = font_scale(width, height);
     let mut dvd = Dvd::new(width, height, scale);
     let mut backdrop = build_backdrop(width, height);
-    let mut presenter = katui_present::surface::PatchedKitty::new(700, pixel_cell);
-    let mut blocks = katui_present::surface::BlocksSurface::new();
+    let mut screen = katui_present::surface::PixelScreen::new(
+        &caps,
+        katui_present::surface::PatchedKitty::new(700, pixel_cell),
+    );
     let stage = katui_rt::session::Stage::enter(
         io::stdout(),
         katui_rt::session::Teardown {
@@ -138,20 +138,7 @@ fn main() -> io::Result<()> {
             dvd.step();
             let mut surface = Surface::new(width, height);
             draw_frame(&mut surface, &mut backdrop, &dvd, frame);
-            if kitty {
-                presenter.render_frame(
-                    out,
-                    &surface,
-                    CellRect {
-                        x: 0,
-                        y: 0,
-                        columns,
-                        rows,
-                    },
-                )?;
-            } else {
-                blocks.render_frame(out, &surface)?;
-            }
+            screen.render_frame(out, &surface, columns, rows)?;
             out.flush()?;
             Ok(true)
         })

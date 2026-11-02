@@ -6,11 +6,13 @@ mod blocks;
 mod buffer;
 mod full;
 mod patched;
+mod screen;
 
 pub use blocks::{BlocksSurface, render_blocks};
 pub use buffer::BufferSurface;
 pub use full::KittySurface;
 pub use patched::PatchedKitty;
+pub use screen::PixelScreen;
 
 use crate::Sink;
 use std::io;

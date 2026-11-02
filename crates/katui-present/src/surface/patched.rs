@@ -194,12 +194,7 @@ mod tests {
     }
 
     fn area() -> CellRect {
-        CellRect {
-            x: 0,
-            y: 0,
-            columns: 16,
-            rows: 16,
-        }
+        CellRect::full(16, 16)
     }
 
     fn plain(width: u32, height: u32) -> Surface {

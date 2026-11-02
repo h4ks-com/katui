@@ -27,6 +27,20 @@ pub struct CellRect {
     pub rows: u16,
 }
 
+impl CellRect {
+    /// A rectangle covering a whole `columns` x `rows` screen from the
+    /// origin.
+    #[must_use]
+    pub const fn full(columns: u16, rows: u16) -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            columns,
+            rows,
+        }
+    }
+}
+
 /// A rectangle of the source image, in pixels. A zero-sized crop
 /// intersects the image to nothing and displays no pixels. The one
 /// pixel rectangle the scene exports: [`crate::surface::PixelRect`],
