@@ -66,6 +66,10 @@ demo-snake:
 demo-dvd:
     cargo run -p katui-rt --example dvd
 
+# the life demo: conway's automaton in 256 colors, age-hot cells, ash trails
+demo-life:
+    cargo run -p katui-rt --example life
+
 # docs gate: broken intra-doc links and rustdoc warnings fail like code
 docs:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
