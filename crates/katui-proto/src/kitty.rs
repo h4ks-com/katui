@@ -116,60 +116,65 @@ impl<'a> Transmit<'a> {
     /// construction. Only the first frame carries control data; the rest
     /// carry the `m` continuation flag alone.
     pub fn encode(&self) -> std::io::Result<Vec<Vec<u8>>> {
-        let raw = if self.compressed {
-            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(self.payload)?;
-            encoder.finish()?
-        } else {
-            self.payload.to_vec()
-        };
-        let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
-        let chunks: Vec<&str> = if encoded.is_empty() {
-            vec![""]
-        } else {
-            // base64 output is ascii by construction
-            encoded
-                .as_bytes()
-                .chunks(CHUNK)
-                .map(|c| match std::str::from_utf8(c) {
-                    Ok(text) => text,
-                    Err(_) => unreachable!("base64 output is ASCII"),
-                })
-                .collect()
-        };
-        let last = chunks.len() - 1;
-        let frames = chunks
-            .iter()
-            .enumerate()
-            .map(|(index, chunk)| {
-                let more = u8::from(index < last);
-                let mut command = String::new();
-                if index == 0 {
-                    command.push_str("a=t");
-                    let _ = write!(command, ",f={}", self.format.key());
-                    command.push_str(",t=d");
-                    if self.compressed {
-                        command.push_str(",o=z");
-                    }
-                    if self.width > 0 {
-                        let _ = write!(command, ",s={}", self.width);
-                    }
-                    if self.height > 0 {
-                        let _ = write!(command, ",v={}", self.height);
-                    }
-                    if self.id.0 > 0 {
-                        let _ = write!(command, ",i={}", self.id.0);
-                    }
-                    let _ = write!(command, ",q={}", self.quiet.key());
-                    let _ = write!(command, ",m={more};{chunk}");
-                } else {
-                    let _ = write!(command, "m={more};{chunk}");
-                }
-                apc(&command).into_bytes()
-            })
-            .collect();
-        Ok(frames)
+        let mut head = String::from("a=t");
+        let _ = write!(head, ",f={}", self.format.key());
+        head.push_str(",t=d");
+        if self.compressed {
+            head.push_str(",o=z");
+        }
+        if self.width > 0 {
+            let _ = write!(head, ",s={}", self.width);
+        }
+        if self.height > 0 {
+            let _ = write!(head, ",v={}", self.height);
+        }
+        if self.id.0 > 0 {
+            let _ = write!(head, ",i={}", self.id.0);
+        }
+        let _ = write!(head, ",q={}", self.quiet.key());
+        encode_chunks(&head, self.payload, self.compressed)
     }
+}
+
+/// Cut `payload` into APC frames under an existing `head` of control
+/// keys: compress when asked, base64, chunk at [`CHUNK`] characters, and
+/// carry the control data on the first frame alone.
+fn encode_chunks(head: &str, payload: &[u8], compressed: bool) -> std::io::Result<Vec<Vec<u8>>> {
+    let raw = if compressed {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(payload)?;
+        encoder.finish()?
+    } else {
+        payload.to_vec()
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
+    let chunks: Vec<&str> = if encoded.is_empty() {
+        vec![""]
+    } else {
+        // base64 output is ascii by construction
+        encoded
+            .as_bytes()
+            .chunks(CHUNK)
+            .map(|c| match std::str::from_utf8(c) {
+                Ok(text) => text,
+                Err(_) => unreachable!("base64 output is ASCII"),
+            })
+            .collect()
+    };
+    let last = chunks.len() - 1;
+    let frames = chunks
+        .iter()
+        .enumerate()
+        .map(|(index, chunk)| {
+            let more = u8::from(index < last);
+            if index == 0 {
+                apc(&format!("{head},m={more};{chunk}")).into_bytes()
+            } else {
+                apc(&format!("m={more};{chunk}")).into_bytes()
+            }
+        })
+        .collect();
+    Ok(frames)
 }
 
 /// A rectangle of the source image, in pixels (the `x y w h` crop keys).
@@ -270,6 +275,141 @@ pub enum Delete {
     Image(ImageId),
     /// One placement of one image (`d=i` with `p`).
     Placement(ImageId, PlacementId),
+}
+
+/// The canvas a new animation frame composes onto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Canvas {
+    /// Blank, the default: transparent black.
+    #[default]
+    Blank,
+    /// The pixels of an earlier frame, 1-based, so a frame can carry
+    /// only the rectangles that changed since it.
+    Frame(u32),
+}
+
+/// One animation frame's data (`a=f`): an append when `edit` is `None`,
+/// an in-place edit of the frame `edit` names otherwise. The payload
+/// covers `rect` of the image (the whole image when `None`); the canvas
+/// fills the rest. `gap_ms` paces playback: the number of milliseconds
+/// the terminal waits on this frame before showing the next.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameTransmit<'a> {
+    /// The animated image this frame belongs to.
+    pub id: ImageId,
+    /// Edit this existing frame instead of appending.
+    pub edit: Option<u32>,
+    /// The canvas the frame's data composes onto.
+    pub canvas: Canvas,
+    /// The part of the image the payload covers, in pixels.
+    pub rect: Option<PixelRect>,
+    /// Payload width in pixels, required by RGBA data.
+    pub width: u32,
+    /// Payload height in pixels.
+    pub height: u32,
+    /// Raw RGBA bytes.
+    pub payload: &'a [u8],
+    /// Zlib-compress the payload (`o=z`).
+    pub compressed: bool,
+    /// Playback gap in milliseconds (`z`).
+    pub gap_ms: Option<i32>,
+}
+
+impl FrameTransmit<'_> {
+    /// A frame of `width` x `height` RGBA pixels covering the whole
+    /// image, silent.
+    #[must_use]
+    pub fn full(id: ImageId, width: u32, height: u32, payload: &[u8]) -> FrameTransmit<'_> {
+        FrameTransmit {
+            id,
+            edit: None,
+            canvas: Canvas::Blank,
+            rect: None,
+            width,
+            height,
+            payload,
+            compressed: false,
+            gap_ms: None,
+        }
+    }
+
+    /// Encode as APC frames, one per chunk, sharing the transmit
+    /// chunking. Opaque pixels make the composition a replacement.
+    pub fn encode(&self) -> std::io::Result<Vec<Vec<u8>>> {
+        let mut head = String::from("a=f");
+        let _ = write!(head, ",i={}", self.id.0);
+        if let Some(frame) = self.edit {
+            let _ = write!(head, ",r={frame}");
+        }
+        match self.canvas {
+            Canvas::Blank => {}
+            Canvas::Frame(frame) => {
+                let _ = write!(head, ",c={frame}");
+            }
+        }
+        if let Some(rect) = self.rect {
+            let _ = write!(
+                head,
+                ",x={},y={},s={},v={}",
+                rect.x, rect.y, rect.width, rect.height
+            );
+        }
+        let _ = write!(head, ",f={},t=d", Format::Rgba.key());
+        if self.compressed {
+            head.push_str(",o=z");
+        }
+        let _ = write!(head, ",s={},v={}", self.width, self.height);
+        let _ = write!(head, ",q=2");
+        if let Some(gap) = self.gap_ms {
+            let _ = write!(head, ",z={gap}");
+        }
+        encode_chunks(&head, self.payload, self.compressed)
+    }
+}
+
+/// Animation control (`a=a`): start, stop or pace an animation. In
+/// loading mode the terminal plays the frames it holds and waits for
+/// more instead of looping, so the wire becomes a buffer and the
+/// compositor's clock drives the motion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Animate {
+    /// The animated image to control.
+    pub id: ImageId,
+    /// Stop (`s=1`), play-and-wait (`s=2`), play-and-loop (`s=3`).
+    pub state: Option<AnimationState>,
+    /// Set the gap of this frame, 1-based, in milliseconds.
+    pub frame_gap: Option<(u32, i32)>,
+}
+
+/// What an animation does at its last frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnimationState {
+    /// Stop on the current frame.
+    Stop,
+    /// Play, and wait for more frames instead of looping.
+    Loading,
+    /// Play, looping back to the first frame.
+    Loop,
+}
+
+impl Animate {
+    /// Encode as one APC frame.
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        let mut command = format!("a=a,i={}", self.id.0);
+        if let Some(state) = self.state {
+            let key = match state {
+                AnimationState::Stop => 1,
+                AnimationState::Loading => 2,
+                AnimationState::Loop => 3,
+            };
+            let _ = write!(command, ",s={key}");
+        }
+        if let Some((frame, gap)) = self.frame_gap {
+            let _ = write!(command, ",r={frame},z={gap}");
+        }
+        apc(&command).into_bytes()
+    }
 }
 
 impl Delete {
@@ -651,5 +791,63 @@ mod tests {
     #[test]
     fn parsing_skips_frames_without_an_image_id() {
         assert!(super::parse_responses(b"\x1b_Gp=2;OK\x1b\\").is_empty());
+    }
+
+    #[test]
+    fn frame_transmits_carry_canvas_rect_and_gap() {
+        let pixels = [0u8, 0, 0, 255];
+        let root = super::FrameTransmit {
+            id: super::ImageId(3),
+            gap_ms: Some(50),
+            compressed: true,
+            ..super::FrameTransmit::full(super::ImageId(3), 1, 1, &pixels)
+        };
+        let frames = root.encode().expect("encoding cannot fail");
+        let text = String::from_utf8_lossy(&frames[0]).into_owned();
+        assert!(text.starts_with("\x1b_Ga=f,i=3,f=32,t=d,o=z,s=1,v=1,q=2,z=50,m=0;"));
+        assert!(text.ends_with("\x1b\\"));
+
+        let edit = super::FrameTransmit {
+            id: super::ImageId(3),
+            edit: Some(7),
+            canvas: super::Canvas::Frame(6),
+            rect: Some(super::PixelRect {
+                x: 10,
+                y: 5,
+                width: 4,
+                height: 2,
+            }),
+            width: 4,
+            height: 2,
+            payload: &[0u8; 32],
+            compressed: false,
+            gap_ms: None,
+        };
+        let frames = edit.encode().expect("encoding cannot fail");
+        let text = String::from_utf8_lossy(&frames[0]).into_owned();
+        assert!(text.contains("a=f,i=3,r=7,c=6,x=10,y=5,s=4,v=2,f=32,t=d"));
+        assert!(!text.contains("o=z"), "uncompressed carries no marker");
+    }
+
+    #[test]
+    fn animation_control_encodes_state_and_gap() {
+        let run = super::Animate {
+            id: super::ImageId(3),
+            state: Some(super::AnimationState::Loading),
+            frame_gap: None,
+        };
+        assert_eq!(run.encode(), b"\x1b_Ga=a,i=3,s=2\x1b\\".to_vec());
+        let gap = super::Animate {
+            id: super::ImageId(3),
+            state: None,
+            frame_gap: Some((1, 48)),
+        };
+        assert_eq!(gap.encode(), b"\x1b_Ga=a,i=3,r=1,z=48\x1b\\".to_vec());
+        let stop = super::Animate {
+            id: super::ImageId(3),
+            state: Some(super::AnimationState::Stop),
+            frame_gap: None,
+        };
+        assert_eq!(stop.encode(), b"\x1b_Ga=a,i=3,s=1\x1b\\".to_vec());
     }
 }
