@@ -117,7 +117,7 @@ impl<'a> Transmit<'a> {
     /// carry the `m` continuation flag alone.
     pub fn encode(&self) -> std::io::Result<Vec<Vec<u8>>> {
         let raw = if self.compressed {
-            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
             encoder.write_all(self.payload)?;
             encoder.finish()?
         } else {
