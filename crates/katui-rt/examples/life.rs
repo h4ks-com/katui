@@ -26,10 +26,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use katui_scene::surface::{PixelPos, Rgba, Surface};
 
-/// Generations per second.
-const FPS: u32 = 11;
+/// Generations per second: fast enough to read as motion.
+const FPS: u32 = 20;
 /// The whole show, in generations, when nobody presses a quit key.
-const GENERATIONS: u64 = 1500;
+const GENERATIONS: u64 = 2000;
 /// A universe with no births and no deaths for this many generations
 /// gets a fresh nebula. Oscillators and gliders never trigger it.
 const STALE_GENERATIONS: u32 = 40;
@@ -40,9 +40,8 @@ const EMBER_DECAY: u8 = 2;
 /// The ember's one fixed color, a dim additive red.
 const EMBER: [u8; 3] = [170, 55, 30];
 /// Surface pixels per terminal cell, each axis: the automaton's
-/// resolution, balanced against the wire: every living pixel that
-/// changes is a byte that travels.
-const SUBPIXEL: u16 = 4;
+/// resolution. A typical 100x35 terminal renders a 500x175 universe.
+const SUBPIXEL: u16 = 5;
 
 fn main() -> io::Result<()> {
     let caps = katui_rt::tty::probe_default();
