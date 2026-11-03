@@ -143,7 +143,18 @@ pub fn size() -> Result<katui_scene::CellSize, RtError> {
 pub fn probe_default() -> Capabilities {
     let env = Env::capture();
     match TtyTransport::open(Duration::from_millis(300)) {
-        Ok(mut transport) => probe(&mut transport, &env),
+        Ok(mut transport) => {
+            let caps = probe(&mut transport, &env);
+            // answers racing the budget boundary would otherwise leak
+            // into the parent shell as typed junk; spend a quiet window
+            // draining whatever still arrives, and drop's input flush
+            // then clears the rest
+            let until = Instant::now() + Duration::from_millis(200);
+            while Instant::now() < until {
+                let _ = transport.read_timeout(Duration::from_millis(50));
+            }
+            caps
+        }
         Err(_) => sniff(&env),
     }
 }

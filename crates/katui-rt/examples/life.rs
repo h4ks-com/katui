@@ -26,8 +26,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use katui_scene::surface::{PixelPos, Rgba, Surface};
 
-/// Generations per second: fast enough to read as motion.
-const FPS: u32 = 20;
+/// Generations per second: fast enough to read as living motion.
+const FPS: u32 = 30;
 /// The whole show, in generations, when nobody presses a quit key.
 const GENERATIONS: u64 = 2000;
 /// A universe with no births and no deaths for this many generations
