@@ -64,6 +64,7 @@ impl<'a> Images<'a> {
 pub struct Kitty {
     sent: HashSet<ImageId>,
     live: HashSet<(ImageId, PlacementId)>,
+    unsynchronized: bool,
 }
 
 impl Kitty {
@@ -71,6 +72,15 @@ impl Kitty {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Leave out the synchronized-output wrapper under a multiplexer: we
+    /// send terminal queries between batches there, and a terminal holds
+    /// its answers until a synchronized update ends.
+    #[must_use]
+    pub fn for_multiplexer(mut self, multiplexed: bool) -> Self {
+        self.unsynchronized = multiplexed;
+        self
     }
 
     /// Write `delta` as kitty graphics frames and return the byte count,
@@ -94,7 +104,9 @@ impl Kitty {
             return Ok(0);
         }
         let mut bytes = Vec::new();
-        bytes.write_all(b"\x1b[?2026h")?;
+        if !self.unsynchronized {
+            bytes.write_all(b"\x1b[?2026h")?;
+        }
         let mut transmitted: HashSet<ImageId> = HashSet::new();
         for placement in &delta.added {
             let image = placement.image;
@@ -102,13 +114,14 @@ impl Kitty {
                 && !transmitted.contains(&image)
                 && let Some(payload) = images.get(image)
             {
-                let transmit = kitty::Transmit::new(
+                let mut transmit = kitty::Transmit::new(
                     KittyImage(image.0),
                     kitty::Format::Rgba,
                     payload.width,
                     payload.height,
                     payload.pixels,
                 );
+                transmit.compressed = true;
                 for frame in transmit.encode()? {
                     bytes.write_all(&frame)?;
                 }
@@ -143,11 +156,13 @@ impl Kitty {
             .collect();
         emptied.sort_unstable();
         for image in emptied {
-            bytes.write_all(&kitty::Delete::Image(KittyImage(image.0)).encode())?;
+            bytes.write_all(&kitty::Delete::Free(KittyImage(image.0)).encode())?;
             self.sent.remove(&image);
         }
         self.sent.extend(transmitted);
-        bytes.write_all(b"\x1b[?2026l")?;
+        if !self.unsynchronized {
+            bytes.write_all(b"\x1b[?2026l")?;
+        }
         let written = bytes.len();
         out.write_all(&bytes)?;
         Ok(written)
@@ -179,6 +194,7 @@ fn place(bytes: &mut Vec<u8>, placement: &Placement) -> io::Result<()> {
     command.columns = u32::from(placement.area.columns);
     command.rows = u32::from(placement.area.rows);
     command.crop = placement.crop.map(crop_rect);
+    command.z = placement.z;
     bytes.write_all(&command.encode())
 }
 
@@ -201,6 +217,7 @@ mod tests {
                 rows: 2,
             },
             crop: None,
+            z: 0,
         }
     }
 
@@ -226,14 +243,30 @@ mod tests {
     }
 
     fn transmit_frame(id: u32) -> String {
-        let frames = kitty::Transmit::new(KittyImage(id), kitty::Format::Rgba, 1, 1, PIXELS)
-            .encode()
-            .expect("a Vec encoder cannot fail");
+        let mut transmit = kitty::Transmit::new(KittyImage(id), kitty::Format::Rgba, 1, 1, PIXELS);
+        transmit.compressed = true;
+        let frames = transmit.encode().expect("a Vec encoder cannot fail");
         let mut joined = String::new();
         for frame in frames {
             joined.push_str(&String::from_utf8_lossy(&frame));
         }
         joined
+    }
+
+    #[test]
+    fn a_multiplexer_render_has_no_sync_wrapper_and_keeps_z() {
+        let mut presenter = Kitty::new().for_multiplexer(true);
+        let layered = Placement {
+            z: -5,
+            ..placement(7, 1, 0, 0)
+        };
+        let mut out = Vec::new();
+        presenter
+            .render(&mut out, &delta(&[layered], &[], &[]), &images())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&out);
+        assert!(!text.contains("2026"), "queries travel between batches");
+        assert!(text.contains(",z=-5,"), "the layer order reaches the wire");
     }
 
     fn occurrences(text: &str, needle: &str) -> usize {
@@ -354,7 +387,7 @@ mod tests {
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&out);
         let pair_delete = kitty::Delete::Placement(KittyImage(7), KittyPlacement(1)).encode();
-        let image_delete = kitty::Delete::Image(KittyImage(7)).encode();
+        let image_delete = kitty::Delete::Free(KittyImage(7)).encode();
         let pair_at = text
             .find(String::from_utf8_lossy(&pair_delete).as_ref())
             .expect("the pair deletes");

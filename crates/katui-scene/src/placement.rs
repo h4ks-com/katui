@@ -59,6 +59,8 @@ pub struct Placement {
     pub area: CellRect,
     /// The source rectangle, [`None`] for the whole image.
     pub crop: Option<PixelRect>,
+    /// Stacking order; higher draws on top and negative draws under text.
+    pub z: i32,
 }
 
 impl Placement {
@@ -96,7 +98,11 @@ pub fn diff(prev: &[Placement], next: &[Placement]) -> PlacementDelta {
     for placement in next {
         match prev.iter().find(|old| old.pair() == placement.pair()) {
             None => delta.added.push(*placement),
-            Some(old) if old.area != placement.area || old.crop != placement.crop => {
+            Some(old)
+                if old.area != placement.area
+                    || old.crop != placement.crop
+                    || old.z != placement.z =>
+            {
                 delta.moved.push(*placement);
             }
             Some(_) => {}
@@ -125,6 +131,7 @@ mod tests {
                 rows: 2,
             },
             crop: None,
+            z: 0,
         }
     }
 

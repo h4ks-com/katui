@@ -93,6 +93,7 @@ impl<W: io::Write> KatuiBackend<W> {
             id: PlacementId(1),
             area,
             crop: None,
+            z: 0,
         }];
         let delta = placement::diff(&self.placements, &next);
         let written = self.kitty.render(&mut self.out, &delta, &images)?;
@@ -626,7 +627,7 @@ mod tests {
         let bytes = backend.into_inner();
         let text = String::from_utf8_lossy(&bytes);
         assert_eq!(
-            text.matches("/wAA").count(),
+            text.matches("a=t,").count(),
             1,
             "one payload on the wire across all three draws"
         );
