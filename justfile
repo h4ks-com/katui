@@ -52,23 +52,27 @@ info:
 
 # the gallery demo: styled cells plus a kitty-protocol image (needs a terminal)
 demo-gallery:
-    cargo run -p katui-ratatui --example gallery
+    cargo run --release -p katui-ratatui --example gallery
 
 # the plasma demo: quarter-block animation on any truecolor terminal
 demo-plasma:
-    cargo run -p katui-rt --example plasma
+    cargo run --release -p katui-rt --example plasma
 
 # the snake demo: a self-playing game on a pixel surface
 demo-snake:
-    cargo run -p katui-rt --example snake
+    cargo run --release -p katui-rt --example snake
 
 # the dvd demo: the immortal bouncing logo, color per bounce, corner-hit flash
 demo-dvd:
-    cargo run -p katui-rt --example dvd
+    cargo run --release -p katui-rt --example dvd
 
 # the life demo: conway's automaton in 256 colors, age-hot cells, ash trails
 demo-life:
-    cargo run -p katui-rt --example life
+    cargo run --release -p katui-rt --example life
+
+# the pacing instrument: fps, latency and bytes per frame for each pixel strategy
+pace:
+    cargo run --release -p katui-rt --example pace
 
 # docs gate: broken intra-doc links and rustdoc warnings fail like code
 docs:
