@@ -1,5 +1,5 @@
-//! The frame clock: fixed-frame deadlines paced from one start instant,
-//! so a slow frame catches up with the next one instead of drifting.
+//! The frame clock: fixed-frame deadlines, where a frame that misses its
+//! slot restarts the schedule so a stall never ends in a burst.
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug)]
 pub struct FrameClock {
     frame_time: Duration,
-    start: Instant,
+    deadline: Instant,
     frame: u64,
 }
 
@@ -19,7 +19,7 @@ impl FrameClock {
         let rate = f64::from(frames_per_second.max(1));
         Self {
             frame_time: Duration::from_secs_f64(1.0 / rate),
-            start: Instant::now(),
+            deadline: Instant::now(),
             frame: 0,
         }
     }
@@ -35,16 +35,22 @@ impl FrameClock {
     }
 
     /// Sleep until the next frame deadline and advance. A late frame
-    /// returns immediately; the schedule, not the workload, rules.
+    /// returns immediately.
     pub fn wait_for_next_frame(&mut self) {
-        self.frame += 1;
-        let frames = u32::try_from(self.frame).unwrap_or(u32::MAX);
-        let target = self.frame_time.saturating_mul(frames);
-        if let Some(deadline) = self.start.checked_add(target)
-            && let Some(remaining) = deadline.checked_duration_since(Instant::now())
-        {
+        let remaining = self.advance(Instant::now());
+        if !remaining.is_zero() {
             thread::sleep(remaining);
         }
+    }
+
+    /// Move to the next slot and report the sleep it needs at `now`.
+    fn advance(&mut self, now: Instant) -> Duration {
+        self.frame += 1;
+        self.deadline += self.frame_time;
+        if self.deadline < now {
+            self.deadline = now;
+        }
+        self.deadline.duration_since(now)
     }
 }
 
@@ -60,6 +66,21 @@ mod tests {
         let frame_time = clock.frame_time();
         assert!(frame_time >= Duration::from_millis(16));
         assert!(frame_time <= Duration::from_millis(17));
+    }
+
+    #[test]
+    fn a_stall_restarts_the_schedule_instead_of_bursting() {
+        let mut clock = FrameClock::new(10);
+        let stalled_until = clock.deadline + Duration::from_secs(5);
+        assert!(
+            clock.advance(stalled_until).is_zero(),
+            "the late frame runs now"
+        );
+        assert_eq!(
+            clock.advance(stalled_until),
+            Duration::from_millis(100),
+            "the next frame gets a whole slot, not a catch-up"
+        );
     }
 
     #[test]

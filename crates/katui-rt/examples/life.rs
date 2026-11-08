@@ -46,11 +46,11 @@ const SUBPIXEL: u16 = 5;
 fn main() -> io::Result<()> {
     let caps = katui_rt::tty::probe_default();
     let size = katui_rt::tty::size().map_err(io::Error::other)?;
-    let (columns, rows) = (size.columns, size.rows);
+    let (mut columns, mut rows) = (size.columns, size.rows);
     let kitty = caps.kitty;
     let cell = katui_rt::tty::pixel_cell(&caps);
-    let width = u32::from(columns) * u32::from(SUBPIXEL);
-    let height = u32::from(rows) * u32::from(SUBPIXEL);
+    let mut width = u32::from(columns) * u32::from(SUBPIXEL);
+    let mut height = u32::from(rows) * u32::from(SUBPIXEL);
 
     let stage = katui_rt::session::Stage::enter(
         io::stdout(),
@@ -60,34 +60,46 @@ fn main() -> io::Result<()> {
             clear: true,
         },
     )
-    .map_err(io::Error::other)?;
+    .map_err(io::Error::other)?
+    .paced(katui_rt::session::Pacing::for_terminal(&caps));
 
-    // one animation, played by the terminal: each generation is a frame
-    // copied from its predecessor plus the rectangles that changed, so
-    // the compositor owns the pacing and the wire stays a buffer; under
-    // a multiplexer that swallows animation frames the same loop runs
-    // on patch retransmits
     let mut screen = katui_present::surface::PixelScreen::animated(
         &caps,
         katui_present::surface::AnimatedKitty::new(700, FPS, u32::from(SUBPIXEL) * 8, 4096),
         katui_present::surface::PatchedKitty::with_tiles(700, cell, u32::from(SUBPIXEL) * 8, 4096),
     );
     let mut life = Life::new(width, height, seed());
+    let mut resize = katui_rt::session::ResizeWatch::new(size);
 
-    stage
-        .run(FPS, GENERATIONS, |out, frame| {
+    let generations = std::env::args()
+        .nth(1)
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(GENERATIONS);
+    let stats = stage
+        .run(FPS, generations, |out, frame| {
+            match resize.observe(frame.size, std::time::Instant::now()) {
+                Some(katui_rt::session::ResizeEvent::Resized(new_size)) => {
+                    (columns, rows) = (new_size.columns, new_size.rows);
+                    width = u32::from(columns) * u32::from(SUBPIXEL);
+                    height = u32::from(rows) * u32::from(SUBPIXEL);
+                    life = Life::new(width, height, seed());
+                }
+                Some(katui_rt::session::ResizeEvent::Settled) => screen.invalidate(),
+                None => {}
+            }
             life.step();
             if life.stagnant() {
                 life.reseed();
             }
             let mut surface = Surface::new(width, height);
-            let pulse = (frame as f32 * 0.004).sin() * 0.5 + 0.5;
+            let pulse = (frame.number as f32 * 0.004).sin() * 0.5 + 0.5;
             life.draw(&mut surface, pulse);
             screen.render_frame(out, &surface, columns, rows)?;
             out.flush()?;
             Ok(true)
         })
-        .map_err(io::Error::other)
+        .map_err(io::Error::other)?;
+    writeln!(io::stderr(), "{stats}")
 }
 
 /// A seed from the clock, so every run starts a different universe.
@@ -258,25 +270,38 @@ impl Life {
     /// and their death leaves a fixed ember that blinks out whole. Every
     /// color a pixel can hold is event-based: bytes change on birth, on
     /// a bucket transition, and twice per death, never gradually, which
-    /// is what keeps the tile damage the size of the action.
+    /// is what keeps the tile damage the size of the action. The glow
+    /// scales once per bucket per frame, so the pixel loop is integer
+    /// adds.
     fn draw(&self, surface: &mut Surface, pulse: f32) {
         // quantized so the glow breathes in steps, not every frame
         let breath = 0.85 + 0.15 * ((pulse * 16.0).floor() / 16.0);
+        let scale = |delta: (u8, u8, u8)| -> (u8, u8, u8) {
+            let channel = |value: u8| (f32::from(value) * breath).round().min(255.0) as u8;
+            (channel(delta.0), channel(delta.1), channel(delta.2))
+        };
+        let glow = BUCKETS.map(scale);
+        let ember = scale((EMBER[0], EMBER[1], EMBER[2]));
         for y in 0..self.height {
             for x in 0..self.width {
                 let inner = self.index(x, y);
                 let [br, bg, bb] = self.background[inner];
                 let (dr, dg, db) = if self.age[inner] > 0 {
-                    heat(self.age[inner])
+                    glow[bucket(self.age[inner])]
                 } else if self.ember[inner] > 0 {
-                    (EMBER[0], EMBER[1], EMBER[2])
+                    ember
                 } else {
                     (0, 0, 0)
                 };
-                let r = (f32::from(br) + f32::from(dr) * breath).round().min(255.0) as u8;
-                let g = (f32::from(bg) + f32::from(dg) * breath).round().min(255.0) as u8;
-                let b = (f32::from(bb) + f32::from(db) * breath).round().min(255.0) as u8;
-                surface.set(PixelPos::new(x, y), Rgba { r, g, b, a: 255 });
+                surface.set(
+                    PixelPos::new(x, y),
+                    Rgba {
+                        r: br.saturating_add(dr),
+                        g: bg.saturating_add(dg),
+                        b: bb.saturating_add(db),
+                        a: 255,
+                    },
+                );
             }
         }
     }
@@ -298,17 +323,33 @@ impl Life {
 
 /// The additive glow of a pixel alive for `age` generations. Coarse
 /// buckets: an old cell settles to one color and stops costing bytes.
+#[cfg(test)]
 fn heat(age: u8) -> (u8, u8, u8) {
+    BUCKETS[bucket(age)]
+}
+
+/// The heat bucket an age falls in.
+fn bucket(age: u8) -> usize {
     match u32::from(age) {
-        1 => (255, 255, 235),
-        2 => (255, 240, 170),
-        3..=4 => (255, 210, 90),
-        5..=9 => (255, 160, 50),
-        10..=24 => (240, 95, 35),
-        25..=60 => (200, 55, 40),
-        _ => (150, 40, 60),
+        1 => 0,
+        2 => 1,
+        3..=4 => 2,
+        5..=9 => 3,
+        10..=24 => 4,
+        25..=60 => 5,
+        _ => 6,
     }
 }
+
+const BUCKETS: [(u8, u8, u8); 7] = [
+    (255, 255, 235),
+    (255, 240, 170),
+    (255, 210, 90),
+    (255, 160, 50),
+    (240, 95, 35),
+    (200, 55, 40),
+    (150, 40, 60),
+];
 
 /// The nebula under everything: two hue anchors blended along the
 /// diagonal, dimmed toward the edges, and speckled dark enough for the
@@ -463,7 +504,6 @@ mod tests {
         );
     }
 
-    #[test]
     #[test]
     fn heat_runs_hot_to_cold_and_the_ember_is_a_fixed_red() {
         assert_eq!(heat(1), (255, 255, 235), "born white-hot");

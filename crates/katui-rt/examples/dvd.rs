@@ -111,14 +111,22 @@ struct Backdrop {
 fn main() -> io::Result<()> {
     let caps = katui_rt::tty::probe_default();
     let size = katui_rt::tty::size().map_err(io::Error::other)?;
-    let (columns, rows) = (size.columns, size.rows);
-    // the pixel-cell fallback lives beside the probe it belongs to
-    let pixel_cell = katui_rt::tty::pixel_cell(&caps);
-    let width = u32::from(columns) * u32::from(pixel_cell.width);
-    let height = u32::from(rows) * u32::from(pixel_cell.height);
-    let scale = font_scale(width, height);
-    let mut dvd = Dvd::new(width, height, scale);
+    let (mut columns, mut rows) = (size.columns, size.rows);
+    // pixel art needs no native resolution, and a cell's 1:2 shape keeps
+    // the pixels square
+    let pixel_cell = if caps.kitty {
+        katui_proto::probe::CellPixels {
+            width: 5,
+            height: 10,
+        }
+    } else {
+        katui_rt::tty::pixel_cell(&caps)
+    };
+    let mut width = u32::from(columns) * u32::from(pixel_cell.width);
+    let mut height = u32::from(rows) * u32::from(pixel_cell.height);
+    let mut dvd = Dvd::new(width, height, font_scale(width, height));
     let mut backdrop = build_backdrop(width, height);
+    let mut resize = katui_rt::session::ResizeWatch::new(size);
     let mut screen = katui_present::surface::PixelScreen::new(
         &caps,
         katui_present::surface::PatchedKitty::new(700, pixel_cell),
@@ -131,18 +139,35 @@ fn main() -> io::Result<()> {
             clear: true,
         },
     )
-    .map_err(io::Error::other)?;
+    .map_err(io::Error::other)?
+    .paced(katui_rt::session::Pacing::for_terminal(&caps));
 
-    stage
-        .run(30, MAX_FRAMES, |out, frame| {
+    let frames = std::env::args()
+        .nth(1)
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(MAX_FRAMES);
+    let stats = stage
+        .run(30, frames, |out, frame| {
+            match resize.observe(frame.size, std::time::Instant::now()) {
+                Some(katui_rt::session::ResizeEvent::Resized(new_size)) => {
+                    (columns, rows) = (new_size.columns, new_size.rows);
+                    width = u32::from(columns) * u32::from(pixel_cell.width);
+                    height = u32::from(rows) * u32::from(pixel_cell.height);
+                    dvd = Dvd::new(width, height, font_scale(width, height));
+                    backdrop = build_backdrop(width, height);
+                }
+                Some(katui_rt::session::ResizeEvent::Settled) => screen.invalidate(),
+                None => {}
+            }
             dvd.step();
             let mut surface = Surface::new(width, height);
-            draw_frame(&mut surface, &mut backdrop, &dvd, frame);
+            draw_frame(&mut surface, &mut backdrop, &dvd, frame.number);
             screen.render_frame(out, &surface, columns, rows)?;
             out.flush()?;
             Ok(true)
         })
-        .map_err(io::Error::other)
+        .map_err(io::Error::other)?;
+    writeln!(io::stderr(), "{stats}")
 }
 
 /// One font pixel covers `scale` screen pixels; size the logo to roughly
@@ -497,16 +522,11 @@ mod tests {
                 .expect("writing to a Vec cannot fail");
         }
         let text = String::from_utf8_lossy(&wire);
-        // whole-surface transmits (s=320) stop after the first frame;
-        // tile transmits are the small ones and keep coming
-        assert!(
-            text.matches("s=320,v=180").count() <= 2,
-            "at most the first frame and one flash retransmit whole"
-        );
-        assert!(
-            text.matches("a=t").count() > 2,
-            "every moving frame retransmits its damaged tiles"
-        );
+        let fulls = text.matches("s=320,v=180").count();
+        let tiles = text.matches("a=t,").count();
+        assert!(fulls >= 1, "the first frame transmits whole");
+        assert!(fulls <= 40, "dense frames are the minority: {fulls} of 120");
+        assert!(tiles > 1000, "sparse frames patch in tiles: {tiles}");
         assert!(text.contains("a=p,i=700"), "the base stays placed");
     }
 }
