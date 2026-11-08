@@ -2,6 +2,7 @@
 //! ARCHITECTURE.md. Everything here is pure; the crate performs no I/O
 //! and knows nothing about scenes or widgets.
 
+pub mod input;
 pub mod kitty;
 pub mod probe;
 pub mod rgp;

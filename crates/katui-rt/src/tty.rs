@@ -5,7 +5,6 @@ use std::fs::{File, OpenOptions};
 use std::os::fd::AsFd;
 use std::time::{Duration, Instant};
 
-use katui_proto::kitty;
 use katui_proto::probe::CellPixels;
 use katui_proto::probe::{Capabilities, Env};
 use katui_proto::probe::{Transport, probe, sniff};
@@ -50,6 +49,9 @@ fn enter_raw(tty: &File, with_signals: bool) -> Result<Termios, RtError> {
     Ok(saved)
 }
 
+/// The pause after the terminal claims input it cannot deliver.
+const SPURIOUS_READY_BACKOFF: Duration = Duration::from_millis(4);
+
 /// Raw keyboard input for the duration of the guard: the controlling
 /// terminal delivers bytes one at a time, with `Ctrl-C`, `q` and `Esc`
 /// arriving as plain bytes instead of signals, and the saved state
@@ -67,20 +69,25 @@ impl RawInput {
         Ok(Self { tty, saved })
     }
 
-    /// Wait up to `wait` for one key byte; `None` on silence.
-    pub fn read_timeout(&mut self, wait: Duration) -> Option<u8> {
-        let timeout = timespec(wait);
-        let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
-        let Ok(ready) = poll(&mut fds, Some(&timeout)) else {
-            return None;
-        };
-        if ready == 0 {
-            return None;
-        }
-        let mut buffer = [0u8; 1];
-        match rustix::io::read(self.tty.as_fd(), &mut buffer) {
-            Ok(1) => Some(buffer[0]),
-            _ => None,
+    /// Wait up to `wait` for input; `None` on silence.
+    pub fn read_chunk(&mut self, wait: Duration) -> Option<Vec<u8>> {
+        let deadline = Instant::now() + wait;
+        let mut buffer = [0u8; 4096];
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
+            if !matches!(poll(&mut fds, Some(&timespec(remaining))), Ok(ready) if ready > 0) {
+                return None;
+            }
+            match rustix::io::read(self.tty.as_fd(), &mut buffer) {
+                Ok(count) if count > 0 => return buffer.get(..count).map(<[u8]>::to_vec),
+                // macOS ptys can report readable with no bytes to deliver,
+                // so we back off here or this loop would spin a whole core
+                Err(rustix::io::Errno::AGAIN) if !remaining.is_zero() => {
+                    std::thread::sleep(SPURIOUS_READY_BACKOFF);
+                }
+                _ => return None,
+            }
         }
     }
 }
@@ -160,6 +167,24 @@ pub fn probe_default() -> Capabilities {
     }
 }
 
+/// The cell size the terminal driver reports, when it reports pixels.
+#[must_use]
+pub fn measured_cell() -> Option<CellPixels> {
+    let tty = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+        .ok()?;
+    let window = tcgetwinsize(tty.as_fd()).ok()?;
+    if window.ws_xpixel == 0 || window.ws_ypixel == 0 || window.ws_col == 0 || window.ws_row == 0 {
+        return None;
+    }
+    Some(CellPixels {
+        width: window.ws_xpixel / window.ws_col,
+        height: window.ws_ypixel / window.ws_row,
+    })
+}
+
 /// The pixel size of one cell for a pixel-surface run: what the probe
 /// measured, else a typical terminal cell under kitty (under a
 /// multiplexer the cell size never gets probed, and the placement's
@@ -178,127 +203,6 @@ pub fn pixel_cell(caps: &Capabilities) -> CellPixels {
             height: 2,
         }
     }
-}
-
-/// The longest terminal string the scanner keeps; graphics answers are
-/// far shorter.
-const MAX_ANSWER: usize = 1024;
-
-#[derive(Debug, PartialEq, Eq)]
-enum InputEvent {
-    Quit,
-    Answer(u32),
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum ScanState {
-    #[default]
-    Ground,
-    Escape,
-    Csi,
-    Text,
-    TextEscape,
-}
-
-/// Splits raw input into quit keys and graphics answers. Terminal
-/// sequences are consumed whole, so an arrow key or an answer's leading
-/// escape never reads as the Esc key.
-#[derive(Debug, Default)]
-struct InputScanner {
-    state: ScanState,
-    text: Vec<u8>,
-}
-
-impl InputScanner {
-    fn feed(&mut self, byte: u8) -> Option<InputEvent> {
-        match self.state {
-            ScanState::Ground => match byte {
-                0x1b => self.state = ScanState::Escape,
-                b'q' | 0x03 => return Some(InputEvent::Quit),
-                _ => {}
-            },
-            ScanState::Escape => return self.after_escape(byte),
-            ScanState::Csi if (0x40..=0x7e).contains(&byte) => self.state = ScanState::Ground,
-            ScanState::Csi => {}
-            ScanState::Text if byte == 0x1b => self.state = ScanState::TextEscape,
-            ScanState::Text => {
-                if self.text.len() < MAX_ANSWER {
-                    self.text.push(byte);
-                }
-            }
-            ScanState::TextEscape if byte == b'\\' => {
-                self.state = ScanState::Ground;
-                return self.finished_answer();
-            }
-            ScanState::TextEscape => self.state = ScanState::Text,
-        }
-        None
-    }
-
-    fn after_escape(&mut self, byte: u8) -> Option<InputEvent> {
-        // a sequence starting right after an escape means that escape
-        // stood alone, so we read it as the Esc key and scan the new one
-        if byte == 0x1b {
-            return Some(InputEvent::Quit);
-        }
-        self.state = match byte {
-            b'[' => ScanState::Csi,
-            b'_' | b'P' | b']' => {
-                self.text.clear();
-                self.text.extend_from_slice(&[0x1b, byte]);
-                ScanState::Text
-            }
-            _ => ScanState::Ground,
-        };
-        None
-    }
-
-    fn finished_answer(&mut self) -> Option<InputEvent> {
-        self.text.extend_from_slice(b"\x1b\\");
-        let answer = kitty::parse_responses(&self.text).into_iter().next()?;
-        let (kitty::Response::Ok { image, .. } | kitty::Response::Error { image, .. }) = answer;
-        Some(InputEvent::Answer(image.0))
-    }
-
-    /// Input went quiet: an escape nothing followed is the Esc key, and
-    /// any other open sequence was an Alt chord, since terminals write
-    /// their replies whole.
-    fn idle(&mut self) -> Option<InputEvent> {
-        (std::mem::take(&mut self.state) == ScanState::Escape).then_some(InputEvent::Quit)
-    }
-}
-
-/// The quit keys `q`, `Esc` and `Ctrl-C` on their own thread, so a
-/// render loop never blocks on input. A quit key clears `running`, and
-/// the thread keeps raw mode until `stop` is set, so answers still in
-/// flight never reach the shell. Graphics answers go to `answers` by
-/// image id.
-pub fn spawn_input_reader(
-    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    answers: std::sync::mpsc::Sender<u32>,
-) -> Option<std::thread::JoinHandle<()>> {
-    use std::sync::atomic::Ordering;
-
-    let Ok(mut input) = RawInput::open() else {
-        return None;
-    };
-    Some(std::thread::spawn(move || {
-        let mut scanner = InputScanner::default();
-        while !stop.load(Ordering::Relaxed) {
-            let event = match input.read_timeout(Duration::from_millis(50)) {
-                Some(byte) => scanner.feed(byte),
-                None => scanner.idle(),
-            };
-            match event {
-                Some(InputEvent::Quit) => running.store(false, Ordering::Relaxed),
-                Some(InputEvent::Answer(image)) => {
-                    let _ = answers.send(image);
-                }
-                None => {}
-            }
-        }
-    }))
 }
 
 fn timespec(wait: Duration) -> Timespec {
@@ -476,67 +380,6 @@ mod tests {
         assert!(
             start.elapsed() < Duration::from_secs(2),
             "the budget ends the exchange, not a blocked read"
-        );
-    }
-
-    fn scan(input: &[u8]) -> Vec<super::InputEvent> {
-        let mut scanner = super::InputScanner::default();
-        input
-            .iter()
-            .filter_map(|byte| scanner.feed(*byte))
-            .collect()
-    }
-
-    #[test]
-    fn q_and_ctrl_c_quit() {
-        assert_eq!(scan(b"q"), vec![super::InputEvent::Quit]);
-        assert_eq!(scan(&[3]), vec![super::InputEvent::Quit]);
-    }
-
-    #[test]
-    fn a_lone_escape_quits_once_input_goes_quiet() {
-        let mut scanner = super::InputScanner::default();
-        assert_eq!(scanner.feed(0x1b), None);
-        assert_eq!(scanner.idle(), Some(super::InputEvent::Quit));
-        assert_eq!(scanner.idle(), None);
-    }
-
-    #[test]
-    fn escape_quits_even_when_an_answer_arrives_right_behind_it() {
-        assert_eq!(
-            scan(b"\x1b\x1b_Gi=7;OK\x1b\\"),
-            vec![super::InputEvent::Quit, super::InputEvent::Answer(7)]
-        );
-    }
-
-    #[test]
-    fn an_alt_chord_cannot_wedge_the_quit_keys() {
-        let mut scanner = super::InputScanner::default();
-        assert!(b"\x1b]".iter().all(|byte| scanner.feed(*byte).is_none()));
-        assert_eq!(scanner.idle(), None, "an Alt chord is no Esc key");
-        assert_eq!(scanner.feed(b'q'), Some(super::InputEvent::Quit));
-    }
-
-    #[test]
-    fn arrow_keys_never_read_as_escape() {
-        let mut scanner = super::InputScanner::default();
-        assert!(b"\x1b[A".iter().all(|byte| scanner.feed(*byte).is_none()));
-        assert_eq!(scanner.idle(), None);
-    }
-
-    #[test]
-    fn graphics_answers_report_their_image_even_when_they_fail() {
-        assert_eq!(
-            scan(b"\x1b_Gi=29;OK\x1b\\\x1b_Gi=30,r=1;ENOENT:gone\x1b\\"),
-            vec![super::InputEvent::Answer(29), super::InputEvent::Answer(30)]
-        );
-    }
-
-    #[test]
-    fn a_q_inside_an_answer_does_not_quit() {
-        assert_eq!(
-            scan(b"\x1b_Gi=5;qqq\x1b\\"),
-            vec![super::InputEvent::Answer(5)]
         );
     }
 

@@ -140,7 +140,7 @@ fn main() -> io::Result<()> {
         },
     )
     .map_err(io::Error::other)?
-    .paced(katui_rt::session::Pacing::for_terminal(&caps));
+    .paced(katui_rt::pacing::Pacing::for_terminal(&caps));
 
     let frames = std::env::args()
         .nth(1)

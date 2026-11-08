@@ -1,12 +1,17 @@
 //! The katui runtime: the one impure layer. It owns the controlling
-//! terminal, the raw-mode lifecycle around a probe, and the frame
-//! clock; the event pump is still future work. Everything pure lives
-//! in the crates below.
+//! terminal, the raw-mode lifecycle, the frame clock, the event pump and
+//! the interactive loop. Everything pure lives in the crates below.
 
 pub mod clock;
 pub mod info;
 pub mod session;
 
+#[cfg(unix)]
+pub mod app;
+#[cfg(unix)]
+pub mod events;
+#[cfg(unix)]
+pub mod pacing;
 #[cfg(unix)]
 pub mod tty;
 

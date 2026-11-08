@@ -3,20 +3,17 @@
 //! katui happens beside it, on the same stdout.
 
 use std::io;
-#[cfg(unix)]
-use std::sync::Arc;
-#[cfg(unix)]
-use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(unix)]
-use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 use katui_present::cells;
 use katui_present::session;
 use katui_proto::kitty;
-use katui_proto::probe::Capabilities;
 
 use crate::RtError;
+#[cfg(unix)]
+use crate::events::EventPump;
+#[cfg(unix)]
+use crate::pacing::{Pacer, Pacing};
 
 /// An alternate-screen session. Drop leaves the screen, whatever ended
 /// it: normal return, error, panic.
@@ -92,37 +89,8 @@ impl Teardown {
 pub struct Stage<W: io::Write> {
     out: Option<W>,
     teardown: Teardown,
+    #[cfg(unix)]
     pacing: Pacing,
-}
-
-/// How a run keeps its output in step with the terminal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Pacing {
-    /// The frame clock alone, for terminals that answer no queries.
-    #[default]
-    Timer,
-    /// Wait for the terminal after every frame.
-    EachFrame,
-    /// Wait after every batch of commands, sized for a multiplexer.
-    Batches,
-}
-
-/// A batch size well inside what a multiplexer buffers: rmux 0.10 drops
-/// graphics commands past about 64 KB in flight, and 32 KB batches still
-/// lost the odd tile.
-#[cfg(unix)]
-const MULTIPLEXER_BATCH: usize = 16 * 1024;
-
-impl Pacing {
-    /// The pacing `caps` can support.
-    #[must_use]
-    pub fn for_terminal(caps: &Capabilities) -> Self {
-        match (caps.kitty, caps.multiplexed()) {
-            (false, _) => Self::Timer,
-            (true, false) => Self::EachFrame,
-            (true, true) => Self::Batches,
-        }
-    }
 }
 
 /// What a draw callback knows about its frame.
@@ -194,23 +162,6 @@ impl ResizeWatch {
     }
 }
 
-/// The first graphics query id a paced run waits on; each query takes
-/// its own id, so an extra answer from a second attached client can
-/// never stand in for the one being waited on.
-#[cfg(unix)]
-const PACING_IMAGES_FROM: u32 = 1_000_000;
-
-/// How long a paced run keeps listening for answers still on their way
-/// when it ends, and the silence that ends the listening sooner.
-#[cfg(unix)]
-const LATE_ANSWER_LIMIT: Duration = Duration::from_millis(500);
-#[cfg(unix)]
-const LATE_ANSWER_SILENCE: Duration = Duration::from_millis(120);
-
-/// How long a paced run waits for one answer before it stops asking.
-#[cfg(unix)]
-const PACING_WAIT: Duration = Duration::from_millis(500);
-
 /// The frames and timings of one run.
 #[derive(Debug, Clone, Default)]
 pub struct RunStats {
@@ -269,12 +220,14 @@ impl<W: io::Write> Stage<W> {
         Ok(Self {
             out: Some(out),
             teardown,
+            #[cfg(unix)]
             pacing: Pacing::Timer,
         })
     }
 
     /// Set how [`Stage::run`] waits for the terminal. Frames then never
     /// queue up behind a slow terminal, so input stays responsive.
+    #[cfg(unix)]
     #[must_use]
     pub fn paced(mut self, pacing: Pacing) -> Self {
         self.pacing = pacing;
@@ -301,35 +254,31 @@ impl<W: io::Write> Stage<W> {
 
     /// Draw at `frames_per_second` for at most `frames`, stopping early
     /// when `draw` returns `false` or a quit key (`q`, `Esc`, `Ctrl-C`)
-    /// lands on its own thread. The stage is restored on every exit
+    /// arrives. The stage is restored on every exit
     /// path and the drawing error propagates.
-    #[cfg(unix)] // the quit-key reader rides the unix raw-input guard
+    #[cfg(unix)] // we read input through the unix raw-input guard
     pub fn run<F>(self, frames_per_second: u32, frames: u64, mut draw: F) -> io::Result<RunStats>
     where
         F: FnMut(&mut Vec<u8>, FrameContext) -> io::Result<bool>,
     {
-        let running = Arc::new(AtomicBool::new(true));
-        let stop = Arc::new(AtomicBool::new(false));
-        let (answer_sender, answers) = mpsc::channel();
-        let reader = crate::tty::spawn_input_reader(running.clone(), stop.clone(), answer_sender);
-        let mut pacing = if reader.is_some() {
+        let mut pump = EventPump::<()>::start();
+        let mut pacer = Pacer::new(if pump.reads_terminal() {
             self.pacing
         } else {
             Pacing::Timer
-        };
+        });
+        let late_answers = pacer.is_answer_paced();
         let mut clock = crate::clock::FrameClock::new(frames_per_second);
         let mut stage = self;
         let mut stats = RunStats {
-            terminal_paced: pacing != Pacing::Timer,
+            terminal_paced: pacer.is_answer_paced(),
             ..RunStats::default()
         };
         let mut wire = Vec::new();
-        let listens_for_answers = pacing != Pacing::Timer;
-        let mut next_query = PACING_IMAGES_FROM;
         let started = Instant::now();
         let result = (|| {
             for frame in 0..frames {
-                if !running.load(Ordering::Relaxed) {
+                if quit_requested(&mut pump) {
                     break;
                 }
                 let began = Instant::now();
@@ -339,8 +288,7 @@ impl<W: io::Write> Stage<W> {
                     size: crate::tty::size().ok(),
                 };
                 let keep_going = draw(&mut wire, context)?;
-                if !deliver(stage.writer(), &wire, pacing, &answers, &mut next_query)? {
-                    pacing = Pacing::Timer;
+                if !pacer.deliver(stage.writer(), &wire, &mut pump)? {
                     stats.terminal_paced = false;
                     stats.pacing_lost_at = Some(stats.frames());
                 }
@@ -353,14 +301,7 @@ impl<W: io::Write> Stage<W> {
             Ok(())
         })();
         stats.elapsed = started.elapsed();
-        running.store(false, Ordering::Relaxed);
-        if listens_for_answers {
-            drain_late_answers(&answers);
-        }
-        stop.store(true, Ordering::Relaxed);
-        if let Some(handle) = reader {
-            let _ = handle.join();
-        }
+        pump.finish(late_answers);
         // the stage restores the terminal whatever ended the run; the
         // original error still propagates
         let cleanup = stage.leave().map(|_| ());
@@ -368,62 +309,14 @@ impl<W: io::Write> Stage<W> {
     }
 }
 
-/// Write one frame under `pacing`; `false` once the terminal stops
-/// answering, with the frame still written whole.
+/// Whether a quit key has arrived since the last check.
 #[cfg(unix)]
-fn deliver<W: io::Write>(
-    out: &mut W,
-    frame: &[u8],
-    pacing: Pacing,
-    answers: &Receiver<u32>,
-    next_query: &mut u32,
-) -> io::Result<bool> {
-    if frame.is_empty() {
-        return Ok(true);
+fn quit_requested(pump: &mut EventPump<()>) -> bool {
+    let mut quit = false;
+    while let Some(signal) = pump.next(Duration::ZERO) {
+        quit |= matches!(signal, crate::events::Signal::Input(event) if event.is_quit_key());
     }
-    let parts = match pacing {
-        Pacing::Timer => {
-            out.write_all(frame)?;
-            out.flush()?;
-            return Ok(true);
-        }
-        Pacing::EachFrame => vec![frame],
-        Pacing::Batches => kitty::split_at_commands(frame, MULTIPLEXER_BATCH),
-    };
-    let mut answering = true;
-    for part in parts {
-        out.write_all(part)?;
-        if answering {
-            let query = *next_query;
-            *next_query = next_query.wrapping_add(1).max(PACING_IMAGES_FROM);
-            session::terminal_query(out, query)?;
-            out.flush()?;
-            answering = await_terminal(answers, query);
-        } else {
-            out.flush()?;
-        }
-    }
-    Ok(answering)
-}
-
-/// Keep raw mode up until the answers still travelling have arrived, so
-/// none of them reach the shell.
-#[cfg(unix)]
-fn drain_late_answers(answers: &Receiver<u32>) {
-    let deadline = Instant::now() + LATE_ANSWER_LIMIT;
-    while Instant::now() < deadline && answers.recv_timeout(LATE_ANSWER_SILENCE).is_ok() {}
-}
-
-/// Wait for the answer to `query`; `false` once the terminal stops
-/// answering.
-#[cfg(unix)]
-fn await_terminal(answers: &Receiver<u32>, query: u32) -> bool {
-    while let Ok(image) = answers.recv_timeout(PACING_WAIT) {
-        if image == query {
-            return true;
-        }
-    }
-    false
+    quit
 }
 
 impl<W: io::Write> Drop for Stage<W> {
@@ -442,8 +335,6 @@ mod tests {
     use std::io::Write as _;
 
     use std::time::{Duration, Instant};
-
-    use katui_proto::probe::{Capabilities, Identity};
 
     use super::{ResizeEvent, ResizeWatch, Session, Stage, Teardown};
     /// A writer that records into shared storage, so bytes survive the
@@ -611,32 +502,6 @@ mod tests {
         let now = Instant::now();
         assert_eq!(watch.observe(None, now), None);
         assert_eq!(watch.observe(Some(size(0, 0)), now), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn multiplexers_get_batches_and_plain_terminals_no_queries() {
-        let plain = Capabilities::default();
-        assert_eq!(super::Pacing::for_terminal(&plain), super::Pacing::Timer);
-        let kitty = Capabilities {
-            kitty: true,
-            ..Capabilities::default()
-        };
-        assert_eq!(
-            super::Pacing::for_terminal(&kitty),
-            super::Pacing::EachFrame
-        );
-        let muxed = Capabilities {
-            identity: Some(Identity {
-                name: "rmux".to_owned(),
-                version: None,
-            }),
-            ..kitty
-        };
-        assert!(matches!(
-            super::Pacing::for_terminal(&muxed),
-            super::Pacing::Batches
-        ));
     }
 
     #[cfg(unix)]
