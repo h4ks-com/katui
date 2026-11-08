@@ -16,6 +16,9 @@ crates/katui-rt/        the impure layer: /dev/tty transport, frame clock, sessi
                         the engine demos (dvd, snake, plasma, life)
 crates/katui-layout/    L4: constraint splitting of cell rectangles (pure)
 crates/katui-content/   L6: documents to scene cells, markdown today (pure)
+crates/katui-draw/      L3: canvas and text rasterizing onto surfaces (pure)
+crates/katui-ui/        L5: reactive element trees over retained layers (pure)
+demos/obby-chat/        an IRC client on the full engine, GPL, outside the workspace
 scripts/                repo tooling (the commit-message gate)
 .opencode/              repo commands and skills (/rev review fan-out)
 ```

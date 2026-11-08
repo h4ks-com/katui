@@ -1,0 +1,25 @@
+[package]
+name = "obby-chat"
+description = "A katui demo: an IRC client drawn in real pixels"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "GPL-3.0-or-later"
+publish = false
+
+# obby-client is GPL, so this package stays outside the engine's workspace
+# and its permissively licensed build graph.
+[workspace]
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+katui-draw = { path = "../../crates/katui-draw" }
+katui-present = { path = "../../crates/katui-present" }
+katui-proto = { path = "../../crates/katui-proto" }
+katui-rt = { path = "../../crates/katui-rt" }
+katui-scene = { path = "../../crates/katui-scene" }
+katui-ui = { path = "../../crates/katui-ui" }
+obby-client = "0.3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+webpki-roots = "1"

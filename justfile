@@ -74,6 +74,10 @@ demo-life:
 pace:
     cargo run --release -p katui-rt --example pace
 
+# the obby-chat demo: an IRC client drawn in real pixels (needs a graphics terminal)
+demo-obby:
+    cargo run --release --manifest-path demos/obby-chat/Cargo.toml
+
 # docs gate: broken intra-doc links and rustdoc warnings fail like code
 docs:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
