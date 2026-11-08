@@ -28,7 +28,7 @@ deny:
 
 # spelling gate, matches CI's typos job
 typos:
-    command -v typos >/dev/null && typos || echo "typos not installed, skipping"
+    if command -v typos >/dev/null; then typos; else echo "typos not installed, skipping"; fi
 
 # complexity and maintainability report, per function (cargo install rust-code-analysis-cli)
 metrics:
