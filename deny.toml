@@ -4,7 +4,9 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained and comes through cosmic-text with no upgrade available; it parses only fonts the application supplies" },
+]
 
 [licenses]
 version = 2
