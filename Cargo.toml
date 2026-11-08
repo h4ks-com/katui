@@ -2,13 +2,16 @@
 resolver = "3"
 members = [
     "crates/katui-content",
+    "crates/katui-draw",
     "crates/katui-layout",
     "crates/katui-present",
     "crates/katui-proto",
     "crates/katui-ratatui",
     "crates/katui-rt",
     "crates/katui-scene",
+    "crates/katui-ui",
 ]
+exclude = ["demos/obby-chat"]
 
 [workspace.package]
 version = "0.1.0"
@@ -21,16 +24,21 @@ keywords = ["terminal", "tui", "kitty-graphics", "ratatui"]
 
 [workspace.dependencies]
 base64 = "0.22"
+cosmic-text = "0.19"
 flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+katui-draw = { path = "crates/katui-draw" }
 katui-present = { path = "crates/katui-present" }
 katui-proto = { path = "crates/katui-proto" }
 katui-rt = { path = "crates/katui-rt" }
 katui-scene = { path = "crates/katui-scene" }
+katui-ui = { path = "crates/katui-ui" }
 pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = { version = "0.30", default-features = false }
 rustix = { version = "1", default-features = false, features = ["std", "termios", "event", "pty", "fs"] }
+taffy = "0.15"
 thiserror = "2"
+tiny-skia = "0.12"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

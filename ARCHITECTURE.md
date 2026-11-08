@@ -54,6 +54,7 @@ katui-ffi ──────┤
 katui-rt ───────┤  owns ALL I/O: raw mode, signals, event pump, frame clock,
                 │  loops, MCP server, emergency restore
 katui-content ──┤  markdown / tree-sitter / html-subset / charts -> scene
+katui-ui ───────┤  reactive element trees, flexbox over taffy, hit testing -> layers
 katui-widgets ──┤  components, focus, styling -> scene
 katui-layout ───┤  constraint API over taffy (+ kasuari for ratatui parity)
 katui-draw ─────┤  text layout, tiny-skia canvas, sprites, markers

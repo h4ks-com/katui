@@ -1,0 +1,22 @@
+[package]
+name = "katui-draw"
+description = "Canvas and text rasterizing onto katui pixel surfaces"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+categories.workspace = true
+keywords.workspace = true
+repository.workspace = true
+
+[dependencies]
+cosmic-text.workspace = true
+katui-scene.workspace = true
+thiserror.workspace = true
+tiny-skia.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+
+[lints]
+workspace = true
