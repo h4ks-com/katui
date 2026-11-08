@@ -138,10 +138,12 @@ impl<'a> Transmit<'a> {
 
 /// Cut `payload` into APC frames under an existing `head` of control
 /// keys: compress when asked, base64, chunk at [`CHUNK`] characters, and
-/// carry the control data on the first frame alone.
+/// carry the control data on the first frame alone. Compression runs
+/// at the fast level: frames are a realtime stream, and the CPU spent
+/// on tighter ratios starves the framerate.
 fn encode_chunks(head: &str, payload: &[u8], compressed: bool) -> std::io::Result<Vec<Vec<u8>>> {
     let raw = if compressed {
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
         encoder.write_all(payload)?;
         encoder.finish()?
     } else {
@@ -271,10 +273,22 @@ impl Place {
 pub enum Delete {
     /// Every placement visible on screen (`d=a`).
     AllVisible,
-    /// One image, keeping its data for re-display (`d=i`).
+    /// One image's placements, keeping its data for re-display (`d=i`).
     Image(ImageId),
+    /// One image and its stored data (`d=I`).
+    Free(ImageId),
     /// One placement of one image (`d=i` with `p`).
     Placement(ImageId, PlacementId),
+    /// Every image with an id in this inclusive range, data included
+    /// (`d=R`).
+    FreeRange(ImageId, ImageId),
+}
+
+/// A kitty query carrying `id`: the terminal parses it in stream order,
+/// so its answer proves every earlier byte has been consumed.
+#[must_use]
+pub fn barrier(id: ImageId) -> Vec<u8> {
+    apc(&format!("i={},s=1,v=1,a=q,t=d,f=24;AAAA", id.0)).into_bytes()
 }
 
 /// The canvas a new animation frame composes onto.
@@ -316,23 +330,6 @@ pub struct FrameTransmit<'a> {
 }
 
 impl FrameTransmit<'_> {
-    /// A frame of `width` x `height` RGBA pixels covering the whole
-    /// image, silent.
-    #[must_use]
-    pub fn full(id: ImageId, width: u32, height: u32, payload: &[u8]) -> FrameTransmit<'_> {
-        FrameTransmit {
-            id,
-            edit: None,
-            canvas: Canvas::Blank,
-            rect: None,
-            width,
-            height,
-            payload,
-            compressed: false,
-            gap_ms: None,
-        }
-    }
-
     /// Encode as APC frames, one per chunk, sharing the transmit
     /// chunking. Opaque pixels make the composition a replacement. A
     /// partial frame's rectangle keys already name the payload size:
@@ -363,7 +360,7 @@ impl FrameTransmit<'_> {
         if self.compressed {
             head.push_str(",o=z");
         }
-        let _ = write!(head, ",q=2");
+        head.push_str(",q=2");
         if let Some(gap) = self.gap_ms {
             let _ = write!(head, ",z={gap}");
         }
@@ -420,24 +417,21 @@ impl Delete {
     /// Encode as one APC frame.
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
-        let mut command = String::from("a=d,d=i");
-        match self {
-            Self::AllVisible => {
-                command = String::from("a=d,d=a");
-            }
-            Self::Image(id) => {
-                if id.0 > 0 {
-                    let _ = write!(command, ",i={}", id.0);
-                }
-            }
-            Self::Placement(id, placement) => {
-                if id.0 > 0 {
-                    let _ = write!(command, ",i={}", id.0);
-                }
-                if placement.0 > 0 {
-                    let _ = write!(command, ",p={}", placement.0);
-                }
-            }
+        let mut command = match self {
+            Self::AllVisible => String::from("a=d,d=a"),
+            Self::Free(_) => String::from("a=d,d=I"),
+            Self::Image(_) | Self::Placement(..) => String::from("a=d,d=i"),
+            Self::FreeRange(first, last) => format!("a=d,d=R,x={},y={}", first.0, last.0),
+        };
+        if let Self::Image(id) | Self::Free(id) | Self::Placement(id, _) = self
+            && id.0 > 0
+        {
+            let _ = write!(command, ",i={}", id.0);
+        }
+        if let Self::Placement(_, placement) = self
+            && placement.0 > 0
+        {
+            let _ = write!(command, ",p={}", placement.0);
         }
         command.push_str(",q=2");
         apc(&command).into_bytes()
@@ -525,6 +519,44 @@ fn parse_frame(frame: &[u8]) -> Option<Response> {
     })
 }
 
+/// Cut encoded `frame` into runs of at most `limit` bytes where possible,
+/// only between complete commands: any graphics command inside a chunked
+/// upload would abort that upload.
+#[must_use]
+pub fn split_at_commands(frame: &[u8], limit: usize) -> Vec<&[u8]> {
+    let mut parts = Vec::new();
+    let (mut start, mut safe, mut cursor) = (0, 0, 0);
+    while let Some(offset) = frame
+        .get(cursor..)
+        .and_then(|rest| rest.windows(2).position(|pair| pair == b"\x1b\\"))
+    {
+        let end = cursor + offset + 2;
+        let command = frame.get(cursor..end).unwrap_or_default();
+        cursor = end;
+        if upload_continues(command) {
+            continue;
+        }
+        if end - start > limit && safe > start {
+            parts.extend(frame.get(start..safe));
+            start = safe;
+        }
+        safe = end;
+    }
+    if start < frame.len() {
+        parts.extend(frame.get(start..));
+    }
+    parts
+}
+
+/// Whether more chunks of this command's upload follow it. The encoder
+/// always writes `m` last among the control keys.
+fn upload_continues(command: &[u8]) -> bool {
+    command
+        .split(|byte| *byte == b';')
+        .next()
+        .is_some_and(|keys| keys.ends_with(b"m=1"))
+}
+
 /// Frame `command` as a kitty graphics APC: `ESC _ G` + command + `ESC \`.
 fn apc(command: &str) -> String {
     let mut out = String::with_capacity(command.len() + 8);
@@ -576,6 +608,29 @@ mod tests {
             joined.push_str(chunk);
         }
         joined
+    }
+
+    #[test]
+    fn splitting_respects_the_limit_between_complete_commands() {
+        let frame = b"\x1b_Ga=t,i=1,m=0;aaaa\x1b\\\x1b_Ga=t,i=2,m=0;bbbb\x1b\\\x1b_Ga=p,i=2\x1b\\";
+        let parts = super::split_at_commands(frame, 24);
+        assert_eq!(parts.concat(), frame, "nothing is lost");
+        assert!(parts.len() > 1, "the frame is split");
+        assert!(parts.iter().all(|part| part.ends_with(b"\x1b\\")));
+    }
+
+    #[test]
+    fn splitting_never_divides_an_encoded_chunked_upload() {
+        let payload = vec![0xa5; 2 * CHUNK * 3 / 4 + 1];
+        let frames = Transmit::new(ImageId(9), Format::Rgb, 10, 20, &payload)
+            .encode()
+            .expect("encoding cannot fail");
+        let mut wire = frames.concat();
+        wire.extend_from_slice(b"\x1b_Ga=p,i=9\x1b\\");
+        let parts = super::split_at_commands(&wire, 16);
+        assert_eq!(parts.concat(), wire);
+        assert_eq!(parts.len(), 2, "the upload, then the placement");
+        assert_eq!(parts[0], frames.concat().as_slice());
     }
 
     #[test]
@@ -718,6 +773,18 @@ mod tests {
             Delete::Placement(ImageId(10), PlacementId(2)).encode(),
             b"\x1b_Ga=d,d=i,i=10,p=2,q=2\x1b\\".to_vec()
         );
+        assert_eq!(
+            Delete::Free(ImageId(10)).encode(),
+            b"\x1b_Ga=d,d=I,i=10,q=2\x1b\\".to_vec()
+        );
+        assert_eq!(
+            Delete::FreeRange(ImageId(5), ImageId(9)).encode(),
+            b"\x1b_Ga=d,d=R,x=5,y=9,q=2\x1b\\".to_vec()
+        );
+        assert_eq!(
+            super::barrier(ImageId(7)),
+            b"\x1b_Gi=7,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\".to_vec()
+        );
     }
 
     #[test]
@@ -802,9 +869,14 @@ mod tests {
         let pixels = [0u8, 0, 0, 255];
         let root = super::FrameTransmit {
             id: super::ImageId(3),
-            gap_ms: Some(50),
+            edit: None,
+            canvas: super::Canvas::Blank,
+            rect: None,
+            width: 1,
+            height: 1,
+            payload: &pixels,
             compressed: true,
-            ..super::FrameTransmit::full(super::ImageId(3), 1, 1, &pixels)
+            gap_ms: Some(50),
         };
         let frames = root.encode().expect("encoding cannot fail");
         let text = String::from_utf8_lossy(&frames[0]).into_owned();

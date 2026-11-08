@@ -139,10 +139,8 @@ pub struct CellPixels {
 pub struct Capabilities {
     /// Kitty graphics protocol support.
     pub kitty: bool,
-    /// The animation extension works: frames transmit, the terminal
-    /// answers nothing, and the control commands stick. False under a
-    /// multiplexer that swallows animation frames or forwards them
-    /// without their images.
+    /// The terminal answered OK to a frame appended to an image, which
+    /// proves it stored the frame.
     pub animation: bool,
     /// Sixel support, from the fourth DA1 parameter.
     pub sixel: bool,
@@ -157,26 +155,37 @@ pub struct Capabilities {
     pub trust: ProbeSource,
 }
 
+impl Capabilities {
+    /// Whether a terminal multiplexer answered the probe.
+    #[must_use]
+    pub fn multiplexed(&self) -> bool {
+        self.identity
+            .as_ref()
+            .is_some_and(|identity| matches!(identity.name.as_str(), "tmux" | "rmux"))
+    }
+}
+
 /// The query batch. DA1 comes last and acts as the barrier: a terminal
 /// that supports graphics answers the query before it.
 /// The image id the probe's query transmits under; answers naming it
 /// prove the kitty protocol listened.
 const PROBE_IMAGE_ID: u32 = 31;
 
-/// The image id the animation probe plays under; an error naming it
-/// proves the terminal (or its multiplexer) refuses animation frames.
+/// The image id the animation probe appends a frame to; an OK naming it
+/// proves the frame reached a terminal that stored it.
 const PROBE_ANIMATION_ID: u32 = 30;
 
-/// The query batch: the kitty query under [`PROBE_IMAGE_ID`] with its
-/// four-pixel RGBA payload, an animation probe that transmits one
-/// frame, stops and deletes it, XTGETTCAP, the cell size and DA1 last
-/// as the barrier.
+/// The query batch: the kitty query under [`PROBE_IMAGE_ID`], an
+/// animation probe that creates a silent one-pixel image, appends one
+/// answered frame and frees the image, XTVERSION, the cell size and DA1
+/// last as the barrier. `AAAA` decodes to three bytes, one RGB pixel, so
+/// every command here declares `f=24`.
 fn batch() -> Vec<u8> {
     format!(
         "\x1b_Gi={PROBE_IMAGE_ID},s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
-         \x1b_Ga=f,i={PROBE_ANIMATION_ID},s=1,v=1,f=32,t=d,q=2;AAAA\x1b\\\
-         \x1b_Ga=a,i={PROBE_ANIMATION_ID},s=1\x1b\\\
-         \x1b_Ga=d,d=i,i={PROBE_ANIMATION_ID}\x1b\\\
+         \x1b_Ga=t,i={PROBE_ANIMATION_ID},s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\\
+         \x1b_Ga=f,i={PROBE_ANIMATION_ID},s=1,v=1,f=24,t=d;AAAA\x1b\\\
+         \x1b_Ga=d,d=I,i={PROBE_ANIMATION_ID},q=2\x1b\\\
          \x1b[>0q\x1b[16t\x1b[c"
     )
     .into_bytes()
@@ -191,7 +200,7 @@ struct Replies {
     cell: Option<CellPixels>,
     sixel: bool,
     barrier: bool,
-    animation_error: bool,
+    animation_answer: Option<bool>,
 }
 
 /// Probe the terminal over `transport`.
@@ -214,7 +223,9 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     }
     let mut stream = Vec::new();
     let mut replies = parse_replies(&stream);
-    while !replies.barrier {
+    // a multiplexer answers DA1 itself, ahead of the kitty answers it
+    // relays, so we keep listening for those or they reach the shell
+    while !replies.barrier || (replies.kitty_ok && replies.animation_answer.is_none()) {
         let Some(chunk) = transport.read_timeout(READ_WAIT) else {
             break;
         };
@@ -230,9 +241,7 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
         caps.trust = ProbeSource::Probed;
     }
     caps.kitty |= replies.kitty_ok;
-    // only a terminal that proved the graphics protocol and raised no
-    // animation objection gets the animation path
-    caps.animation = replies.kitty_ok && !replies.animation_error;
+    caps.animation = replies.animation_answer == Some(true);
     caps.sixel |= replies.sixel;
     if let Some(identity) = replies.identity {
         caps.identity = Some(identity);
@@ -262,30 +271,18 @@ pub fn sniff(env: &Env) -> Capabilities {
 fn parse_replies(stream: &[u8]) -> Replies {
     // any answer to the marker query proves the protocol, an error reply
     // included, so the scanner never judges APC frames itself
-    let kitty_ok = kitty::parse_responses(stream)
-        .into_iter()
-        .any(|answer| match answer {
-            kitty::Response::Ok { image, .. } | kitty::Response::Error { image, .. } => {
-                image == kitty::ImageId(PROBE_IMAGE_ID)
-            }
-        });
-    // an error naming the animation probe means the terminal rejects
-    // animation frames or the control commands, a multiplexer that
-    // swallows them included
-    let animation_error = kitty::parse_responses(stream).into_iter().any(|answer| {
-        matches!(
-            answer,
-            kitty::Response::Error {
-                image: kitty::ImageId(PROBE_ANIMATION_ID),
-                ..
-            }
-        )
-    });
-    let mut replies = Replies {
-        kitty_ok,
-        animation_error,
-        ..Replies::default()
-    };
+    let mut replies = Replies::default();
+    for answer in kitty::parse_responses(stream) {
+        let (image, accepted) = match answer {
+            kitty::Response::Ok { image, .. } => (image, true),
+            kitty::Response::Error { image, .. } => (image, false),
+        };
+        match image.0 {
+            PROBE_IMAGE_ID => replies.kitty_ok = true,
+            PROBE_ANIMATION_ID => replies.animation_answer = Some(accepted),
+            _ => {}
+        }
+    }
     let mut cursor = 0;
     while let Some(rest) = stream.get(cursor..) {
         if rest.starts_with(b"\x1b_G") {
@@ -445,15 +442,13 @@ mod tests {
     #[test]
     fn a_full_kitty_session_reports_everything() {
         let mut transport = Scripted::new(&[
-            b"\x1b_Gi=31;OK\x1b\\\x1bP>|kitty(0.29.0)\x1b\\\x1b[6;14;7t\x1b[?62;1;2;6;9;22c",
+            b"\x1b_Gi=31;OK\x1b\\\x1b_Gi=30,r=2;OK\x1b\\\x1bP>|kitty(0.29.0)\x1b\\\x1b[6;14;7t\x1b[?62;1;2;6;9;22c",
         ]);
         let caps = probe(&mut transport, &env());
         assert_eq!(
             caps,
             Capabilities {
                 kitty: true,
-                // the graphics protocol answered and no animation frame
-                // was rejected: the extension is there
                 animation: true,
                 sixel: false,
                 truecolor: true,
@@ -482,6 +477,26 @@ mod tests {
             !caps.animation,
             "a multiplexer that loses frames is no animation terminal"
         );
+    }
+
+    #[test]
+    fn frames_lost_without_an_answer_disable_the_extension() {
+        let mut transport = Scripted::new(&[b"\x1b_Gi=31;OK\x1b\\\x1b[?62c"]);
+        let caps = probe(&mut transport, &env());
+        assert!(caps.kitty, "graphics still work");
+        assert!(!caps.animation, "only an OK proves frames are stored");
+    }
+
+    #[test]
+    fn a_relayed_answer_after_the_barrier_is_still_read() {
+        let mut transport =
+            Scripted::new(&[b"\x1b_Gi=31;OK\x1b\\\x1b[?62c", b"\x1b_Gi=30,r=2;OK\x1b\\"]);
+        let caps = probe(&mut transport, &env());
+        assert!(
+            caps.animation,
+            "a multiplexer answers DA1 before the outer terminal's reply"
+        );
+        assert!(transport.chunks.is_empty(), "nothing is left for the shell");
     }
 
     #[test]
@@ -573,9 +588,9 @@ mod tests {
         assert_eq!(
             super::batch(),
             b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
-              \x1b_Ga=f,i=30,s=1,v=1,f=32,t=d,q=2;AAAA\x1b\\\
-              \x1b_Ga=a,i=30,s=1\x1b\\\
-              \x1b_Ga=d,d=i,i=30\x1b\\\
+              \x1b_Ga=t,i=30,s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\\
+              \x1b_Ga=f,i=30,s=1,v=1,f=24,t=d;AAAA\x1b\\\
+              \x1b_Ga=d,d=I,i=30,q=2\x1b\\\
               \x1b[>0q\x1b[16t\x1b[c"
                 .to_vec()
         );

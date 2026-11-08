@@ -36,6 +36,7 @@ impl PixelScreen {
     /// kitty graphics protocol, quarter blocks otherwise.
     #[must_use]
     pub fn new(caps: &Capabilities, patched: PatchedKitty) -> Self {
+        let patched = patched.tiles_only(caps.multiplexed());
         Self {
             kitty: caps.kitty.then_some(PixelStrategy::Patched(patched)),
             blocks: BlocksSurface::new(),
@@ -48,14 +49,24 @@ impl PixelScreen {
     /// included.
     #[must_use]
     pub fn animated(caps: &Capabilities, animated: AnimatedKitty, fallback: PatchedKitty) -> Self {
-        let strategy = if caps.animation {
+        let strategy = if caps.animation && !caps.multiplexed() {
             PixelStrategy::Animated(animated)
         } else {
-            PixelStrategy::Patched(fallback)
+            PixelStrategy::Patched(fallback.tiles_only(caps.multiplexed()))
         };
         Self {
             kitty: caps.kitty.then_some(strategy),
             blocks: BlocksSurface::new(),
+        }
+    }
+
+    /// Send every graphics pixel again on the next frame, for when the
+    /// terminal may have lost its images, a window resize for one.
+    pub fn invalidate(&mut self) {
+        match &mut self.kitty {
+            Some(PixelStrategy::Patched(patched)) => patched.invalidate(),
+            Some(PixelStrategy::Animated(animated)) => animated.invalidate(),
+            None => {}
         }
     }
 
@@ -189,7 +200,6 @@ mod tests {
             .render_frame(&mut out, &plain(8, 8), 4, 2)
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&out);
-        assert!(text.contains("a=f"), "the root frame transmits");
         assert!(text.contains("a=a"), "playback is terminal-driven");
     }
 }

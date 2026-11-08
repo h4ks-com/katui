@@ -3,10 +3,11 @@
 //! stable tile image id whose placement it replaces.
 
 use crate::Sink;
+use std::collections::HashMap;
 use std::io::{self, Write as _};
 
 use katui_proto::kitty::{
-    Format, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
+    Delete, Format, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
 };
 use katui_proto::probe::CellPixels;
 use katui_scene::cell::Position;
@@ -14,7 +15,7 @@ use katui_scene::placement::CellRect;
 use katui_scene::surface::Surface;
 use katui_scene::surface::diff_tiles;
 
-use super::write_whole_image;
+use super::{damage_is_dense, write_whole_image};
 use crate::cells::move_cursor;
 
 /// The patched kitty surface presenter: transmits the whole surface once,
@@ -38,6 +39,10 @@ pub struct PatchedKitty {
     tile_side: u32,
     budget: usize,
     prev: Option<Surface>,
+    base_shown: Option<KittyImage>,
+    tile_generations: HashMap<u32, bool>,
+    tiles_only: bool,
+    repaint: bool,
 }
 
 impl PatchedKitty {
@@ -65,7 +70,25 @@ impl PatchedKitty {
             tile_side: tile_side.max(1),
             budget,
             prev: None,
+            base_shown: None,
+            tile_generations: HashMap::new(),
+            tiles_only: false,
+            repaint: false,
         }
+    }
+
+    /// Send every pixel again on the next frame, for when the terminal
+    /// may have lost what it was showing.
+    pub fn invalidate(&mut self) {
+        self.repaint = true;
+    }
+
+    /// Send every frame as small complete tiles: a multiplexer drops
+    /// commands from an upload bigger than it buffers.
+    #[must_use]
+    pub fn tiles_only(mut self, enabled: bool) -> Self {
+        self.tiles_only = enabled;
+        self
     }
 
     /// Write one frame into `area` cells and return the bytes written.
@@ -75,14 +98,20 @@ impl PatchedKitty {
         surface: &Surface,
         area: CellRect,
     ) -> io::Result<usize> {
-        let fresh_start = self.prev.as_ref().is_none_or(|prev| {
+        let resized = self.prev.as_ref().is_none_or(|prev| {
             prev.width() != surface.width() || prev.height() != surface.height()
         });
+        let repaint = std::mem::take(&mut self.repaint);
+        if self.tiles_only {
+            return self.render_tiles(out, surface, area, resized, repaint);
+        }
+        let fresh_start = resized || repaint;
         let damage = match self.prev.as_ref() {
             Some(prev) if !fresh_start => diff_tiles(prev, surface, self.tile_side),
             _ => Vec::new(),
         };
-        let patching = !fresh_start && damage.len() <= self.budget;
+        let dense = damage_is_dense(surface, self.tile_side, damage.len());
+        let patching = !fresh_start && !dense && damage.len() <= self.budget;
 
         let mut bytes = Vec::new();
         if !patching {
@@ -103,20 +132,82 @@ impl PatchedKitty {
         Ok(written)
     }
 
-    fn full_frame(&self, bytes: &mut Vec<u8>, surface: &Surface, area: CellRect) -> io::Result<()> {
+    /// A repaint keeps the old tiles up until each one is replaced.
+    fn render_tiles<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        area: CellRect,
+        resized: bool,
+        repaint: bool,
+    ) -> io::Result<usize> {
+        let blank = Surface::new(surface.width(), surface.height());
+        let before = self
+            .prev
+            .as_ref()
+            .filter(|_| !resized && !repaint)
+            .unwrap_or(&blank);
+        let damage = diff_tiles(before, surface, self.tile_side);
+        let mut bytes = Vec::new();
+        if resized {
+            self.free_tiles(&mut bytes)?;
+        }
+        for rect in &damage {
+            self.patch(&mut bytes, surface, *rect, area)?;
+        }
+        self.prev = Some(surface.clone());
+        out.write_all(&bytes)?;
+        Ok(bytes.len())
+    }
+
+    fn free_tiles(&mut self, bytes: &mut Vec<u8>) -> io::Result<()> {
+        if let Some(last) = self.tile_generations.keys().max().copied() {
+            let range = Delete::FreeRange(self.tile_image(0, false), self.tile_image(last, true));
+            bytes.write_all(&range.encode())?;
+            self.tile_generations.clear();
+        }
+        Ok(())
+    }
+
+    /// The whole surface under the base id not on screen, so the old
+    /// image stays visible until the new one is placed: multiplexers
+    /// drop synchronized updates, and retransmitting a visible id
+    /// removes its placement for a moment.
+    fn full_frame(
+        &mut self,
+        bytes: &mut Vec<u8>,
+        surface: &Surface,
+        area: CellRect,
+    ) -> io::Result<()> {
+        let image = if self.base_shown == Some(KittyImage(self.base)) {
+            KittyImage(self.base + 1)
+        } else {
+            KittyImage(self.base)
+        };
         bytes.write_all(b"\x1b[?2026h")?;
-        write_whole_image(bytes, KittyImage(self.base), surface, area)?;
+        write_whole_image(bytes, image, surface, area)?;
+        // old tiles sit above the base and would hide the new pixels
+        self.free_tiles(bytes)?;
+        if let Some(shown) = self.base_shown.replace(image) {
+            bytes.write_all(&Delete::Free(shown).encode())?;
+        }
         bytes.write_all(b"\x1b[?2026l")?;
         Ok(())
     }
 
-    /// One damaged tile as its own small image: the tile's pixels are
-    /// retransmitted under a stable tile id (which the protocol defines
-    /// as replacing that image and its placements), then placed over the
-    /// base at the tile's cell rectangle. No flicker: the replacement
-    /// placement shares the id pair with the one it replaces.
+    fn tile_index(&self, x: u32, y: u32) -> u32 {
+        x / self.tile_side + (y / self.tile_side) * 4096
+    }
+
+    fn tile_image(&self, index: u32, second_generation: bool) -> KittyImage {
+        KittyImage(self.base + 2 + index * 2 + u32::from(second_generation))
+    }
+
+    /// One damaged tile as its own small image, placed over the base at
+    /// the tile's cell rectangle. Each tile alternates between two ids
+    /// so its previous pixels stay visible until the new ones are placed.
     fn patch(
-        &self,
+        &mut self,
         bytes: &mut Vec<u8>,
         surface: &Surface,
         rect: katui_scene::surface::PixelRect,
@@ -135,8 +226,10 @@ impl PatchedKitty {
         let origin_y = area.y.saturating_add(
             u16::try_from(rect.y * u32::from(area.rows) / surface.height()).unwrap_or(u16::MAX),
         );
-        let tile_index = (rect.x / self.tile_side, rect.y / self.tile_side);
-        let image = KittyImage(self.base + 2 + tile_index.0 + tile_index.1 * 4096);
+        let index = self.tile_index(rect.x, rect.y);
+        let shown = self.tile_generations.get(&index).copied();
+        let generation = shown.is_some_and(|generation| !generation);
+        let image = self.tile_image(index, generation);
 
         let pixels = tile_pixels(surface, rect);
         let mut transmit = Transmit::new(image, Format::Rgba, rect.width, rect.height, &pixels);
@@ -152,10 +245,15 @@ impl PatchedKitty {
             },
         )?;
         let mut place = Place::new(image);
-        place.placement = KittyPlacement(2 + tile_index.0 + tile_index.1 * 4096);
+        place.placement = KittyPlacement(2 + index);
         place.columns = u32::from(columns);
         place.rows = u32::from(rows);
-        bytes.write_all(&place.encode())
+        bytes.write_all(&place.encode())?;
+        if let Some(previous) = shown {
+            bytes.write_all(&Delete::Free(self.tile_image(index, previous)).encode())?;
+        }
+        self.tile_generations.insert(index, generation);
+        Ok(())
     }
 }
 
@@ -255,9 +353,145 @@ mod tests {
             "the damaged tile travels, 8x8 pixels at tile side 8"
         );
         assert!(
-            text.contains("a=p,i=20577") && text.contains("c=2,r=2"),
+            text.contains("a=p,i=41062") && text.contains("c=2,r=2"),
             "the tile covers its 2x2 cells at the surface's scale"
         );
+    }
+
+    #[test]
+    fn a_whole_frame_frees_the_tiles_that_would_cover_it() {
+        let mut presenter = PatchedKitty::new(90, cell());
+        let mut surface = plain_surface(64, 64);
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(&mut wire, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        assert!(
+            !String::from_utf8_lossy(&wire).contains("d=R"),
+            "no tiles exist yet"
+        );
+        surface.set(
+            katui_scene::surface::PixelPos::new(40, 40),
+            Rgba::solid(255, 255, 255),
+        );
+        presenter
+            .render_frame(&mut wire, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        wire.clear();
+        for y in (0..64).step_by(8) {
+            for x in (0..64).step_by(8) {
+                surface.set(
+                    katui_scene::surface::PixelPos::new(x, y),
+                    Rgba::solid(1, 2, 3),
+                );
+            }
+        }
+        presenter
+            .render_frame(&mut wire, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&wire);
+        let placed = text.find("a=p,i=").expect("the new base is placed");
+        let freed = text.find("d=R").expect("the stale tiles are freed");
+        assert!(placed < freed, "the new base appears before the tiles go");
+    }
+
+    #[test]
+    fn tiles_only_paints_the_grid_and_never_sends_a_whole_image() {
+        let mut presenter = PatchedKitty::new(90, cell()).tiles_only(true);
+        let surface = plain_surface(64, 64);
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(&mut wire, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&wire);
+        assert!(!text.contains("s=64"), "no whole image travels");
+        assert_eq!(text.matches("a=p,").count(), 64, "every tile is placed");
+    }
+
+    #[test]
+    fn an_invalidated_grid_repaints_every_tile_without_a_gap() {
+        let mut presenter = PatchedKitty::new(90, cell()).tiles_only(true);
+        let surface = plain_surface(64, 64);
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(&mut wire, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        presenter.invalidate();
+        wire.clear();
+        presenter
+            .render_frame(&mut wire, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&wire);
+        assert_eq!(text.matches("a=p,").count(), 64, "every tile returns");
+        assert!(!text.contains("d=R"), "old tiles stay until replaced");
+        wire.clear();
+        presenter
+            .render_frame(&mut wire, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        assert!(wire.is_empty(), "one invalidate repaints once");
+    }
+
+    #[test]
+    fn tiles_only_clears_the_old_grid_on_a_resize() {
+        let mut presenter = PatchedKitty::new(90, cell()).tiles_only(true);
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(&mut wire, &plain_surface(64, 64), area())
+            .expect("writing to a Vec cannot fail");
+        wire.clear();
+        presenter
+            .render_frame(&mut wire, &plain_surface(32, 32), area())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&wire);
+        let freed = text.find("d=R").expect("the old grid is freed");
+        let placed = text.find("a=p,").expect("the new grid is placed");
+        assert!(freed < placed);
+    }
+
+    #[test]
+    fn a_base_retransmit_never_reuses_the_visible_id() {
+        let mut presenter = PatchedKitty::with_tiles(90, cell(), 8, 0);
+        let mut surface = plain_surface(16, 16);
+        let mut first = Vec::new();
+        presenter
+            .render_frame(&mut first, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        surface.set(
+            katui_scene::surface::PixelPos::new(1, 1),
+            Rgba::solid(9, 9, 9),
+        );
+        let mut second = Vec::new();
+        presenter
+            .render_frame(&mut second, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&second);
+        let placed = text.find("a=p,i=91").expect("the alternate id is placed");
+        let freed = text.find("d=I,i=90").expect("the old base is freed");
+        assert!(placed < freed, "something is always on screen");
+    }
+
+    #[test]
+    fn a_tile_alternates_ids_and_frees_the_previous_one_after_placing() {
+        let mut presenter = PatchedKitty::new(90, cell());
+        let mut surface = plain_surface(64, 64);
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(&mut wire, &surface, area())
+            .expect("writing to a Vec cannot fail");
+        for shade in [10, 20] {
+            surface.set(
+                katui_scene::surface::PixelPos::new(40, 40),
+                Rgba::solid(shade, shade, shade),
+            );
+            wire.clear();
+            presenter
+                .render_frame(&mut wire, &surface, area())
+                .expect("writing to a Vec cannot fail");
+        }
+        let text = String::from_utf8_lossy(&wire);
+        let placed = text.find("a=p,i=41063").expect("the second generation");
+        let freed = text.find("d=I,i=41062").expect("the first is freed");
+        assert!(placed < freed, "the old tile stays until the new one shows");
     }
 
     #[test]

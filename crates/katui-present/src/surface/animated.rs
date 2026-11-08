@@ -6,21 +6,18 @@ use crate::Sink;
 use std::io::{self, Write as _};
 
 use katui_proto::kitty::{
-    Animate, AnimationState, Canvas, Delete, FrameTransmit, ImageId as KittyImage, Place,
-    PlacementId as KittyPlacement,
+    Animate, AnimationState, Canvas, Delete, FrameTransmit, ImageId as KittyImage,
 };
-use katui_scene::cell::Position;
 use katui_scene::placement::CellRect;
 use katui_scene::surface::Surface;
 use katui_scene::surface::diff_tiles;
 
 use super::patched::tile_pixels;
-use crate::cells::move_cursor;
+use super::{damage_is_dense, write_whole_image};
 use crate::kitty::crop_rect;
 
-/// How many frames one animated image holds before the animation stops,
-/// the image is deleted, and a fresh root frame starts a new one: a
-/// bound on the terminal's frame storage.
+/// How many frames one animated image holds before a fresh root frame
+/// replaces it: a bound on the terminal's frame storage.
 const RESET_EVERY: u32 = 96;
 
 /// The animated kitty surface presenter: the first frame becomes the
@@ -32,12 +29,13 @@ const RESET_EVERY: u32 = 96;
 /// compositor's rate rather than the client's. An unchanged frame
 /// writes nothing.
 ///
-/// Frames accumulate terminal-side, so every 96 frames the animation
-/// stops, the image is deleted, and a fresh root frame (one whole
-/// compressed transmit) starts the next reel.
+/// Frames accumulate terminal-side, so every 96 frames a fresh root frame
+/// (one whole compressed transmit) goes up under the alternate id, and
+/// then the finished reel stops and is freed.
 #[derive(Debug)]
 pub struct AnimatedKitty {
     base: u32,
+    current: u32,
     tile_side: u32,
     budget: usize,
     gap_ms: i32,
@@ -55,6 +53,7 @@ impl AnimatedKitty {
     pub fn new(base: u32, frames_per_second: u32, tile_side: u32, budget: usize) -> Self {
         Self {
             base,
+            current: base,
             tile_side: tile_side.max(1),
             budget,
             gap_ms: (1000 / frames_per_second.max(1)).max(1).cast_signed(),
@@ -62,6 +61,12 @@ impl AnimatedKitty {
             since_reset: 0,
             prev: None,
         }
+    }
+
+    /// Start a fresh reel on the next frame, for when the terminal may
+    /// have lost what it was showing.
+    pub fn invalidate(&mut self) {
+        self.prev = None;
     }
 
     /// Write one frame's data and return the bytes written.
@@ -78,8 +83,17 @@ impl AnimatedKitty {
             return self.start_reel(out, surface, area);
         }
         if self.since_reset >= RESET_EVERY {
-            self.stop_reel(out)?;
-            return self.start_reel(out, surface, area);
+            // we place the next reel under the other id before freeing
+            // the old one, so we always have a frame on screen
+            let finished = self.current;
+            self.current = if finished == self.base {
+                self.base + 1
+            } else {
+                self.base
+            };
+            let written = self.start_reel(out, surface, area)?;
+            Self::stop_reel(out, finished)?;
+            return Ok(written);
         }
         let Some(prev) = self.prev.as_ref() else {
             unreachable!("a fresh reel starts before frames diff");
@@ -91,13 +105,14 @@ impl AnimatedKitty {
         }
         let next = self.frame + 1;
         let mut bytes = Vec::new();
-        if damage.len() <= self.budget {
+        let dense = damage_is_dense(surface, self.tile_side, damage.len());
+        if !dense && damage.len() <= self.budget {
             // the frame is born as a copy of its predecessor with one
             // anchor pixel of real data, then the damaged rectangles
             // edit it in place
             let anchor = surface.pixels().get(..4).unwrap_or(&[0, 0, 0, 255]);
             let create = FrameTransmit {
-                id: KittyImage(self.base),
+                id: KittyImage(self.current),
                 edit: None,
                 canvas: Canvas::Frame(self.frame),
                 rect: Some(crop_rect(katui_scene::surface::PixelRect {
@@ -118,7 +133,7 @@ impl AnimatedKitty {
             for rect in &damage {
                 let pixels = tile_pixels(surface, *rect);
                 let edit = FrameTransmit {
-                    id: KittyImage(self.base),
+                    id: KittyImage(self.current),
                     edit: Some(next),
                     canvas: Canvas::Blank,
                     rect: Some(crop_rect(*rect)),
@@ -134,7 +149,7 @@ impl AnimatedKitty {
             }
         } else {
             let whole = FrameTransmit {
-                id: KittyImage(self.base),
+                id: KittyImage(self.current),
                 edit: None,
                 canvas: Canvas::Blank,
                 rect: None,
@@ -163,34 +178,10 @@ impl AnimatedKitty {
         surface: &Surface,
         area: CellRect,
     ) -> io::Result<usize> {
-        let root = FrameTransmit {
-            gap_ms: Some(self.gap_ms),
-            compressed: true,
-            ..FrameTransmit::full(
-                KittyImage(self.base),
-                surface.width(),
-                surface.height(),
-                surface.pixels(),
-            )
-        };
         let mut bytes = Vec::new();
-        for frame in root.encode()? {
-            bytes.write_all(&frame)?;
-        }
-        move_cursor(
-            &mut bytes,
-            Position {
-                x: area.x,
-                y: area.y,
-            },
-        )?;
-        let mut place = Place::new(KittyImage(self.base));
-        place.placement = KittyPlacement(1);
-        place.columns = u32::from(area.columns);
-        place.rows = u32::from(area.rows);
-        bytes.write_all(&place.encode())?;
+        write_whole_image(&mut bytes, KittyImage(self.current), surface, area)?;
         let run = Animate {
-            id: KittyImage(self.base),
+            id: KittyImage(self.current),
             state: Some(AnimationState::Loading),
             frame_gap: Some((1, self.gap_ms)),
         };
@@ -203,15 +194,15 @@ impl AnimatedKitty {
         Ok(written)
     }
 
-    /// Stop playback and drop the image, ready for a fresh reel.
-    fn stop_reel<W: Sink>(&mut self, out: &mut W) -> io::Result<()> {
+    /// Stop playback of `image` and free its data.
+    fn stop_reel<W: Sink>(out: &mut W, image: u32) -> io::Result<()> {
         let stop = Animate {
-            id: KittyImage(self.base),
+            id: KittyImage(image),
             state: Some(AnimationState::Stop),
             frame_gap: None,
         };
         out.write_all(&stop.encode())?;
-        out.write_all(&Delete::Image(KittyImage(self.base)).encode())?;
+        out.write_all(&Delete::Free(KittyImage(image)).encode())?;
         Ok(())
     }
 }
@@ -238,7 +229,11 @@ mod tests {
             .render_frame(&mut out, &plain_surface(64, 64), area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&out);
-        assert!(text.contains("a=f,i=90"), "the root frame transmits");
+        assert!(
+            text.starts_with("\x1b_Ga=t,"),
+            "an image must exist before kitty accepts frames for it"
+        );
+        assert!(!text.contains("a=f"), "the root is no animation frame");
         assert!(text.contains("o=z"), "compressed");
         assert!(text.contains("a=p,i=90"), "placed once");
         assert!(text.contains("a=a,i=90,s=2"), "playback is terminal-driven");
@@ -329,12 +324,9 @@ mod tests {
                 .expect("writing to a Vec cannot fail");
         }
         let text = String::from_utf8_lossy(&out);
+        assert!(text.contains("a=a,i=90,s=1"), "the finished reel stops");
         assert!(
-            text.contains("a=a,i=90,s=1"),
-            "the reel stops before a fresh root"
-        );
-        assert!(
-            text.matches("a=f,i=90,s=32,v=32,f=32,t=d,o=z").count() >= 2,
+            text.contains("a=t,f=32,t=d,o=z,s=32,v=32,i=91"),
             "a fresh root frame starts the next reel"
         );
     }

@@ -28,6 +28,18 @@ use katui_scene::surface::Surface;
 
 use crate::cells::move_cursor;
 
+/// Whether so much of a fine tile grid changed that one whole image is
+/// the better package for the frame.
+pub(crate) fn damage_is_dense(surface: &Surface, tile_side: u32, damaged: usize) -> bool {
+    // on a coarse grid a tile is already most of a frame, so patching
+    // stays cheaper there
+    const FINE_GRID_TILES: u64 = 8;
+    let across = surface.width().div_ceil(tile_side);
+    let down = surface.height().div_ceil(tile_side);
+    let total = u64::from(across.saturating_mul(down).max(1));
+    total >= FINE_GRID_TILES && 4 * u64::try_from(damaged).unwrap_or(u64::MAX) >= total
+}
+
 /// One whole surface as a frame image: a compressed transmit under
 /// `image`, the cursor at the area origin, one placement filling `area`.
 /// The caller owns the sync wrapper and any previous-placement delete.
