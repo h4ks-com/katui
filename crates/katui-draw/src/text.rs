@@ -5,16 +5,35 @@ use std::sync::Arc;
 
 use cosmic_text::fontdb::{self, Family};
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, FontSystem, Metrics, Shaping, SwashCache, SwashImage, Weight,
+    Attrs, Buffer, CacheKey, FontSystem, LayoutRun, Metrics, Shaping, Style as FontStyle,
+    SwashCache, SwashImage, Weight,
 };
+use katui_scene::surface::Rgba;
 
 pub(crate) use cosmic_text::SwashContent;
 
-use crate::DrawError;
+use crate::{DrawError, Rect};
 
 // The locale only steers per-script fallback order, so we fix it to keep
 // the engine free of environment reads.
 const LOCALE: &str = "en-US";
+
+const BOLD_WEIGHT: u16 = 700;
+
+/// A stretch of text with its own look inside one wrapped run.
+#[allow(clippy::struct_excessive_bools)] // each is an independent text style
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct TextSpan {
+    pub text: String,
+    /// Its color, or the color the whole text is drawn in.
+    pub color: Option<Rgba>,
+    /// A color behind the glyphs.
+    pub background: Option<Rgba>,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
+}
 
 /// How a run of text looks.
 #[derive(Debug, Clone, PartialEq)]
@@ -74,39 +93,64 @@ impl TextEngine {
 
     /// Shapes `text`, wrapping at `max_width` when given.
     pub fn layout(&mut self, text: &str, style: &TextStyle, max_width: Option<f32>) -> TextLayout {
-        let mut buffer = Buffer::new_empty(Metrics::new(
-            style.size.max(1.0),
-            style.line_height.max(1.0),
-        ));
-        buffer.set_size(max_width, None);
-        let attrs = Attrs::new()
-            .weight(Weight(style.weight))
-            .family(Family::SansSerif);
-        buffer.set_text(text, &attrs, Shaping::Advanced, None);
-        buffer.shape_until_scroll(&mut self.fonts, false);
+        let mut buffer = new_buffer(style, max_width);
+        buffer.set_text(text, &base_attrs(style), Shaping::Advanced, None);
+        self.place(buffer, &[])
+    }
 
-        let (mut width, mut height, mut line_count) = (0.0_f32, 0.0_f32, 0);
-        let mut placed = Vec::new();
+    /// Shapes styled `spans` as one run of text that wraps across them.
+    pub fn layout_spans(
+        &mut self,
+        spans: &[TextSpan],
+        style: &TextStyle,
+        max_width: Option<f32>,
+    ) -> TextLayout {
+        let mut buffer = new_buffer(style, max_width);
+        let base = base_attrs(style);
+        let rich = spans.iter().enumerate().map(|(index, span)| {
+            let mut attrs = base.clone().metadata(index);
+            if span.bold {
+                attrs = attrs.weight(Weight(style.weight.max(BOLD_WEIGHT)));
+            }
+            if span.italic {
+                attrs = attrs.style(FontStyle::Italic);
+            }
+            (span.text.as_str(), attrs)
+        });
+        buffer.set_rich_text(rich, &base, Shaping::Advanced, None);
+        self.place(buffer, spans)
+    }
+
+    fn place(&mut self, mut buffer: Buffer, spans: &[TextSpan]) -> TextLayout {
+        buffer.shape_until_scroll(&mut self.fonts, false);
+        let mut layout = TextLayout {
+            glyphs: Vec::new(),
+            backgrounds: Vec::new(),
+            lines: Vec::new(),
+            size: (0.0, 0.0),
+            line_count: 0,
+        };
         for run in buffer.layout_runs() {
-            width = width.max(run.line_w);
-            height = height.max(run.line_top + run.line_height);
-            line_count += 1;
+            layout.size.0 = layout.size.0.max(run.line_w);
+            layout.size.1 = layout.size.1.max(run.line_top + run.line_height);
+            layout.line_count += 1;
             for glyph in run.glyphs {
+                let span = spans.get(glyph.metadata);
+                if let Some(span) = span {
+                    layout.add_marks(span, glyph.x, glyph.w, &run);
+                }
                 let physical = glyph.physical((0.0, run.line_y), 1.0);
                 if let Some(image) = self.rasterize(physical.cache_key) {
-                    placed.push(PlacedGlyph {
+                    layout.glyphs.push(PlacedGlyph {
                         image,
                         x: physical.x,
                         y: physical.y,
+                        color: span.and_then(|span| span.color),
                     });
                 }
             }
         }
-        TextLayout {
-            glyphs: placed,
-            size: (width, height),
-            line_count,
-        }
+        layout
     }
 
     fn rasterize(&mut self, key: CacheKey) -> Option<Arc<SwashImage>> {
@@ -127,21 +171,66 @@ impl TextEngine {
     }
 }
 
+fn new_buffer(style: &TextStyle, max_width: Option<f32>) -> Buffer {
+    let mut buffer = Buffer::new_empty(Metrics::new(
+        style.size.max(1.0),
+        style.line_height.max(1.0),
+    ));
+    buffer.set_size(max_width, None);
+    buffer
+}
+
+fn base_attrs(style: &TextStyle) -> Attrs<'static> {
+    Attrs::new()
+        .weight(Weight(style.weight))
+        .family(Family::SansSerif)
+}
+
 pub(crate) struct PlacedGlyph {
     pub(crate) image: Arc<SwashImage>,
     pub(crate) x: i32,
     pub(crate) y: i32,
+    pub(crate) color: Option<Rgba>,
 }
 
 /// Shaped text with its glyph bitmaps, positioned from its top-left
 /// corner. Redrawing it reuses the stored glyphs.
 pub struct TextLayout {
     glyphs: Vec<PlacedGlyph>,
+    backgrounds: Vec<(Rect, Rgba)>,
+    lines: Vec<(Rect, Option<Rgba>)>,
     size: (f32, f32),
     line_count: usize,
 }
 
 impl TextLayout {
+    fn add_marks(&mut self, span: &TextSpan, x: f32, width: f32, run: &LayoutRun<'_>) {
+        // we round outward so neighboring glyphs share an edge with no gap
+        let left = x.floor();
+        let width = (x + width).ceil() - left;
+        if let Some(color) = span.background {
+            self.backgrounds
+                .push((Rect::new(left, run.line_top, width, run.line_height), color));
+        }
+        let thickness = (run.line_height / 16.0).ceil();
+        if span.underline {
+            let line = Rect::new(left, run.line_y + thickness, width, thickness);
+            self.lines.push((line, span.color));
+        }
+        if span.strike {
+            let line = Rect::new(left, run.line_y - run.line_height * 0.28, width, thickness);
+            self.lines.push((line, span.color));
+        }
+    }
+
+    pub(crate) fn backgrounds(&self) -> &[(Rect, Rgba)] {
+        &self.backgrounds
+    }
+
+    pub(crate) fn lines(&self) -> &[(Rect, Option<Rgba>)] {
+        &self.lines
+    }
+
     /// The measured `(width, height)` in pixels.
     pub fn size(&self) -> (f32, f32) {
         self.size
@@ -154,6 +243,84 @@ impl TextLayout {
 
     pub(crate) fn glyphs(&self) -> &[PlacedGlyph] {
         &self.glyphs
+    }
+}
+
+#[cfg(test)]
+mod span_tests {
+    use katui_scene::surface::{PixelPos, Rgba, Surface};
+
+    use super::{TextSpan, TextStyle};
+    use crate::testing::engine;
+    use crate::{Canvas, Paint, Point};
+
+    const RED: Rgba = Rgba::solid(255, 0, 0);
+    const BLUE: Rgba = Rgba::solid(0, 0, 255);
+    const INK: Rgba = Rgba::solid(9, 9, 9);
+
+    fn span(text: &str) -> TextSpan {
+        TextSpan {
+            text: text.to_owned(),
+            ..TextSpan::default()
+        }
+    }
+
+    fn drawn(spans: &[TextSpan]) -> Surface {
+        let layout = engine().layout_spans(spans, &TextStyle::new(24.0), None);
+        let mut canvas = Canvas::new(400, 60).expect("400x60 is a valid canvas size");
+        canvas.draw_text(&layout, Point::new(0.0, 0.0), &Paint::Solid(INK));
+        canvas.to_surface().expect("a 400x60 canvas converts")
+    }
+
+    fn count(surface: &Surface, wanted: Rgba) -> usize {
+        (0..surface.height())
+            .flat_map(|y| (0..surface.width()).map(move |x| PixelPos::new(x, y)))
+            .filter(|at| surface.get(*at) == Some(wanted))
+            .count()
+    }
+
+    #[test]
+    fn each_span_draws_in_its_own_color() {
+        let surface = drawn(&[
+            TextSpan {
+                color: Some(RED),
+                ..span("MMMM")
+            },
+            TextSpan {
+                color: Some(BLUE),
+                ..span("MMMM")
+            },
+        ]);
+        assert!(count(&surface, RED) > 20, "the first span is red");
+        assert!(count(&surface, BLUE) > 20, "the second span is blue");
+    }
+
+    #[test]
+    fn a_background_fills_behind_its_span_only() {
+        let surface = drawn(&[
+            span("MM"),
+            TextSpan {
+                background: Some(RED),
+                ..span("MM")
+            },
+        ]);
+        let filled = count(&surface, RED);
+        assert!(filled > 200, "{filled} pixels of background");
+        assert_eq!(
+            surface.get(PixelPos::new(1, 2)).map(|pixel| pixel.a),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn underline_and_strike_each_add_a_line() {
+        let plain = drawn(&[span("MMMM")]);
+        let lined = drawn(&[TextSpan {
+            underline: true,
+            strike: true,
+            ..span("MMMM")
+        }]);
+        assert!(count(&lined, INK) > count(&plain, INK));
     }
 }
 

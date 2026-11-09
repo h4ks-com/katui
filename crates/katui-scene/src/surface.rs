@@ -2,7 +2,7 @@
 //! tile damage the patched presenters repaint from.
 
 /// One opaque or transparent pixel color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgba {
     /// Red.
     pub r: u8,

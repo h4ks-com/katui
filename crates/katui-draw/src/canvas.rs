@@ -235,12 +235,30 @@ impl Canvas {
     /// linear `paint` draws the whole text in its first stop's color.
     pub fn draw_text(&mut self, layout: &TextLayout, origin: Point, paint: &Paint) {
         let ink = Ink::new(paint);
-        let origin = (origin.x.round() as i32, origin.y.round() as i32);
+        let (shift_x, shift_y) = (origin.x.round(), origin.y.round());
+        let origin = (shift_x as i32, shift_y as i32);
+        let shifted =
+            |rect: Rect| Rect::new(rect.x + shift_x, rect.y + shift_y, rect.width, rect.height);
+        for (rect, color) in layout.backgrounds() {
+            self.fill_rect(shifted(*rect), &Paint::Solid(*color));
+        }
         let clip = self.clip_bounds();
         let stride = self.pixmap.width() as usize * 4;
         let pixels = self.pixmap.data_mut();
         for glyph in layout.glyphs() {
-            blit_glyph(pixels, stride, clip, glyph, origin, &ink);
+            match glyph.color {
+                Some(color) => {
+                    let own = Ink::new(&Paint::Solid(color));
+                    blit_glyph(pixels, stride, clip, glyph, origin, &own);
+                }
+                None => blit_glyph(pixels, stride, clip, glyph, origin, &ink),
+            }
+        }
+        for (rect, color) in layout.lines() {
+            match color {
+                Some(color) => self.fill_rect(shifted(*rect), &Paint::Solid(*color)),
+                None => self.fill_rect(shifted(*rect), paint),
+            }
         }
     }
 

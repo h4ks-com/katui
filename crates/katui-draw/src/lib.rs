@@ -9,7 +9,7 @@ mod text;
 
 pub use canvas::Canvas;
 pub use katui_scene::surface::Rgba;
-pub use text::{TextEngine, TextLayout, TextStyle};
+pub use text::{TextEngine, TextLayout, TextSpan, TextStyle};
 
 /// A position in pixels; `x` grows right and `y` grows down.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
