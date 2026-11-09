@@ -685,7 +685,8 @@ impl Chat {
             InputEvent::Mouse(_)
             | InputEvent::KeyUp(..)
             | InputEvent::Mode(..)
-            | InputEvent::GraphicsAnswer(_) => Control::Wait,
+            | InputEvent::GraphicsAnswer(_)
+            | InputEvent::DeviceAttributes => Control::Wait,
         }
     }
 

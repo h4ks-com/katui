@@ -112,16 +112,27 @@ impl<M: Send + 'static> EventPump<M> {
     /// Wait for the graphics answer naming `image`, holding everything
     /// else for later; `false` when no answer arrives within `wait`.
     pub fn await_answer(&mut self, image: u32, wait: Duration) -> bool {
+        self.await_event(
+            |event| matches!(event, InputEvent::GraphicsAnswer(answered) if *answered == image),
+            wait,
+        )
+    }
+
+    /// Wait for the device attributes answer, holding everything else for
+    /// later; `false` when no answer arrives within `wait`.
+    pub fn await_device_attributes(&mut self, wait: Duration) -> bool {
+        self.await_event(|event| *event == InputEvent::DeviceAttributes, wait)
+    }
+
+    fn await_event(&mut self, wanted: impl Fn(&InputEvent) -> bool, wait: Duration) -> bool {
         let deadline = Instant::now() + wait;
         while let Ok(signal) = self
             .receiver
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
         {
             match signal {
-                Signal::Input(InputEvent::GraphicsAnswer(answered)) if answered == image => {
-                    return true;
-                }
-                Signal::Input(InputEvent::GraphicsAnswer(_)) => {}
+                Signal::Input(event) if wanted(&event) => return true,
+                Signal::Input(InputEvent::GraphicsAnswer(_) | InputEvent::DeviceAttributes) => {}
                 other => self.queued.push_back(other),
             }
         }

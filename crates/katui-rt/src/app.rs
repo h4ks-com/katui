@@ -195,7 +195,7 @@ impl EventLoop {
         let mut signal = first;
         while let Some(current) = signal {
             match current {
-                Signal::Input(InputEvent::GraphicsAnswer(_)) => {}
+                Signal::Input(InputEvent::GraphicsAnswer(_) | InputEvent::DeviceAttributes) => {}
                 Signal::Input(event) => self.apply(app, AppEvent::Input(event)),
                 Signal::Message(message) => self.apply(app, AppEvent::Message(message)),
                 Signal::Pane(view) => {

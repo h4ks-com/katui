@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use katui_present::session;
 use katui_proto::kitty::{self, IdSpace};
-use katui_proto::probe::Capabilities;
+use katui_proto::probe::{Capabilities, ProbeSource};
 use katui_scene::CellSize;
 
 use crate::events::EventPump;
@@ -40,13 +40,18 @@ pub enum Pacing {
     EachFrame,
     /// Wait after every batch of commands, sized for a multiplexer.
     Batches,
+    /// Wait for the device attributes answer after every frame, for a
+    /// terminal without kitty graphics that answered the probe.
+    DeviceAttributes,
 }
 
 impl Pacing {
     /// The pacing `caps` can support.
     #[must_use]
     pub fn for_terminal(caps: &Capabilities) -> Self {
+        let answers = caps.trust == ProbeSource::Probed;
         match (caps.kitty, caps.multiplexed()) {
+            (false, false) if answers => Self::DeviceAttributes,
             (false, _) => Self::Timer,
             (true, false) => Self::EachFrame,
             (true, true) => Self::Batches,
@@ -104,6 +109,9 @@ impl Pacer {
         if frame.is_empty() {
             return Ok(true);
         }
+        if self.pacing == Pacing::DeviceAttributes {
+            return self.deliver_with_device_attributes(out, frame, pump);
+        }
         let parts = if self.pacing == Pacing::Batches {
             kitty::split_at_commands(frame, batch_limit(size))
         } else {
@@ -131,6 +139,26 @@ impl Pacer {
         Ok(answering)
     }
 }
+
+impl Pacer {
+    fn deliver_with_device_attributes<W: io::Write, M: Send + 'static>(
+        &mut self,
+        out: &mut W,
+        frame: &[u8],
+        pump: &mut EventPump<M>,
+    ) -> io::Result<bool> {
+        out.write_all(frame)?;
+        out.write_all(DEVICE_ATTRIBUTES_QUERY)?;
+        out.flush()?;
+        let answering = pump.await_device_attributes(ANSWER_WAIT);
+        if !answering {
+            self.pacing = Pacing::Timer;
+        }
+        Ok(answering)
+    }
+}
+
+const DEVICE_ATTRIBUTES_QUERY: &[u8] = b"\x1b[c";
 
 fn batch_limit(size: CellSize) -> usize {
     let cells = usize::from(size.columns) * usize::from(size.rows);
@@ -161,6 +189,15 @@ mod tests {
             ..kitty
         };
         assert_eq!(Pacing::for_terminal(&muxed), Pacing::Batches);
+        let answering_plain = Capabilities {
+            trust: katui_proto::probe::ProbeSource::Probed,
+            ..Capabilities::default()
+        };
+        assert_eq!(
+            Pacing::for_terminal(&answering_plain),
+            Pacing::DeviceAttributes,
+            "a terminal that answered the probe paces on device attributes"
+        );
     }
 
     #[test]

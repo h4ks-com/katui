@@ -1,6 +1,8 @@
 //! The sixel encoder: RGBA pixels to one DCS sixel image over a fixed
-//! 6x6x6 color cube with ordered dithering, so encoding needs no palette
-//! search and neighboring tiles agree on every color.
+//! 6x6x6 color cube, so encoding needs no palette search and neighboring
+//! tiles agree on every color. We round to the nearest level: dithering
+//! puts many colors in every band, and a sixel band costs a line of
+//! columns per color, which made dithered frames ten times larger.
 
 use std::fmt::Write as _;
 
@@ -8,8 +10,6 @@ use std::fmt::Write as _;
 const LEVELS: u8 = 6;
 /// The cube's size, the palette length.
 const COLORS: usize = 216;
-/// A 4x4 Bayer matrix, the threshold offsets of ordered dithering.
-const BAYER: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
 /// The first character of a sixel, which carries six vertical bits.
 const SIXEL_BASE: u8 = 0x3f;
 
@@ -23,9 +23,9 @@ pub fn encode(pixels: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
     if pixels.len() != columns.checked_mul(rows)?.checked_mul(4)? {
         return None;
     }
-    let indices = quantize(pixels, columns);
+    let indices = quantize(pixels);
     let mut text = format!("\x1bP0;1;0q\"1;1;{width};{height}");
-    write_palette(&mut text);
+    write_palette(&mut text, &indices);
     let mut band = Band::new(columns);
     for (band_index, band_rows) in indices.chunks(columns * 6).enumerate() {
         if band_index > 0 {
@@ -39,39 +39,37 @@ pub fn encode(pixels: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
 }
 
 /// Every pixel's palette index, `None` where it is transparent.
-fn quantize(pixels: &[u8], columns: usize) -> Vec<Option<u8>> {
+fn quantize(pixels: &[u8]) -> Vec<Option<u8>> {
     pixels
         .as_chunks::<4>()
         .0
         .iter()
-        .enumerate()
-        .map(|(index, &[red, green, blue, alpha])| {
+        .map(|&[red, green, blue, alpha]| {
             if alpha < 128 {
                 return None;
             }
-            let (x, y) = (index % columns, index / columns);
-            let threshold = BAYER
-                .get(y % 4)
-                .and_then(|row| row.get(x % 4))
-                .copied()
-                .unwrap_or(0);
-            let level = |value: u8| dithered_level(value, threshold);
-            Some(level(red) * LEVELS * LEVELS + level(green) * LEVELS + level(blue))
+            Some(cube_level(red) * LEVELS * LEVELS + cube_level(green) * LEVELS + cube_level(blue))
         })
         .collect()
 }
 
-/// The cube level of `value` with the dither offset `threshold` of 16.
-fn dithered_level(value: u8, threshold: u8) -> u8 {
-    let scaled = u32::from(value) * u32::from(LEVELS - 1) * 16 + u32::from(threshold) * 255;
-    u8::try_from(scaled / (255 * 16))
-        .unwrap_or(LEVELS - 1)
-        .min(LEVELS - 1)
+/// The nearest cube level of `value`.
+fn cube_level(value: u8) -> u8 {
+    let level = (u16::from(value) * u16::from(LEVELS - 1) + 127) / 255;
+    u8::try_from(level).unwrap_or(LEVELS - 1)
 }
 
-fn write_palette(text: &mut String) {
-    for index in 0..COLORS {
-        let level = |channel: usize| channel * 100 / usize::from(LEVELS - 1);
+/// Define the colors `indices` use, so a small tile carries a small
+/// palette.
+fn write_palette(text: &mut String, indices: &[Option<u8>]) {
+    let mut used = [false; COLORS];
+    for index in indices.iter().flatten() {
+        if let Some(slot) = used.get_mut(usize::from(*index)) {
+            *slot = true;
+        }
+    }
+    let level = |channel: usize| channel * 100 / usize::from(LEVELS - 1);
+    for index in (0..COLORS).filter(|index| used.get(*index) == Some(&true)) {
         let (red, green, blue) = (index / 36, index / 6 % 6, index % 6);
         let _ = write!(
             text,
@@ -169,7 +167,10 @@ mod tests {
     fn a_solid_block_is_one_color_run_per_band() {
         let sixel = encode(&solid(8, 12, [255, 0, 0, 255]), 8, 12).expect("exact pixels");
         let text = String::from_utf8(sixel).expect("sixel is ascii");
-        assert!(text.starts_with("\x1bP0;1;0q\"1;1;8;12#0;2;0;0;0"));
+        assert!(
+            text.starts_with("\x1bP0;1;0q\"1;1;8;12#180;2;100;0;0#180"),
+            "only red is defined: {text}"
+        );
         assert!(
             text.ends_with("#180!8~-#180!8~\x1b\\"),
             "two full bands of pure red: {text}"
@@ -270,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn a_gradient_survives_a_round_trip_within_one_cube_step() {
+    fn a_gradient_survives_a_round_trip_within_half_a_cube_step() {
         let (width, height) = (37, 13);
         let mut pixels = Vec::new();
         for y in 0..height {
@@ -299,14 +300,13 @@ mod tests {
     }
 
     #[test]
-    fn dithering_mixes_neighbor_levels_for_a_midtone() {
+    fn a_midtone_rounds_to_one_cube_level() {
         let text =
             String::from_utf8(encode(&solid(4, 4, [128, 128, 128, 255]), 4, 4).expect("exact"))
                 .expect("ascii");
-        let colors = text.split('$').count();
         assert!(
-            colors >= 2,
-            "a grey between cube levels dithers across two colors"
+            text.ends_with("#129!4N\x1b\\"),
+            "grey 128 is level 3 on every channel: {text}"
         );
     }
 }

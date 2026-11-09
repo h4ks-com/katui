@@ -137,6 +137,9 @@ pub enum InputEvent {
     Focus(bool),
     /// A kitty graphics answer naming this image id.
     GraphicsAnswer(u32),
+    /// The terminal's primary device attributes answer, which arrives
+    /// after everything sent before the query was handled.
+    DeviceAttributes,
     /// A private mode report: the mode and whether it is on.
     Mode(u32, bool),
 }
@@ -327,6 +330,9 @@ fn parse_csi(bytes: &[u8], tail: &[u8]) -> Parsed {
     }
     if final_byte == b'y' && parameters.starts_with('?') {
         return parse_mode_report(parameters, length);
+    }
+    if final_byte == b'c' && parameters.starts_with('?') {
+        return Parsed::Event(InputEvent::DeviceAttributes, length);
     }
     let parsed = match final_byte {
         b'I' => Parsed::Event(InputEvent::Focus(true), length),
@@ -661,6 +667,11 @@ mod tests {
                 InputEvent::GraphicsAnswer(30)
             ]
         );
+    }
+
+    #[test]
+    fn a_device_attributes_answer_is_one_event_and_no_key() {
+        assert_eq!(parse(b"\x1b[?62;4;22c"), vec![InputEvent::DeviceAttributes]);
     }
 
     #[test]
