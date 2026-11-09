@@ -49,12 +49,10 @@ impl SixelSurface {
             return Ok(0);
         };
         let tile_side = u32::from(self.cell.width) * u32::from(self.cell.height);
-        let damage = match self.prev.as_ref() {
-            Some(prev) if prev.width() == width && prev.height() == height => {
-                diff_tiles(prev, &screen, tile_side)
-            }
-            _ => vec![whole(width, height)],
-        };
+        let damage = self.prev.as_ref().map_or_else(
+            || vec![whole(width, height)],
+            |prev| diff_tiles(prev, &screen, tile_side),
+        );
         let damage = if damage_is_dense(&screen, tile_side, damage.len()) {
             vec![whole(width, height)]
         } else {

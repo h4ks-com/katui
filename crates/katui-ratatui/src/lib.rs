@@ -339,12 +339,14 @@ impl<W: io::Write> Backend for KatuiBackend<W> {
 
 #[cfg(test)]
 mod tests {
-    use super::KatuiBackend;
+    use super::{ImageFrame, ImageSlot, KatuiBackend};
+    use katui_present::kitty::RgbaImage;
     use katui_scene::cell::{Attrs as SceneAttrs, Color as SceneColor, Position as ScenePosition};
+    use katui_scene::placement::{CellRect, ImageId};
     use ratatui::Terminal;
     use ratatui::backend::{Backend as _, ClearType, TestBackend};
     use ratatui::buffer::Cell as RatCell;
-    use ratatui::layout::{Position as RatPosition, Size};
+    use ratatui::layout::{Position as RatPosition, Rect, Size};
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{Block, Paragraph, Widget as _};
@@ -632,8 +634,6 @@ mod tests {
 
     #[test]
     fn draw_image_transmits_once_and_moves_without_payload() {
-        use katui_scene::placement::{CellRect, ImageId};
-
         let mut backend = KatuiBackend::new(20, 6, Vec::new());
         let area = CellRect {
             x: 2,
@@ -676,8 +676,6 @@ mod tests {
 
     #[test]
     fn replacing_the_image_transmits_the_new_id_and_retires_the_old() {
-        use katui_scene::placement::{CellRect, ImageId};
-
         let area = CellRect {
             x: 0,
             y: 0,
@@ -699,11 +697,6 @@ mod tests {
 
     #[test]
     fn an_image_slot_keeps_ratatui_off_its_cells_and_two_images_share_a_frame() {
-        use super::{ImageFrame, ImageSlot};
-        use katui_present::kitty::RgbaImage;
-        use katui_scene::placement::{CellRect, ImageId};
-        use ratatui::layout::Rect;
-
         let mut terminal =
             Terminal::new(KatuiBackend::new(10, 4, Vec::new())).expect("terminal constructs");
         terminal

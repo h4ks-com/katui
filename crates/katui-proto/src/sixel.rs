@@ -2,7 +2,7 @@
 //! 6x6x6 color cube, so encoding needs no palette search and neighboring
 //! tiles agree on every color. We round to the nearest level: dithering
 //! puts many colors in every band, and a sixel band costs a line of
-//! columns per color, which made dithered frames ten times larger.
+//! columns per color, so dithered frames run about ten times larger.
 
 use std::fmt::Write as _;
 

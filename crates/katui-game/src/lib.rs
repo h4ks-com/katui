@@ -11,5 +11,5 @@ mod space;
 pub use arcade::{Game, play};
 pub use katui_proto::input::Key;
 pub use keys::HeldKeys;
-pub use light::{Blend, Light, P2, Rgb, scaled, srgb};
+pub use light::{Blend, Light, P2, Rgb, lerp3, scaled, srgb};
 pub use space::{Camera, Rng, Spark, Sparks, V3, v3};

@@ -4,7 +4,9 @@
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss)]
 
-use katui_game::{Blend, Camera, Game, HeldKeys, Key, Light, P2, Rgb, V3, play, scaled, srgb, v3};
+use katui_game::{
+    Blend, Camera, Game, HeldKeys, Key, Light, P2, Rgb, V3, lerp3, play, scaled, srgb, v3,
+};
 
 /// Each face as four corner indices, wound so the second edge crossed with
 /// the first points out of the cube, and its base color.
@@ -51,14 +53,7 @@ fn corners() -> [V3; 8] {
 }
 
 fn backdrop(share: f32) -> Rgb {
-    let [top_red, top_green, top_blue] = srgb(18, 12, 40);
-    let [low_red, low_green, low_blue] = srgb(2, 3, 10);
-    let mix = |top: f32, low: f32| top + (low - top) * share;
-    [
-        mix(top_red, low_red),
-        mix(top_green, low_green),
-        mix(top_blue, low_blue),
-    ]
+    lerp3(srgb(18, 12, 40), srgb(2, 3, 10), share)
 }
 
 impl Cube {

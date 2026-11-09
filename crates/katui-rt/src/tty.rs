@@ -185,13 +185,15 @@ fn measured_cell() -> Option<CellPixels> {
         .open("/dev/tty")
         .ok()?;
     let window = tcgetwinsize(tty.as_fd()).ok()?;
-    if window.ws_xpixel == 0 || window.ws_ypixel == 0 || window.ws_col == 0 || window.ws_row == 0 {
-        return None;
-    }
-    Some(CellPixels {
-        width: window.ws_xpixel / window.ws_col,
-        height: window.ws_ypixel / window.ws_row,
-    })
+    let area = CellPixels {
+        width: window.ws_xpixel,
+        height: window.ws_ypixel,
+    };
+    let cells = katui_scene::CellSize {
+        columns: window.ws_col,
+        rows: window.ws_row,
+    };
+    cell_from_area(area, cells)
 }
 
 /// The pixel size of one cell: what the terminal driver reports now,

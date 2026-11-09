@@ -459,7 +459,9 @@ fn is_dark(corners: &[Rgb; 4]) -> bool {
         .all(|corner| corner.iter().all(|channel| *channel < 0.002))
 }
 
-fn lerp3(from: Rgb, to: Rgb, amount: f32) -> Rgb {
+/// The color `amount` of the way from `from` to `to`.
+#[must_use]
+pub fn lerp3(from: Rgb, to: Rgb, amount: f32) -> Rgb {
     let mut mixed = from;
     mix(&mut mixed, to, amount, Blend::Over);
     mixed

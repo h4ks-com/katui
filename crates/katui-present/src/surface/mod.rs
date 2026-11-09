@@ -102,14 +102,13 @@ mod budget_tests {
     use katui_scene::placement::CellRect;
     use katui_scene::surface::{PixelPos, Rgba, Surface};
 
-    use super::{AnimatedKitty, BlocksSurface, PatchedKitty};
+    use super::{AnimatedKitty, BlocksSurface, PatchedKitty, SixelSurface};
 
     const WIDTH: u32 = 640;
     const HEIGHT: u32 = 360;
     const SPRITE: u32 = 16;
     const FRAMES: u32 = 30;
-    /// About four times what each strategy spends today, and a hundredth
-    /// of one whole frame.
+    /// A hundredth of one whole frame.
     const BUDGET: usize = 8 * 1024;
 
     fn background() -> Surface {
@@ -177,6 +176,12 @@ mod budget_tests {
                 .render_frame(out, surface, area())
                 .expect("writing to a Vec cannot fail")
         });
+        let mut sixel = SixelSurface::new(cell);
+        let sixel_worst = worst_frame(|out, surface| {
+            sixel
+                .render_frame(out, surface, 80, 21)
+                .expect("writing to a Vec cannot fail")
+        });
         let mut blocks = BlocksSurface::new();
         let blocks_worst = worst_frame(|out, surface| {
             blocks
@@ -187,6 +192,7 @@ mod budget_tests {
             ("patched", patched_worst),
             ("multiplexer tiles", tiled_worst),
             ("animated", animated_worst),
+            ("sixel", sixel_worst),
             ("blocks", blocks_worst),
         ];
         for (strategy, bytes) in worst {
