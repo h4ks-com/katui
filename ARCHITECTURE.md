@@ -27,7 +27,7 @@ same scene and presenters under all three:
    runtime, widgets and draw crate. Features trim the tree: default =
    cells + kitty + blocks; `sixel`, `iterm2`, `canvas` (tiny-skia),
    `wgpu` (offscreen 3D), `docs` (markdown + tree-sitter), `html`
-   (html5ever + selectors subset), `mcp` (control endpoint).
+   (an HTML and CSS subset through scraper).
 3. As a document/HTML renderer: `katui-content` with the `html` feature, the
    depth-2 subset from `research/html-css.md`, usable standalone or from
    ratatui apps through the adapter, in either fidelity mode.
@@ -54,8 +54,8 @@ katui-ffi ──────┤
 katui-game ─────┤  pixel apps and games: light buffer, held keys, fixed-step runner
 katui-app ──────┤  run(app): pixel UI programs over ui, widgets and the runtime
 katui-rt ───────┤  owns ALL I/O: raw mode, signals, event pump, frame clock,
-                │  loops, MCP server, emergency restore
-katui-content ──┤  markdown / tree-sitter / html-subset / charts -> scene
+                │  loops, emergency restore
+katui-content ──┤  markdown -> scene, html subset -> ui elements
 katui-ui ───────┤  reactive element trees, flexbox over taffy, hit testing -> layers
 katui-widgets ──┤  theme, text field, focus, lists, controls -> ui elements
 katui-layout ───┤  constraint API over taffy (+ kasuari for ratatui parity)
@@ -145,10 +145,11 @@ avt is below the popularity bar but asciinema-maintained and test-only.
 
 Runtime: tiny-skia (rasterizer, resvg-proven), taffy (flexbox+grid layout),
 image (decode), flate2 + base64 (codecs, ubiquitous), serde + serde_json
-(config, ops, MCP), ratatui (compat target), crossterm (raw mode and event
+(config, ops), ratatui (compat target), crossterm (raw mode and event
 pumping in katui-rt initially; own termios path later if needed),
 pulldown-cmark (markdown), tree-sitter + tree-sitter-highlight (code, the
-diffler set), html5ever + servo `selectors` (HTML subset, phase 4),
+diffler set), scraper over html5ever and servo `selectors`, with ego-tree for its node
+ids (HTML subset, phase 4),
 cosmic-text (pixel-fidelity text, phase 2), wgpu behind a feature flag
 (offscreen 3D, phase 2+), kasuari (via ratatui parity, small but it IS the
 ratatui engine).
