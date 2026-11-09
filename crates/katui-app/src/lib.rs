@@ -7,6 +7,7 @@ use std::io;
 
 use katui_draw::{TextEngine, bundled_fonts};
 use katui_present::kitty::{Images, KittyScreen, RgbaImage};
+use katui_present::surface::{PatchedKitty, PixelScreen};
 use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent};
 use katui_proto::probe::Capabilities;
 use katui_rt::RtError;
@@ -57,13 +58,41 @@ pub fn run<A: UiApp>(app: A) -> Result<(), RtError> {
     run_app(&mut runner, io::stdout(), &caps, FRAMES_PER_SECOND)
 }
 
+/// How frames reach the terminal: as kitty placements of the view's
+/// layers, or as one flattened picture through sixel or blocks.
+enum Screen {
+    Kitty(KittyScreen),
+    Picture(PixelScreen),
+}
+
+impl Screen {
+    fn for_terminal(caps: &Capabilities, cell: CellPixels) -> Self {
+        if caps.kitty {
+            Self::Kitty(KittyScreen::new(caps))
+        } else {
+            Self::Picture(PixelScreen::new(
+                caps,
+                cell,
+                PatchedKitty::new(FIRST_IMAGE, cell),
+            ))
+        }
+    }
+
+    fn repaint(&mut self) {
+        match self {
+            Self::Kitty(screen) => screen.repaint(),
+            Self::Picture(screen) => screen.repaint(),
+        }
+    }
+}
+
 struct Runner<A: UiApp> {
     app: A,
     caps: Capabilities,
     cell: CellPixels,
     theme: Theme,
     ui: Ui<A::Message>,
-    screen: KittyScreen,
+    screen: Screen,
     pixel_mouse: bool,
 }
 
@@ -80,7 +109,7 @@ impl<A: UiApp> Runner<A> {
             caps: caps.clone(),
             cell,
             ui: Ui::new(engine, options),
-            screen: KittyScreen::new(caps),
+            screen: Screen::for_terminal(caps, cell),
             pixel_mouse: false,
         })
     }
@@ -153,13 +182,23 @@ impl<A: UiApp> App for Runner<A> {
         );
         let root = self.app.view(&self.theme);
         let output = self.ui.render(&root, pixels, self.cell);
-        let mut images = Images::default();
-        for layer in &output.images {
-            if let Some(image) = RgbaImage::new(layer.width(), layer.height(), layer.rgba()) {
-                images.insert(layer.id, image);
+        match &mut self.screen {
+            Screen::Kitty(screen) => {
+                let mut images = Images::default();
+                for layer in &output.images {
+                    if let Some(image) = RgbaImage::new(layer.width(), layer.height(), layer.rgba())
+                    {
+                        images.insert(layer.id, image);
+                    }
+                }
+                screen.present(out, output.placements, &images)?;
+            }
+            Screen::Picture(screen) => {
+                if let Some(picture) = output.flatten(self.cell, pixels) {
+                    screen.render_frame(out, &picture, size.columns, size.rows)?;
+                }
             }
         }
-        self.screen.present(out, output.placements, &images)?;
         Ok(Control::Wait)
     }
 }
@@ -262,5 +301,31 @@ mod tests {
         assert!(!next.is_empty(), "the new count goes out");
         driver.type_bytes(b"\x03");
         assert!(driver.quit(), "ctrl c quits");
+    }
+
+    #[test]
+    fn a_terminal_without_kitty_graphics_gets_the_view_as_one_picture() {
+        let size = CellSize {
+            columns: 20,
+            rows: 6,
+        };
+        let draw = |caps: Capabilities| {
+            let runner =
+                Runner::new(Counter::default(), &caps, CELL).expect("the bundled fonts parse");
+            let mut driver = Headless::start(runner, size);
+            let frame = driver
+                .frame()
+                .expect("drawing works")
+                .expect("a first frame");
+            String::from_utf8_lossy(&frame).into_owned()
+        };
+        let sixel = draw(Capabilities {
+            sixel: true,
+            ..Capabilities::default()
+        });
+        assert!(sixel.contains("\x1bP0;1;0q"), "a sixel terminal gets sixel");
+        let plain = draw(Capabilities::default());
+        assert!(plain.contains("\x1b[38;2;"), "a plain terminal gets blocks");
+        assert!(!plain.contains("\x1b_G"), "and no graphics commands");
     }
 }
