@@ -11,12 +11,13 @@ pub struct Focus<F> {
 }
 
 impl<F: Copy + PartialEq> Focus<F> {
-    /// Focus over `order`, the first control focused. `None` for an empty
-    /// order.
-    pub fn new(order: impl IntoIterator<Item = F>) -> Option<Self> {
-        let order: Vec<F> = order.into_iter().collect();
-        let current = *order.first()?;
-        Some(Self { order, current })
+    /// Focus over `first` and then `rest`, `first` focused.
+    pub fn new(first: F, rest: impl IntoIterator<Item = F>) -> Self {
+        let order = std::iter::once(first).chain(rest).collect();
+        Self {
+            order,
+            current: first,
+        }
     }
 
     /// The focused control.
@@ -78,7 +79,7 @@ mod tests {
 
     #[test]
     fn tab_cycles_forward_and_shift_tab_back() {
-        let mut focus = Focus::new(['a', 'b', 'c']).expect("three controls");
+        let mut focus = Focus::new('a', ['b', 'c']);
         assert!(focus.is('a'));
         assert!(focus.handle(&InputEvent::Key(Key::Tab, Mods::NONE)));
         assert!(focus.is('b'));
@@ -96,6 +97,5 @@ mod tests {
             "an unknown control keeps focus where it was"
         );
         assert!(focus.is('a'));
-        assert_eq!(Focus::<char>::new([]), None);
     }
 }

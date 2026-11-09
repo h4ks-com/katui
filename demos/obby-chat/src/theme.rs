@@ -1,6 +1,8 @@
 //! The rainbow obsidian palette; each nick takes a fixed hue from it.
 
 use katui_draw::{Paint, Rgba};
+use katui_ui::CellPixels;
+use katui_widgets::Theme;
 
 pub const ASH: Rgba = Rgba::solid(207, 200, 217);
 pub const PUMICE: Rgba = Rgba::solid(139, 131, 152);
@@ -65,6 +67,22 @@ pub fn lifted() -> Paint {
         b: 217,
         a: 20,
     })
+}
+
+/// The widgets' theme in this palette, sized to `cell`.
+pub fn widgets(cell: CellPixels) -> Theme {
+    Theme {
+        cell,
+        background: raised(),
+        raised: raised(),
+        highlight: Paint::Solid(MENU),
+        border: lifted(),
+        text: ASH,
+        muted: PUMICE,
+        accent: ASH,
+        on_accent: INK_ON_LIGHT,
+        danger: Rgba::solid(255, 110, 110),
+    }
 }
 
 /// A color in floating-point channels, for mixing.

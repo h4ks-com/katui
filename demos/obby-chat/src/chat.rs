@@ -8,6 +8,7 @@ use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent}
 use katui_rt::app::Control;
 use katui_rt::events::Waker;
 use katui_scene::surface::Surface;
+use katui_widgets::{Edit, Focus, TextField};
 use obby_client::{
     Change, Channel, Client, Config, Event, MessageKey, MessageKind, Now, Phase, Typing,
 };
@@ -67,10 +68,28 @@ pub enum Field {
 
 pub struct Form {
     pub visible: bool,
-    pub focus: Field,
-    pub host: String,
-    pub nick: String,
-    pub channel: String,
+    pub focus: Focus<Field>,
+    pub host: TextField,
+    pub nick: TextField,
+    pub channel: TextField,
+}
+
+impl Form {
+    pub fn field(&self, field: Field) -> &TextField {
+        match field {
+            Field::Host => &self.host,
+            Field::Nick => &self.nick,
+            Field::Channel => &self.channel,
+        }
+    }
+
+    fn focused_mut(&mut self) -> &mut TextField {
+        match self.focus.current() {
+            Field::Host => &mut self.host,
+            Field::Nick => &mut self.nick,
+            Field::Channel => &mut self.channel,
+        }
+    }
 }
 
 /// An image preview's progress.
@@ -163,7 +182,7 @@ pub struct Chat {
     pub servers: Vec<Server>,
     selection: Option<(usize, Option<String>)>,
     pub form: Form,
-    pub draft: String,
+    pub draft: TextField,
     pub replying_to: Option<(String, String)>,
     pub hovered: Option<u64>,
     pub scroll: usize,
@@ -249,12 +268,12 @@ impl Chat {
             selection: None,
             form: Form {
                 visible: true,
-                focus: Field::Host,
-                host: "irc.h4ks.com:6697".to_owned(),
-                nick,
-                channel: "#bots".to_owned(),
+                focus: Focus::new(Field::Host, [Field::Nick, Field::Channel]),
+                host: TextField::with_text("irc.h4ks.com:6697"),
+                nick: TextField::with_text(nick),
+                channel: TextField::with_text("#bots"),
             },
-            draft: String::new(),
+            draft: TextField::default(),
             replying_to: None,
             hovered: None,
             scroll: 0,
@@ -342,12 +361,11 @@ impl Chat {
         let Some(waker) = self.waker.clone() else {
             return;
         };
-        let (host, port) = self
-            .form
-            .host
+        let address = self.form.host.text();
+        let (host, port) = address
             .rsplit_once(':')
             .and_then(|(host, port)| Some((host.to_owned(), port.parse().ok()?)))
-            .unwrap_or_else(|| (self.form.host.clone(), 6697));
+            .unwrap_or_else(|| (address.to_owned(), 6697));
         let endpoint = Endpoint {
             host,
             port,
@@ -359,9 +377,10 @@ impl Chat {
         });
         self.servers.push(Server {
             endpoint,
-            client: Client::new(Config::new(self.form.nick.clone())),
+            client: Client::new(Config::new(self.form.nick.text().to_owned())),
             connection,
-            join_after_register: Some(self.form.channel.clone()).filter(|name| !name.is_empty()),
+            join_after_register: Some(self.form.channel.text().to_owned())
+                .filter(|name| !name.is_empty()),
             joining: false,
             pending_join: None,
             join_error: None,
@@ -589,13 +608,15 @@ impl Chat {
                 self.replying_to = None;
             }
             Action::ShowForm => self.form.visible = !self.form.visible,
-            Action::FocusField(field) => self.form.focus = field,
+            Action::FocusField(field) => {
+                self.form.focus.set(field);
+            }
             Action::Connect => self.connect(),
             Action::Hover(key) => self.hovered = Some(key),
             Action::React(channel, msgid, emoji) => self.toggle_reaction(&channel, msgid, emoji),
             Action::Reply(msgid, nick) => self.replying_to = Some((msgid, nick)),
             Action::CancelReply => self.replying_to = None,
-            Action::Complete(name) => self.draft = format!("/{name} "),
+            Action::Complete(name) => self.draft.set_text(format!("/{name} ")),
         }
         Control::Redraw
     }
@@ -662,18 +683,10 @@ impl Chat {
     pub fn input(&mut self, event: InputEvent) -> Control {
         match event {
             InputEvent::Key(Key::Char('c' | 'q'), Mods { ctrl: true, .. }) => Control::Quit,
-            InputEvent::Key(key, mods) => {
-                if self.form.visible {
-                    self.form_key(key, mods)
-                } else {
-                    self.composer_key(key, mods)
-                }
+            InputEvent::Key(..) | InputEvent::Paste(_) if self.form.visible => {
+                self.form_key(&event)
             }
-            InputEvent::Paste(text) => {
-                self.focused_text()
-                    .push_str(&text.replace(['\r', '\n'], " "));
-                Control::Redraw
-            }
+            InputEvent::Key(..) | InputEvent::Paste(_) => self.composer_key(&event),
             InputEvent::Mode(1016, on) => {
                 self.pixel_mouse = on;
                 Control::Wait
@@ -690,69 +703,66 @@ impl Chat {
         }
     }
 
-    fn focused_text(&mut self) -> &mut String {
-        if !self.form.visible {
-            return &mut self.draft;
+    fn form_key(&mut self, event: &InputEvent) -> Control {
+        if self.form.focus.handle(event) {
+            return Control::Redraw;
         }
-        match self.form.focus {
-            Field::Host => &mut self.form.host,
-            Field::Nick => &mut self.form.nick,
-            Field::Channel => &mut self.form.channel,
-        }
-    }
-
-    fn form_key(&mut self, key: Key, mods: Mods) -> Control {
-        match key {
-            Key::Enter => self.connect(),
-            Key::Tab => {
-                self.form.focus = match self.form.focus {
-                    Field::Host => Field::Nick,
-                    Field::Nick => Field::Channel,
-                    Field::Channel => Field::Host,
-                };
+        match event {
+            InputEvent::Key(Key::Escape, _) if !self.servers.is_empty() => {
+                self.form.visible = false;
             }
-            Key::Escape if !self.servers.is_empty() => self.form.visible = false,
-            Key::Backspace => {
-                self.focused_text().pop();
-            }
-            Key::Char(character) if !mods.ctrl && !mods.alt => self.focused_text().push(character),
-            _ => return Control::Wait,
+            _ => match self.form.focused_mut().handle(event) {
+                Edit::Submitted => self.connect(),
+                Edit::Changed | Edit::Moved => {}
+                Edit::Ignored => return Control::Wait,
+            },
         }
         Control::Redraw
     }
 
-    fn composer_key(&mut self, key: Key, mods: Mods) -> Control {
+    fn composer_key(&mut self, event: &InputEvent) -> Control {
+        let key = match event {
+            InputEvent::Key(key, _) => Some(*key),
+            _ => None,
+        };
         match key {
-            Key::Tab | Key::Enter if self.completion().is_some() => {
+            Some(Key::Tab | Key::Enter) if self.completion().is_some() => {
                 if let Some(name) = self.completion() {
-                    self.draft = format!("/{name} ");
+                    self.draft.set_text(format!("/{name} "));
                 }
             }
-            Key::Enter => self.send_draft(),
-            Key::Escape if self.draft.starts_with('/') => self.draft.clear(),
-            Key::Escape => self.replying_to = None,
-            Key::Up | Key::Down if !self.command_matches().is_empty() => {
+            Some(Key::Escape) if self.draft.text().starts_with('/') => {
+                self.draft.take();
+            }
+            Some(Key::Escape) => self.replying_to = None,
+            Some(Key::Up | Key::Down) if !self.command_matches().is_empty() => {
                 let count = self.command_matches().len();
-                let step = if key == Key::Up { count - 1 } else { 1 };
+                let step = if key == Some(Key::Up) { count - 1 } else { 1 };
                 self.menu_index = (self.menu_index + step) % count;
             }
-            Key::Backspace => {
-                self.draft.pop();
-            }
-            Key::Char('u') if mods.ctrl => self.draft.clear(),
-            Key::Char(character) if !mods.ctrl && !mods.alt => {
-                self.draft.push(character);
+            Some(Key::Up) => return self.scroll_by(WHEEL_MESSAGES as isize),
+            Some(Key::Down) => return self.scroll_by(-(WHEEL_MESSAGES as isize)),
+            Some(Key::PageUp) => return self.scroll_by(PAGE_MESSAGES as isize),
+            Some(Key::PageDown) => return self.scroll_by(-(PAGE_MESSAGES as isize)),
+            _ => return self.edit_draft(event),
+        }
+        Control::Redraw
+    }
+
+    fn edit_draft(&mut self, event: &InputEvent) -> Control {
+        match self.draft.handle(event) {
+            Edit::Submitted => self.send_draft(),
+            Edit::Changed => {
                 self.menu_index = 0;
-                if !self.draft.starts_with('/') {
+                if !self.draft.text().starts_with('/') {
                     self.announce_typing();
                 }
             }
-            Key::Up => return self.scroll_by(WHEEL_MESSAGES as isize),
-            Key::Down => return self.scroll_by(-(WHEEL_MESSAGES as isize)),
-            Key::PageUp => return self.scroll_by(PAGE_MESSAGES as isize),
-            Key::PageDown => return self.scroll_by(-(PAGE_MESSAGES as isize)),
-            Key::End => self.scroll = 0,
-            _ => return Control::Wait,
+            Edit::Moved => {}
+            // we jump to the newest message on End once the cursor is
+            // already at the end of the draft
+            Edit::Ignored if matches!(event, InputEvent::Key(Key::End, _)) => self.scroll = 0,
+            Edit::Ignored => return Control::Wait,
         }
         Control::Redraw
     }
@@ -774,6 +784,7 @@ impl Chat {
     pub fn command_matches(&self) -> Vec<&'static Command> {
         let Some(typed) = self
             .draft
+            .text()
             .strip_prefix('/')
             .filter(|typed| !typed.contains(' '))
         else {
@@ -862,7 +873,7 @@ impl Chat {
     }
 
     fn send_draft(&mut self) {
-        let text = std::mem::take(&mut self.draft);
+        let text = self.draft.take();
         let trimmed = text.trim().to_owned();
         let Some(index) = self.selected_server().filter(|_| !trimmed.is_empty()) else {
             return;
@@ -872,7 +883,7 @@ impl Chat {
             // we keep an unknown command in the composer, because posting
             // it could put something like a password in the channel
             if !self.run_command(index, &trimmed) {
-                self.draft = text;
+                self.draft.set_text(text);
                 return;
             }
         } else if let Some((_, target)) = self.active_target() {

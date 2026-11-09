@@ -375,9 +375,9 @@ mod tests {
             "the op ranks first"
         );
         save("conversation.png", &composed(&chat));
-        chat.draft = "/".to_owned();
+        chat.draft.set_text("/");
         save("menu.png", &composed(&chat));
-        chat.draft.clear();
+        chat.draft.take();
         chat.form.visible = true;
         save("overlay.png", &composed(&chat));
         chat.form.visible = false;

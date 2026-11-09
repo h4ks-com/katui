@@ -1,7 +1,8 @@
 //! What the interface looks like, as a function of the chat state.
 
 use katui_draw::{Paint, Rgba};
-use katui_ui::{Align, Element, Length};
+use katui_ui::{Align, CellPixels, Element, Length};
+use katui_widgets::{Theme, text_field};
 use obby_client::{Channel, ChatMessage, MessageKind};
 
 use crate::chat::{Action, Chat, Command, Field, Preview, Server};
@@ -56,6 +57,13 @@ impl Metrics {
 
     fn columns(self, count: f32) -> Length {
         Length::Px(self.cell_width * count)
+    }
+
+    fn theme(self) -> Theme {
+        theme::widgets(CellPixels {
+            width: self.cell_width as u16,
+            height: self.cell_height as u16,
+        })
     }
 
     fn rows(self, count: f32) -> Length {
@@ -551,11 +559,11 @@ fn composer(chat: &Chat, channel: &Channel, metrics: Metrics) -> Node {
             .align(Align::Center),
         );
     }
-    lines.push(text_box(
+    lines.push(text_field(
         &chat.draft,
         &format!("Message {}", channel.name),
         !chat.form.visible,
-        metrics,
+        &metrics.theme(),
     ));
     Element::column(lines)
         .gap(metrics.cell_height * 0.25)
@@ -573,32 +581,6 @@ fn typing_line(channel: &Channel, me: &str) -> Option<String> {
         .take(3)
         .collect();
     (!names.is_empty()).then(|| format!("{} typing", names.join(", ")))
-}
-
-fn text_box(text: &str, placeholder: &str, focused: bool, metrics: Metrics) -> Node {
-    let content = if text.is_empty() && !focused {
-        label(placeholder.to_owned(), metrics.body(), PUMICE)
-    } else {
-        label(text.to_owned(), metrics.body(), ASH)
-    };
-    let mut parts = vec![content];
-    if focused {
-        parts.push(
-            Element::row([])
-                .size(Length::Px(2.0), Length::Px(metrics.body()))
-                .background(Paint::Solid(ASH)),
-        );
-    }
-    if text.is_empty() && focused {
-        parts.push(label(placeholder.to_owned(), metrics.body(), PUMICE));
-    }
-    Element::row(parts)
-        .align(Align::Center)
-        .padding_xy(metrics.cell_width * 1.5, metrics.cell_height * 0.5)
-        .radius(metrics.cell_height * 0.6)
-        .background(theme::raised())
-        .border(1.0, theme::lifted())
-        .width(Length::Fill)
 }
 
 fn members(server: &Server, channel: &Channel, metrics: Metrics) -> Node {
@@ -672,10 +654,11 @@ fn welcome(chat: &Chat, metrics: Metrics) -> Node {
 }
 
 fn form(chat: &Chat, metrics: Metrics) -> Node {
-    let field = |kind: Field, name: &str, value: &str| {
+    let theme = metrics.theme();
+    let field = |kind: Field, name: &str| {
         Element::column([
             label(name.to_owned(), metrics.small(), PUMICE),
-            text_box(value, "", chat.form.focus == kind, metrics),
+            text_field(chat.form.field(kind), "", chat.form.focus.is(kind), &theme),
         ])
         .gap(metrics.cell_height * 0.2)
         .width(Length::Fill)
@@ -690,9 +673,9 @@ fn form(chat: &Chat, metrics: Metrics) -> Node {
         .on_click(Action::Connect);
     Element::column([
         label("Add a server", metrics.title(), ASH).weight(800),
-        field(Field::Host, "Host and port", &chat.form.host),
-        field(Field::Nick, "Nick", &chat.form.nick),
-        field(Field::Channel, "Channel", &chat.form.channel),
+        field(Field::Host, "Host and port"),
+        field(Field::Nick, "Nick"),
+        field(Field::Channel, "Channel"),
         connect,
     ])
     .gap(metrics.cell_height * 0.75)
@@ -701,7 +684,7 @@ fn form(chat: &Chat, metrics: Metrics) -> Node {
     .radius(metrics.cell_height)
     .background(theme::raised())
     .border(1.0, theme::lifted())
-    .on_click(Action::FocusField(chat.form.focus))
+    .on_click(Action::FocusField(chat.form.focus.current()))
     .layer(FORM_KEY)
 }
 

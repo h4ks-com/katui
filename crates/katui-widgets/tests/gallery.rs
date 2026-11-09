@@ -98,7 +98,7 @@ fn every_widget_renders_and_answers_its_clicks() {
     name.handle(&InputEvent::Key(Key::Left, Mods::NONE));
     let mut fruits = ListState::new(FRUITS.len(), 5);
     fruits.select(6);
-    let focus = Focus::new([Control::Name, Control::Fruit]).expect("two controls");
+    let focus = Focus::new(Control::Name, [Control::Fruit]);
 
     let engine = TextEngine::new(vec![TEXT_FONT.to_vec()]).expect("the font parses");
     let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());

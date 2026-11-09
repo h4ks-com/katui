@@ -532,6 +532,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "katui-widgets"
+version = "0.1.0"
+dependencies = [
+ "katui-draw",
+ "katui-proto",
+ "katui-ui",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -620,6 +630,7 @@ dependencies = [
  "katui-rt",
  "katui-scene",
  "katui-ui",
+ "katui-widgets",
  "obby-client",
  "rustls",
  "ureq",

@@ -19,6 +19,7 @@ katui-proto = { path = "../../crates/katui-proto" }
 katui-rt = { path = "../../crates/katui-rt" }
 katui-scene = { path = "../../crates/katui-scene" }
 katui-ui = { path = "../../crates/katui-ui" }
+katui-widgets = { path = "../../crates/katui-widgets" }
 obby-client = "0.3"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
