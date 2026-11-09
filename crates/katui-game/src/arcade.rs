@@ -185,12 +185,6 @@ impl<G: Game> App for Arcade<G> {
                 self.keys.clear();
                 self.last_step = Instant::now();
                 self.screen.invalidate();
-                if change.view == PaneView::Hidden
-                    && let Some(mut client) = change.open_client()
-                {
-                    // We free a hidden pane's images because they stay visible over other windows.
-                    let _ = self.screen.free(&mut client);
-                }
             }
             AppEvent::Message(()) | AppEvent::Resized(_) => {}
         }

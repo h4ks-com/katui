@@ -10,6 +10,7 @@
 use std::time::Duration;
 
 use crate::kitty;
+use crate::placeholder::wrap_for_passthrough;
 
 /// How long the probe waits per read before asking the transport again.
 /// The transport may cut the wait shorter under its own budget.
@@ -77,6 +78,11 @@ impl Env {
             && (self.kitty_window_id.is_some()
                 || self.term.as_deref() == Some("xterm-kitty")
                 || self.term_program.as_deref() == Some("kitty"))
+    }
+
+    /// Whether we run in a tmux or rmux pane.
+    pub fn inside_multiplexer(&self) -> bool {
+        self.tmux.is_some() || self.rmux.is_some()
     }
 
     /// A dumb or unknown terminal swallows or mangles queries, so probing
@@ -184,15 +190,20 @@ const PROBE_ANIMATION_ID: u32 = 30;
 /// answered frame and frees the image, XTVERSION, the cell size and DA1
 /// last as the barrier. `AAAA` decodes to three bytes, one RGB pixel, so
 /// every command here declares `f=24`.
-fn batch() -> Vec<u8> {
-    format!(
+fn batch(env: &Env) -> Vec<u8> {
+    let queries = format!(
         "\x1b_Gi={PROBE_IMAGE_ID},s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
          \x1b_Ga=t,i={PROBE_ANIMATION_ID},s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\\
          \x1b_Ga=f,i={PROBE_ANIMATION_ID},s=1,v=1,f=24,t=d;AAAA\x1b\\\
          \x1b_Ga=d,d=I,i={PROBE_ANIMATION_ID},q=2\x1b\\\
          \x1b[>0q\x1b[16t\x1b[c"
     )
-    .into_bytes()
+    .into_bytes();
+    if env.inside_multiplexer() {
+        wrap_for_passthrough(&queries)
+    } else {
+        queries
+    }
 }
 
 /// How many quiet reads we allow a multiplexer to relay the kitty answer.
@@ -225,7 +236,7 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     }
     // a dead channel proves nothing beyond the sniff; stop before the
     // budget instead of waiting out a tty that cannot answer
-    if transport.write(&batch()).is_err() {
+    if transport.write(&batch(env)).is_err() {
         return caps;
     }
     let mut stream = Vec::new();
@@ -640,7 +651,7 @@ mod tests {
     #[test]
     fn the_query_batch_is_one_exact_byte_string() {
         assert_eq!(
-            super::batch(),
+            super::batch(&env()),
             b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\
               \x1b_Ga=t,i=30,s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\\
               \x1b_Ga=f,i=30,s=1,v=1,f=24,t=d;AAAA\x1b\\\
@@ -648,6 +659,15 @@ mod tests {
               \x1b[>0q\x1b[16t\x1b[c"
                 .to_vec()
         );
+    }
+
+    #[test]
+    fn inside_a_multiplexer_the_graphics_queries_are_wrapped() {
+        let mut mux = env();
+        mux.tmux = Some("pane".to_owned());
+        let batch = super::batch(&mux);
+        assert!(batch.starts_with(b"\x1bPtmux;\x1b\x1b_Gi=31"));
+        assert!(batch.ends_with(b"\x1b[>0q\x1b[16t\x1b[c"));
     }
 
     #[test]

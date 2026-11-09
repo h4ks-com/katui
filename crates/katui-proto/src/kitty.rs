@@ -215,6 +215,8 @@ pub struct Place {
     pub quiet: Quiet,
     /// Keep the cursor from advancing past the image (`C=1`).
     pub hold_cursor: bool,
+    /// A virtual placement that Unicode placeholder text shows (`U=1`).
+    pub virtual_placement: bool,
 }
 
 impl Place {
@@ -230,6 +232,7 @@ impl Place {
             crop: None,
             quiet: Quiet::Silent,
             hold_cursor: true,
+            virtual_placement: false,
         }
     }
 
@@ -262,6 +265,9 @@ impl Place {
         let _ = write!(command, ",q={}", self.quiet.key());
         if self.hold_cursor {
             command.push_str(",C=1");
+        }
+        if self.virtual_placement {
+            command.push_str(",U=1");
         }
         apc(&command).into_bytes()
     }

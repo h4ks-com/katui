@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use katui_present::session;
 use katui_proto::kitty;
+use katui_proto::placeholder::wrap_for_passthrough;
 use katui_proto::probe::Capabilities;
 
 use crate::events::EventPump;
@@ -71,8 +72,10 @@ impl Pacer {
         self.pacing = self.configured;
     }
 
-    pub(crate) fn is_answer_paced(&self) -> bool {
-        self.pacing != Pacing::Timer
+    fn take_query_id(&mut self) -> u32 {
+        let query = self.next_query;
+        self.next_query = self.next_query.wrapping_add(1).max(QUERY_IDS_FROM);
+        query
     }
 
     /// Write `frame`; `false` when this frame lost the terminal's answers.
@@ -86,22 +89,27 @@ impl Pacer {
         if frame.is_empty() {
             return Ok(true);
         }
-        let parts = match self.pacing {
-            Pacing::Timer | Pacing::EachFrame => vec![frame],
-            Pacing::Batches => kitty::split_at_commands(frame, MULTIPLEXER_BATCH),
+        let multiplexed = self.configured == Pacing::Batches;
+        let parts = if multiplexed {
+            kitty::split_at_commands(frame, MULTIPLEXER_BATCH)
+        } else {
+            vec![frame]
         };
         let mut answering = true;
         for part in parts {
-            out.write_all(part)?;
-            if self.pacing == Pacing::Timer || !answering {
-                out.flush()?;
-                continue;
+            let mut batch = part.to_vec();
+            let query = (self.pacing != Pacing::Timer && answering).then(|| self.take_query_id());
+            if let Some(query) = query {
+                session::terminal_query(&mut batch, query)?;
             }
-            let query = self.next_query;
-            self.next_query = self.next_query.wrapping_add(1).max(QUERY_IDS_FROM);
-            session::terminal_query(out, query)?;
+            if multiplexed {
+                batch = wrap_for_passthrough(&batch);
+            }
+            out.write_all(&batch)?;
             out.flush()?;
-            answering = pump.await_answer(query, ANSWER_WAIT);
+            if let Some(query) = query {
+                answering = pump.await_answer(query, ANSWER_WAIT);
+            }
         }
         if !answering {
             self.pacing = Pacing::Timer;

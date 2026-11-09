@@ -4,6 +4,7 @@
 
 pub mod input;
 pub mod kitty;
+pub mod placeholder;
 pub mod probe;
 pub mod rgp;
 

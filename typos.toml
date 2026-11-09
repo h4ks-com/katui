@@ -3,6 +3,8 @@
 extend-ignore-re = [
   'PNGs',
   'flate2',
+  # unicode escapes such as the placeholder diacritics read as words
+  '\\u\{[0-9a-fA-F]+\}',
 ]
 
 [default.extend-words]

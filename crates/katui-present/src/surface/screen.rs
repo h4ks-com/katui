@@ -36,7 +36,7 @@ impl PixelScreen {
     /// kitty graphics protocol, quarter blocks otherwise.
     #[must_use]
     pub fn new(caps: &Capabilities, patched: PatchedKitty) -> Self {
-        let patched = patched.tiles_only(caps.multiplexed());
+        let patched = patched.for_multiplexer(caps.multiplexed());
         Self {
             kitty: caps.kitty.then_some(PixelStrategy::Patched(patched)),
             blocks: BlocksSurface::new(),
@@ -52,7 +52,7 @@ impl PixelScreen {
         let strategy = if caps.animation && !caps.multiplexed() {
             PixelStrategy::Animated(animated)
         } else {
-            PixelStrategy::Patched(fallback.tiles_only(caps.multiplexed()))
+            PixelStrategy::Patched(fallback.for_multiplexer(caps.multiplexed()))
         };
         Self {
             kitty: caps.kitty.then_some(strategy),

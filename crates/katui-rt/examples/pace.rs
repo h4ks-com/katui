@@ -49,7 +49,7 @@ fn main() {
     )];
     for damage in [5, 20, 60] {
         let mut tiles =
-            PatchedKitty::with_tiles(BASE_IMAGE, cell(), TILE, usize::MAX).tiles_only(true);
+            PatchedKitty::with_tiles(BASE_IMAGE, cell(), TILE, usize::MAX).for_multiplexer(true);
         lines.push(run(
             "tiles",
             damage,
