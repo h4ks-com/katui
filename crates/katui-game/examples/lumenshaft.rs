@@ -980,7 +980,13 @@ fn draw_beam(light: &mut Light, camera: &Camera, beam: &Beam) {
 }
 
 #[cfg(test)]
+#[path = "support/artifact.rs"]
+mod artifact;
+
+#[cfg(test)]
 mod tests {
+    use crate::artifact;
+
     use std::collections::HashSet;
 
     use katui_game::{Game, HeldKeys, Key, Light};
@@ -1104,19 +1110,7 @@ mod tests {
     fn a_played_frame_dumps_a_png_artifact() {
         let (game, light) = playing_frame();
         assert_eq!(game.phase, Phase::Playing);
-        let surface = light.to_surface();
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/katui-lumenshaft-frame.png"
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ColorType::Rgba8,
-        )
-        .expect("the png writer saves under target");
+        artifact::save_frame(&light, "lumenshaft");
     }
 
     #[test]

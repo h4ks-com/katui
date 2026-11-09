@@ -766,7 +766,13 @@ fn nebula(x: f32, y: f32, height: f32) -> Rgb {
 }
 
 #[cfg(test)]
+#[path = "support/artifact.rs"]
+mod artifact;
+
+#[cfg(test)]
 mod tests {
+    use crate::artifact;
+
     use katui_game::{Game, HeldKeys, Key, Light, v3};
 
     use super::{FIRE, FORWARD, Phase, ROCK_SIZES, Shardrift, TURN_LEFT, V3};
@@ -853,18 +859,6 @@ mod tests {
         }
         game.ship.safe = 0.0;
         game.render(&mut light);
-        let surface = light.to_surface();
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/katui-shardrift-frame.png"
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ColorType::Rgba8,
-        )
-        .expect("the png writer saves under target");
+        artifact::save_frame(&light, "shardrift");
     }
 }

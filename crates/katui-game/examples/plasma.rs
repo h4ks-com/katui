@@ -7,7 +7,7 @@
     clippy::cast_sign_loss
 )]
 
-use katui_game::{Game, HeldKeys, Key, Light, Rgb, play, srgb};
+use katui_game::{Game, HeldKeys, Light, Rgb, play, srgb};
 
 const SPEED: f32 = 3.6;
 const SHADES: usize = 256;
@@ -38,10 +38,6 @@ impl Plasma {
 }
 
 impl Game for Plasma {
-    fn press(&mut self, _key: Key) {}
-
-    fn resize(&mut self, _light: &Light) {}
-
     fn step(&mut self, _keys: &HeldKeys, dt: f32) {
         self.time += dt * SPEED;
     }
@@ -82,7 +78,13 @@ fn palette(value: f32) -> Rgb {
 }
 
 #[cfg(test)]
+#[path = "support/artifact.rs"]
+mod artifact;
+
+#[cfg(test)]
 mod tests {
+    use crate::artifact;
+
     use katui_game::{Game, HeldKeys, Light};
     use katui_scene::surface::{PixelPos, Rgba};
 
@@ -141,18 +143,6 @@ mod tests {
 
     #[test]
     fn a_played_frame_dumps_a_png_artifact() {
-        let surface = frame(90).to_surface();
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/katui-plasma-frame.png"
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ColorType::Rgba8,
-        )
-        .expect("the png writer saves under target");
+        artifact::save_frame(&frame(90), "plasma");
     }
 }

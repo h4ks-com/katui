@@ -3,7 +3,7 @@
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss)]
 
-use katui_game::{Blend, Game, HeldKeys, Key, Light, P2, Rgb, play, srgb};
+use katui_game::{Blend, Game, HeldKeys, Light, P2, Rng, play, srgb};
 
 const GRID_COLUMNS: i16 = 24;
 const GRID_ROWS: i16 = 16;
@@ -19,12 +19,11 @@ fn main() -> Result<(), katui_rt::RtError> {
     play(Snake::new())
 }
 
-/// One snake run: body head-first, a direction, food and a tiny xorshift.
 struct Run {
     body: Vec<(i16, i16)>,
     dir: (i16, i16),
     food: (i16, i16),
-    rng: u32,
+    rng: Rng,
 }
 
 impl Run {
@@ -33,7 +32,7 @@ impl Run {
             body: vec![(GRID_COLUMNS / 2, GRID_ROWS / 2)],
             dir: (1, 0),
             food: (0, 0),
-            rng: 0x09e3_779b,
+            rng: Rng::new(0x09e3_779b),
         };
         run.place_food();
         run
@@ -70,10 +69,10 @@ impl Run {
 
     fn place_food(&mut self) {
         for _ in 0..100 {
-            self.rng = self.rng.rotate_left(7) ^ self.rng.wrapping_mul(0x02f1_cd33);
+            let roll = self.rng.next_u32();
             let candidate = (
-                grid_coordinate(self.rng, GRID_COLUMNS),
-                grid_coordinate(self.rng >> 8, GRID_ROWS),
+                grid_coordinate(roll, GRID_COLUMNS),
+                grid_coordinate(roll >> 8, GRID_ROWS),
             );
             if !self.body.contains(&candidate) {
                 self.food = candidate;
@@ -89,10 +88,6 @@ fn inside(cell: (i16, i16)) -> bool {
 
 fn grid_coordinate(value: u32, bound: i16) -> i16 {
     i16::try_from(value % u32::from(bound.unsigned_abs())).unwrap_or(0)
-}
-
-fn color([red, green, blue]: [u8; 3]) -> Rgb {
-    srgb(red, green, blue)
 }
 
 /// Where the bordered board sits on screen, in whole pixels so cells
@@ -132,12 +127,14 @@ impl Board {
 
     /// Border cells sit at -1, the grid at 0 and up.
     fn fill(&self, light: &mut Light, (column, row): (i16, i16), shade: [u8; 3], inset: P2) {
+        let [red, green, blue] = shade;
+
         let at = P2::new(
             self.origin.x + f32::from(column + 1) * self.cell.x + inset.x,
             self.origin.y + f32::from(row + 1) * self.cell.y + inset.y,
         );
         let (width, height) = (self.cell.x - inset.x * 2.0, self.cell.y - inset.y * 2.0);
-        light.rect(at, width, height, color(shade), Blend::Over);
+        light.rect(at, width, height, srgb(red, green, blue), Blend::Over);
     }
 }
 
@@ -160,8 +157,6 @@ impl Snake {
 }
 
 impl Game for Snake {
-    fn press(&mut self, _key: Key) {}
-
     fn resize(&mut self, light: &Light) {
         self.board = Board::fit(light);
         let mut backdrop = Light::new(light.width(), light.height(), light.pixel_aspect());
@@ -199,7 +194,13 @@ impl Game for Snake {
 }
 
 #[cfg(test)]
+#[path = "support/artifact.rs"]
+mod artifact;
+
+#[cfg(test)]
 mod tests {
+    use crate::artifact;
+
     use katui_game::{Game, HeldKeys, Light};
 
     use super::{Run, Snake, inside};
@@ -242,18 +243,6 @@ mod tests {
             snake.run.tick();
         }
         snake.render(&mut light);
-        let surface = light.to_surface();
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/katui-snake-frame.png"
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ColorType::Rgba8,
-        )
-        .expect("the png writer saves under target");
+        artifact::save_frame(&light, "snake");
     }
 }

@@ -269,6 +269,11 @@ impl Light {
 
     /// Add `text` with its top-left at `at`, glyph pixels `scale` tall.
     pub fn text(&mut self, at: P2, text: &str, scale: u32, color: Rgb) {
+        self.blended_text(at, text, scale, color, Blend::Add);
+    }
+
+    /// Draw `text` like [`Light::text`], meeting what is there with `blend`.
+    pub fn blended_text(&mut self, at: P2, text: &str, scale: u32, color: Rgb, blend: Blend) {
         // We start on a whole pixel because a fractional start smears glyphs together.
         let at = P2::new(at.x.round(), at.y.round());
         let tall = scale.max(1) as f32;
@@ -282,7 +287,7 @@ impl Light {
                 let top = at.y + row as f32 * tall;
                 for column in (0..5_u8).filter(|column| bits >> (4 - column) & 1 == 1) {
                     let spot = P2::new(left + f32::from(column) * wide, top);
-                    self.rect(spot, wide, tall, color, Blend::Add);
+                    self.rect(spot, wide, tall, color, blend);
                 }
             }
         }

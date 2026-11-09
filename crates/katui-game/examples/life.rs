@@ -14,7 +14,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use katui_game::{Game, HeldKeys, Key, Light, Rgb, Rng, play, srgb};
+use katui_game::{Game, HeldKeys, Light, Rgb, Rng, play, srgb};
 
 const GENERATION_SECONDS: f32 = 1.0 / 30.0;
 const BREATH_SPEED: f32 = 0.12;
@@ -25,6 +25,8 @@ const EMBER_TOP: u8 = 14;
 const EMBER_DECAY: u8 = 2;
 const EMBER: [u8; 3] = [170, 55, 30];
 const UNIVERSE_ROWS: u32 = 170;
+const NEBULA_TOP_LEFT: [f32; 3] = [10.0, 12.0, 34.0];
+const NEBULA_BOTTOM_RIGHT: [f32; 3] = [30.0, 12.0, 48.0];
 
 const BUCKETS: [(u8, u8, u8); 7] = [
     (255, 255, 235),
@@ -96,8 +98,6 @@ impl LifeDemo {
 }
 
 impl Game for LifeDemo {
-    fn press(&mut self, _key: Key) {}
-
     fn resize(&mut self, light: &Light) {
         self.grid = Grid::fitting(light);
         self.life = Life::new(self.grid.columns, self.grid.rows, self.rng.next_u32());
@@ -135,11 +135,9 @@ struct Life {
     alive: Vec<u8>,
     /// Generations alive per pixel; zero is dead. Ages saturate.
     age: Vec<u8>,
-    /// Ash heat left behind by a death, fading to zero.
-    ember: Vec<u8>,
+    ash_heat: Vec<u8>,
     background: Vec<[u8; 3]>,
-    /// Generations since the last birth or death.
-    stale: u32,
+    generations_without_change: u32,
     rng: Rng,
 }
 
@@ -150,9 +148,9 @@ impl Life {
             height,
             alive: vec![0; ((width + 2) * (height + 2)) as usize],
             age: vec![0; (width * height) as usize],
-            ember: vec![0; (width * height) as usize],
+            ash_heat: vec![0; (width * height) as usize],
             background: nebula(width, height, seed),
-            stale: 0,
+            generations_without_change: 0,
             rng: Rng::new(seed ^ 0x9e37_79b9),
         };
         life.reseed();
@@ -160,7 +158,7 @@ impl Life {
     }
 
     fn stagnant(&self) -> bool {
-        self.stale >= STALE_GENERATIONS
+        self.generations_without_change >= STALE_GENERATIONS
     }
 
     #[cfg(test)]
@@ -172,9 +170,9 @@ impl Life {
     /// coherent enough to grow structures that spit gliders.
     fn reseed(&mut self) {
         self.age.fill(0);
-        self.ember.fill(0);
+        self.ash_heat.fill(0);
         self.background = nebula(self.width, self.height, self.rng.next_u32());
-        self.stale = 0;
+        self.generations_without_change = 0;
         let clouds = (self.width * self.height / 22_000).clamp(2, 10);
         for _ in 0..clouds {
             let span = i64::from(14 + self.rng.next_u32() % 22);
@@ -223,7 +221,7 @@ impl Life {
     /// generation older, the dead handed ash that then fades.
     fn step(&mut self) {
         let stride = (self.width + 2) as usize;
-        self.ember
+        self.ash_heat
             .iter_mut()
             .for_each(|heat| *heat = heat.saturating_sub(EMBER_DECAY));
         let mut next_alive = vec![0u8; self.alive.len()];
@@ -252,7 +250,7 @@ impl Life {
                     next_alive[mid + x + 1] = 1;
                     next_age[inner] = self.age[inner].saturating_add(1);
                 } else if alive {
-                    self.ember[inner] = EMBER_TOP;
+                    self.ash_heat[inner] = EMBER_TOP;
                     churn = true;
                 }
             }
@@ -260,10 +258,10 @@ impl Life {
         self.alive = next_alive;
         self.age = next_age;
         self.absorb_ghost_border();
-        self.stale = if churn {
+        self.generations_without_change = if churn {
             0
         } else {
-            self.stale.saturating_add(1)
+            self.generations_without_change.saturating_add(1)
         };
     }
 
@@ -280,7 +278,7 @@ impl Life {
         let ember = scale((EMBER[0], EMBER[1], EMBER[2]));
         self.background
             .iter()
-            .zip(self.age.iter().zip(&self.ember))
+            .zip(self.age.iter().zip(&self.ash_heat))
             .map(|(&[red, green, blue], (&age, &heat))| {
                 let (add_red, add_green, add_blue) = if age > 0 {
                     glow[bucket(age)]
@@ -334,8 +332,8 @@ fn bucket(age: u8) -> usize {
 /// and speckled dark enough for the heat to dominate.
 fn nebula(width: u32, height: u32, seed: u32) -> Vec<[u8; 3]> {
     let mut rng = Rng::new(seed);
-    let (ax, ay, az) = (10.0, 12.0, 34.0);
-    let (bx, by, bz) = (30.0, 12.0, 48.0);
+    let ([from_red, from_green, from_blue], [to_red, to_green, to_blue]) =
+        (NEBULA_TOP_LEFT, NEBULA_BOTTOM_RIGHT);
     let mut field = Vec::with_capacity((width * height) as usize);
     for y in 0..height {
         for x in 0..width {
@@ -344,10 +342,12 @@ fn nebula(width: u32, height: u32, seed: u32) -> Vec<[u8; 3]> {
             let vy = y as f32 / height as f32 - 0.5;
             let vignette = 1.0 - (vx * vx + vy * vy).sqrt() * 0.8;
             let speckle = (rng.next_u32() % 7) as f32;
+            let shade =
+                |from: f32, to: f32| ((from + (to - from) * diagonal) * vignette + speckle) as u8;
             field.push([
-                ((ax + (bx - ax) * diagonal) * vignette + speckle) as u8,
-                ((ay + (by - ay) * diagonal) * vignette + speckle) as u8,
-                ((az + (bz - az) * diagonal) * vignette + speckle) as u8,
+                shade(from_red, to_red),
+                shade(from_green, to_green),
+                shade(from_blue, to_blue),
             ]);
         }
     }
@@ -355,7 +355,13 @@ fn nebula(width: u32, height: u32, seed: u32) -> Vec<[u8; 3]> {
 }
 
 #[cfg(test)]
+#[path = "support/artifact.rs"]
+mod artifact;
+
+#[cfg(test)]
 mod tests {
+    use crate::artifact;
+
     use katui_game::{Game, HeldKeys, Light};
 
     use super::{EMBER, EMBER_TOP, Grid, Life, LifeDemo, STALE_GENERATIONS, heat};
@@ -363,9 +369,9 @@ mod tests {
     fn dish(columns: u32, rows: u32, alive: &[(u32, u32)]) -> Life {
         let mut life = Life::new(columns, rows, 7);
         life.age.fill(0);
-        life.ember.fill(0);
+        life.ash_heat.fill(0);
         life.alive.fill(0);
-        life.stale = 0;
+        life.generations_without_change = 0;
         for &(x, y) in alive {
             let index = life.index(x, y);
             life.age[index] = 1;
@@ -418,11 +424,11 @@ mod tests {
     fn the_dead_leave_fading_ash() {
         let mut life = dish(9, 9, &[(1, 1)]);
         life.step();
-        assert_eq!(life.ember[life.index(1, 1)], EMBER_TOP);
+        assert_eq!(life.ash_heat[life.index(1, 1)], EMBER_TOP);
         let heats: Vec<u8> = (0..12)
             .map(|_| {
                 life.step();
-                life.ember[life.index(1, 1)]
+                life.ash_heat[life.index(1, 1)]
             })
             .collect();
         assert!(heats.windows(2).all(|pair| pair[0] >= pair[1]));
@@ -462,18 +468,6 @@ mod tests {
             demo.step(&keys, 1.0 / 60.0);
         }
         demo.render(&mut light);
-        let surface = light.to_surface();
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/katui-life-frame.png"
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ColorType::Rgba8,
-        )
-        .expect("the png writer saves under target");
+        artifact::save_frame(&light, "life");
     }
 }

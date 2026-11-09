@@ -1,24 +1,18 @@
 //! The katui dvd demo: the bouncing logo over a starfield, speeding up
 //! with every corner hit. Run with `just demo-dvd`.
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
-#![allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 
 use std::collections::VecDeque;
 use std::f32::consts::TAU;
 
-use katui_game::{Blend, Game, HeldKeys, Key, Light, P2, Rgb, Rng, play, srgb};
+use katui_game::{Blend, Game, HeldKeys, Light, P2, Rgb, Rng, play, srgb};
 
-/// The rows of K, A, T, U, I and ! in a 5 by 7 bitmap, high bit left.
-const LOGO: [[u8; 7]; 6] = [
-    [17, 18, 20, 24, 20, 18, 17],
-    [14, 17, 17, 31, 17, 17, 17],
-    [31, 4, 4, 4, 4, 4, 4],
-    [17, 17, 17, 17, 17, 17, 14],
-    [14, 4, 4, 4, 4, 4, 14],
-    [4, 4, 4, 4, 0, 0, 4],
-];
-const LOGO_COLUMNS: f32 = 35.0;
-const LOGO_ROWS: f32 = 7.0;
+const LOGO: &str = "KATUI!";
 
 const PALETTE: [[u8; 3]; 6] = [
     [235, 51, 35],
@@ -56,12 +50,11 @@ impl Star {
     }
 }
 
-/// One logo on the move, escalating with every corner hit.
 struct Logo {
     at: P2,
     velocity: P2,
     base_speed: P2,
-    font_pixel: P2,
+    font_scale: u32,
     size: P2,
     bounds: P2,
     palette_index: usize,
@@ -73,12 +66,14 @@ struct Logo {
 impl Logo {
     fn new(light: &Light) -> Self {
         let bounds = P2::new(light.width() as f32, light.height() as f32);
-        let tall = (bounds.y / 28.0)
+        let font_scale = (bounds.y / 28.0)
             .min(bounds.x * light.pixel_aspect() / 88.0)
             .floor()
-            .max(1.0);
-        let wide = (tall / light.pixel_aspect()).round().max(1.0);
-        let size = P2::new(LOGO_COLUMNS * wide, LOGO_ROWS * tall);
+            .max(1.0) as u32;
+        let size = P2::new(
+            light.text_width(LOGO, font_scale),
+            Light::text_height(font_scale),
+        );
         let base_speed = P2::new(bounds.x / CROSSING_SECONDS, bounds.y / CROSSING_SECONDS);
         Self {
             at: P2::new(
@@ -87,7 +82,7 @@ impl Logo {
             ),
             velocity: base_speed,
             base_speed,
-            font_pixel: P2::new(wide, tall),
+            font_scale,
             size,
             bounds,
             palette_index: 0,
@@ -104,16 +99,8 @@ impl Logo {
         );
         self.at.x += self.velocity.x * dt;
         self.at.y += self.velocity.y * dt;
-        let hit_x = self.at.x <= 0.0 || self.at.x >= limit.x;
-        let hit_y = self.at.y <= 0.0 || self.at.y >= limit.y;
-        if hit_x {
-            self.velocity.x = -self.velocity.x;
-            self.at.x = self.at.x.clamp(0.0, limit.x);
-        }
-        if hit_y {
-            self.velocity.y = -self.velocity.y;
-            self.at.y = self.at.y.clamp(0.0, limit.y);
-        }
+        let hit_x = bounce(&mut self.at.x, &mut self.velocity.x, limit.x);
+        let hit_y = bounce(&mut self.at.y, &mut self.velocity.y, limit.y);
         if hit_x || hit_y {
             let jump = 1 + rng.next_u32() as usize % 4;
             self.palette_index = (self.palette_index + jump) % PALETTE.len();
@@ -126,7 +113,6 @@ impl Logo {
         self.follow(dt);
     }
 
-    /// Every corner hit speeds the logo up, capped at twice the start.
     fn escalate(&mut self) {
         let bump = |speed: f32, base: f32| {
             (speed + base / 8.0 * speed.signum()).clamp(-base * 2.0, base * 2.0)
@@ -150,15 +136,19 @@ impl Logo {
         PALETTE.get(self.palette_index).copied().unwrap_or([255; 3])
     }
 
+    /// We draw the logo opaquely, since glowing text would brighten wherever
+    /// the trail overlaps it.
     fn draw(&self, light: &mut Light) {
         let color = self.color();
         for (index, ghost) in self.trail.iter().enumerate().skip(1) {
             let dim = 1 + index as u8;
             let [red, green, blue] = color.map(|channel| channel / dim);
-            draw_logo(light, *ghost, self.font_pixel, srgb(red, green, blue));
+            let shade = srgb(red, green, blue);
+            light.blended_text(*ghost, LOGO, self.font_scale, shade, Blend::Over);
         }
         let [red, green, blue] = color;
-        draw_logo(light, self.at, self.font_pixel, srgb(red, green, blue));
+        let shade = srgb(red, green, blue);
+        light.blended_text(self.at, LOGO, self.font_scale, shade, Blend::Over);
         if self.flash > 0.0 {
             let white = srgb(255, 255, 255);
             light.rect(
@@ -172,19 +162,14 @@ impl Logo {
     }
 }
 
-/// We draw the logo opaquely, since glowing text would brighten wherever
-/// the trail overlaps it.
-fn draw_logo(light: &mut Light, at: P2, font_pixel: P2, color: Rgb) {
-    let origin = P2::new(at.x.round(), at.y.round());
-    for (position, rows) in LOGO.iter().enumerate() {
-        for (row, bits) in rows.iter().enumerate() {
-            for column in (0..5_u8).filter(|column| bits >> (4 - column) & 1 == 1) {
-                let left = (position as f32 * 6.0 + f32::from(column)) * font_pixel.x;
-                let spot = P2::new(origin.x + left, origin.y + row as f32 * font_pixel.y);
-                light.rect(spot, font_pixel.x, font_pixel.y, color, Blend::Over);
-            }
-        }
+/// We never count a hit on an axis with no room, or the palette would flip every step.
+fn bounce(at: &mut f32, velocity: &mut f32, limit: f32) -> bool {
+    let hit = limit > 0.0 && (*at <= 0.0 || *at >= limit);
+    if hit {
+        *velocity = -*velocity;
     }
+    *at = at.clamp(0.0, limit);
+    hit
 }
 
 fn dusk(share: f32) -> Rgb {
@@ -220,8 +205,6 @@ impl Dvd {
 }
 
 impl Game for Dvd {
-    fn press(&mut self, _key: Key) {}
-
     fn resize(&mut self, light: &Light) {
         let (width, height) = (light.width() as f32, light.height() as f32);
         let mut backdrop = Light::new(light.width(), light.height(), light.pixel_aspect());
@@ -257,7 +240,13 @@ impl Game for Dvd {
 }
 
 #[cfg(test)]
+#[path = "support/artifact.rs"]
+mod artifact;
+
+#[cfg(test)]
 mod tests {
+    use crate::artifact;
+
     use katui_game::{Game, HeldKeys, Light};
 
     use super::Dvd;
@@ -292,6 +281,18 @@ mod tests {
     }
 
     #[test]
+    fn a_screen_smaller_than_the_logo_never_counts_a_hit() {
+        let (mut dvd, mut light) = dvd(20, 5);
+        for _ in 0..600 {
+            dvd.step(&HeldKeys::default(), DT);
+            assert_eq!(dvd.logo.palette_index, 0);
+            assert!(dvd.logo.flash <= 0.0);
+            assert_eq!((dvd.logo.at.x, dvd.logo.at.y), (0.0, 0.0));
+        }
+        dvd.render(&mut light);
+    }
+
+    #[test]
     fn stars_twinkle_between_frames() {
         let (mut dvd, mut light) = dvd(320, 180);
         dvd.render(&mut light);
@@ -309,18 +310,6 @@ mod tests {
         }
         dvd.logo.flash = 0.0;
         dvd.render(&mut light);
-        let surface = light.to_surface();
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/katui-dvd-frame.png"
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ColorType::Rgba8,
-        )
-        .expect("the png writer saves under target");
+        artifact::save_frame(&light, "dvd");
     }
 }
