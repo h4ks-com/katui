@@ -25,7 +25,7 @@ pub fn enable_input<W: Sink>(out: &mut W) -> io::Result<()> {
 
 /// Undo [`enable_input`].
 pub fn disable_input<W: Sink>(out: &mut W) -> io::Result<()> {
-    out.write_all(b"\x1b[<u\x1b[?2004l\x1b[?1004l\x1b[?1016l\x1b[?1006l\x1b[?1003l")
+    out.write_all(b"\x1b[=0;1u\x1b[<u\x1b[?2004l\x1b[?1004l\x1b[?1016l\x1b[?1006l\x1b[?1003l")
 }
 
 /// Also report key repeats and releases, with every key as an escape
@@ -51,7 +51,10 @@ mod tests {
         report_key_releases(&mut flags).expect("writing to a Vec cannot fail");
         disable_input(&mut off).expect("writing to a Vec cannot fail");
         assert_eq!(flags, b"\x1b[=11;1u");
-        assert!(off.starts_with(b"\x1b[<u"), "popping restores the keyboard");
+        assert!(
+            off.starts_with(b"\x1b[=0;1u\x1b[<u"),
+            "clearing the flags before popping covers terminals that keep them"
+        );
     }
 
     #[test]

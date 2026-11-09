@@ -104,8 +104,7 @@ pub fn run_app<A: App, W: io::Write>(
     // on their way would reach the shell as typed junk
     session::disable_input(terminal.out)?;
     terminal.out.flush()?;
-    let answer_paced = event_loop.pacer.is_answer_paced();
-    pump.finish(answer_paced);
+    pump.finish();
     drop(terminal);
     result
 }

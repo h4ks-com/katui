@@ -17,10 +17,11 @@ use crate::tty::RawInput;
 /// the silence after which a lone escape counts as the Esc key.
 const INPUT_POLL: Duration = Duration::from_millis(50);
 
-/// How long a finishing pump keeps raw mode for answers still travelling,
-/// and the silence that ends that wait sooner.
-const LATE_ANSWER_LIMIT: Duration = Duration::from_millis(500);
-const LATE_ANSWER_SILENCE: Duration = Duration::from_millis(120);
+/// How long a finishing pump keeps raw mode for input still travelling,
+/// such as the release of the key that quit, and the silence that ends
+/// that wait sooner.
+const LATE_INPUT_LIMIT: Duration = Duration::from_millis(600);
+const LATE_INPUT_SILENCE: Duration = Duration::from_millis(150);
 
 /// One item off the event queue.
 #[derive(Debug, PartialEq, Eq)]
@@ -127,16 +128,11 @@ impl<M: Send + 'static> EventPump<M> {
         false
     }
 
-    /// Stop reading and leave raw mode. With `late_answers`, keep raw mode
-    /// until queries still on their way have been answered, so none of
-    /// their answers reach the shell.
-    pub fn finish(self, late_answers: bool) {
-        if late_answers {
-            let deadline = Instant::now() + LATE_ANSWER_LIMIT;
-            while Instant::now() < deadline
-                && self.receiver.recv_timeout(LATE_ANSWER_SILENCE).is_ok()
-            {}
-        }
+    /// Stop reading and leave raw mode once input goes quiet, so that
+    /// answers and key releases still on their way never reach the shell.
+    pub fn finish(self) {
+        let deadline = Instant::now() + LATE_INPUT_LIMIT;
+        while Instant::now() < deadline && self.receiver.recv_timeout(LATE_INPUT_SILENCE).is_ok() {}
     }
 }
 
