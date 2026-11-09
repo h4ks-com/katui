@@ -7,6 +7,7 @@ use std::time::Duration;
 use katui_present::session;
 use katui_proto::kitty;
 use katui_proto::probe::Capabilities;
+use katui_scene::CellSize;
 
 use crate::events::EventPump;
 
@@ -14,6 +15,11 @@ use crate::events::EventPump;
 /// graphics commands past about 64 KB in flight, and 32 KB batches still
 /// lost the odd tile.
 const MULTIPLEXER_BATCH: usize = 16 * 1024;
+
+/// Bytes per pane cell in one batch. tmux discards its whole output once
+/// it holds eight bytes per cell of the client terminal, which is at
+/// least as big as our pane, so we keep each batch at half of that.
+const BATCH_BYTES_PER_CELL: usize = 4;
 
 /// The first graphics query id a run waits on; each query takes its own
 /// id, because a second client attached to a multiplexer answers too and
@@ -85,13 +91,14 @@ impl Pacer {
         &mut self,
         out: &mut W,
         frame: &[u8],
+        size: CellSize,
         pump: &mut EventPump<M>,
     ) -> io::Result<bool> {
         if frame.is_empty() {
             return Ok(true);
         }
         let parts = if self.pacing == Pacing::Batches {
-            kitty::split_at_commands(frame, MULTIPLEXER_BATCH)
+            kitty::split_at_commands(frame, batch_limit(size))
         } else {
             vec![frame]
         };
@@ -118,9 +125,15 @@ impl Pacer {
     }
 }
 
+fn batch_limit(size: CellSize) -> usize {
+    let cells = usize::from(size.columns) * usize::from(size.rows);
+    MULTIPLEXER_BATCH.min(cells * BATCH_BYTES_PER_CELL)
+}
+
 #[cfg(test)]
 mod tests {
     use katui_proto::probe::{Capabilities, Identity};
+    use katui_scene::CellSize;
 
     use super::Pacing;
 
@@ -141,5 +154,19 @@ mod tests {
             ..kitty
         };
         assert_eq!(Pacing::for_terminal(&muxed), Pacing::Batches);
+    }
+
+    #[test]
+    fn a_small_pane_gets_batches_under_the_multiplexer_discard_limit() {
+        let small = CellSize {
+            columns: 80,
+            rows: 24,
+        };
+        assert!(super::batch_limit(small) * 2 <= 80 * 24 * 8);
+        let large = CellSize {
+            columns: 300,
+            rows: 90,
+        };
+        assert_eq!(super::batch_limit(large), super::MULTIPLEXER_BATCH);
     }
 }

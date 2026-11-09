@@ -236,7 +236,7 @@ impl EventLoop {
         self.wire.clear();
         let after = app.draw(&mut self.wire, self.size)?;
         self.pending = after;
-        self.pacer.deliver(out, &self.wire, pump)?;
+        self.pacer.deliver(out, &self.wire, self.size, pump)?;
         Ok(())
     }
 }
