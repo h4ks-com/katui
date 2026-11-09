@@ -54,21 +54,21 @@ info:
 demo-gallery:
     cargo run --release -p katui-ratatui --example gallery
 
-# the plasma demo: quarter-block animation on any truecolor terminal
+# the plasma demo: an interference plasma in pixels or quarter blocks
 demo-plasma:
-    cargo run --release -p katui-rt --example plasma
+    cargo run --release -p katui-game --example plasma
 
 # the snake demo: a self-playing game on a pixel surface
 demo-snake:
-    cargo run --release -p katui-rt --example snake
+    cargo run --release -p katui-game --example snake
 
 # the dvd demo: the immortal bouncing logo, color per bounce, corner-hit flash
 demo-dvd:
-    cargo run --release -p katui-rt --example dvd
+    cargo run --release -p katui-game --example dvd
 
 # the life demo: conway's automaton in 256 colors, age-hot cells, ash trails
 demo-life:
-    cargo run --release -p katui-rt --example life
+    cargo run --release -p katui-game --example life
 
 # the lumenshaft demo: stack glowing blocks down a 3d shaft
 demo-lumenshaft:

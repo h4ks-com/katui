@@ -10,10 +10,6 @@ use katui_present::session;
 use katui_proto::kitty;
 
 use crate::RtError;
-#[cfg(unix)]
-use crate::events::EventPump;
-#[cfg(unix)]
-use crate::pacing::{Pacer, Pacing};
 
 /// An alternate-screen session. Drop leaves the screen, whatever ended
 /// it: normal return, error, panic.
@@ -89,17 +85,6 @@ impl Teardown {
 pub struct Stage<W: io::Write> {
     out: Option<W>,
     teardown: Teardown,
-    #[cfg(unix)]
-    pacing: Pacing,
-}
-
-/// What a draw callback knows about its frame.
-#[derive(Debug, Clone, Copy)]
-pub struct FrameContext {
-    /// Frames drawn before this one.
-    pub number: u64,
-    /// The terminal's current size, when it can be read.
-    pub size: Option<katui_scene::CellSize>,
 }
 
 /// What a [`ResizeWatch`] noticed.
@@ -162,57 +147,6 @@ impl ResizeWatch {
     }
 }
 
-/// The frames and timings of one run.
-#[derive(Debug, Clone, Default)]
-pub struct RunStats {
-    frame_times: Vec<Duration>,
-    elapsed: Duration,
-    terminal_paced: bool,
-    pacing_lost_at: Option<usize>,
-}
-
-impl RunStats {
-    /// Frames completed.
-    #[must_use]
-    pub fn frames(&self) -> usize {
-        self.frame_times.len()
-    }
-
-    /// Frames completed per second over the whole run.
-    #[must_use]
-    pub fn frames_per_second(&self) -> f64 {
-        let frames = u32::try_from(self.frames()).unwrap_or(u32::MAX);
-        f64::from(frames) / self.elapsed.as_secs_f64().max(f64::EPSILON)
-    }
-
-    fn percentile_ms(&self, percent: usize) -> f64 {
-        let mut sorted = self.frame_times.clone();
-        sorted.sort_unstable();
-        let index = (sorted.len() * percent / 100).min(sorted.len().saturating_sub(1));
-        sorted
-            .get(index)
-            .map_or(0.0, |time| time.as_secs_f64() * 1000.0)
-    }
-}
-
-impl std::fmt::Display for RunStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} frames, {:.1} fps, frame work p50 {:.1}ms p95 {:.1}ms, terminal pacing {}",
-            self.frames(),
-            self.frames_per_second(),
-            self.percentile_ms(50),
-            self.percentile_ms(95),
-            if self.terminal_paced { "on" } else { "off" },
-        )?;
-        if let Some(frame) = self.pacing_lost_at {
-            write!(f, " (no answer at frame {frame})")?;
-        }
-        Ok(())
-    }
-}
-
 impl<W: io::Write> Stage<W> {
     /// Hide the cursor and hold `out` for the run.
     pub fn enter(mut out: W, teardown: Teardown) -> Result<Self, RtError> {
@@ -220,18 +154,7 @@ impl<W: io::Write> Stage<W> {
         Ok(Self {
             out: Some(out),
             teardown,
-            #[cfg(unix)]
-            pacing: Pacing::Timer,
         })
-    }
-
-    /// Set how [`Stage::run`] waits for the terminal. Frames then never
-    /// queue up behind a slow terminal, so input stays responsive.
-    #[cfg(unix)]
-    #[must_use]
-    pub fn paced(mut self, pacing: Pacing) -> Self {
-        self.pacing = pacing;
-        self
     }
 
     /// The writer the run draws through.
@@ -251,72 +174,6 @@ impl<W: io::Write> Stage<W> {
         teardown.finish(&mut out)?;
         Ok(out)
     }
-
-    /// Draw at `frames_per_second` for at most `frames`, stopping early
-    /// when `draw` returns `false` or a quit key (`q`, `Esc`, `Ctrl-C`)
-    /// arrives. The stage is restored on every exit
-    /// path and the drawing error propagates.
-    #[cfg(unix)] // we read input through the unix raw-input guard
-    pub fn run<F>(self, frames_per_second: u32, frames: u64, mut draw: F) -> io::Result<RunStats>
-    where
-        F: FnMut(&mut Vec<u8>, FrameContext) -> io::Result<bool>,
-    {
-        let mut pump = EventPump::<()>::start();
-        let mut pacer = Pacer::new(if pump.reads_terminal() {
-            self.pacing
-        } else {
-            Pacing::Timer
-        });
-        let late_answers = pacer.is_answer_paced();
-        let mut clock = crate::clock::FrameClock::new(frames_per_second);
-        let mut stage = self;
-        let mut stats = RunStats {
-            terminal_paced: pacer.is_answer_paced(),
-            ..RunStats::default()
-        };
-        let mut wire = Vec::new();
-        let started = Instant::now();
-        let result = (|| {
-            for frame in 0..frames {
-                if quit_requested(&mut pump) {
-                    break;
-                }
-                let began = Instant::now();
-                wire.clear();
-                let context = FrameContext {
-                    number: frame,
-                    size: crate::tty::size().ok(),
-                };
-                let keep_going = draw(&mut wire, context)?;
-                if !pacer.deliver(stage.writer(), &wire, &mut pump)? {
-                    stats.terminal_paced = false;
-                    stats.pacing_lost_at = Some(stats.frames());
-                }
-                stats.frame_times.push(began.elapsed());
-                if !keep_going {
-                    break;
-                }
-                clock.wait_for_next_frame();
-            }
-            Ok(())
-        })();
-        stats.elapsed = started.elapsed();
-        pump.finish(late_answers);
-        // the stage restores the terminal whatever ended the run; the
-        // original error still propagates
-        let cleanup = stage.leave().map(|_| ());
-        result.and(cleanup).map(|()| stats)
-    }
-}
-
-/// Whether a quit key has arrived since the last check.
-#[cfg(unix)]
-fn quit_requested(pump: &mut EventPump<()>) -> bool {
-    let mut quit = false;
-    while let Some(signal) = pump.next(Duration::ZERO) {
-        quit |= matches!(signal, crate::events::Signal::Input(event) if event.is_quit_key());
-    }
-    quit
 }
 
 impl<W: io::Write> Drop for Stage<W> {
@@ -332,7 +189,6 @@ impl<W: io::Write> Drop for Stage<W> {
 #[cfg(test)]
 mod tests {
     use std::io;
-    use std::io::Write as _;
 
     use std::time::{Duration, Instant};
 
@@ -433,24 +289,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn a_run_draws_until_the_callback_stops() {
-        let stage =
-            Stage::enter(Vec::new(), Teardown::default()).expect("writing to a Vec cannot fail");
-        let mut drawn = 0;
-        let stats = stage
-            .run(1000, 100, |out, frame| {
-                drawn = frame.number + 1;
-                out.write_all(b"x")?;
-                Ok(frame.number < 3)
-            })
-            .expect("writing to a Vec cannot fail");
-        assert_eq!(drawn, 4, "the callback's false ends the run");
-        assert_eq!(stats.frames(), 4, "every drawn frame is counted");
-        assert!(stats.frames_per_second() > 0.0);
-    }
-
     fn size(columns: u16, rows: u16) -> katui_scene::CellSize {
         katui_scene::CellSize { columns, rows }
     }
@@ -502,14 +340,5 @@ mod tests {
         let now = Instant::now();
         assert_eq!(watch.observe(None, now), None);
         assert_eq!(watch.observe(Some(size(0, 0)), now), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_run_propagates_a_drawing_error_and_still_restores() {
-        let stage =
-            Stage::enter(Vec::new(), Teardown::default()).expect("writing to a Vec cannot fail");
-        let result = stage.run(1000, 10, |_, _| Err(io::Error::other("broken")));
-        assert!(result.is_err(), "the drawing error propagates");
     }
 }

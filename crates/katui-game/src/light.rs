@@ -13,6 +13,16 @@ pub fn scaled(color: Rgb, factor: f32) -> Rgb {
     color.map(|channel| channel * factor)
 }
 
+/// The light that shows as the sRGB color `red`, `green`, `blue` once
+/// tone-mapped, for art picked in ordinary color values.
+#[must_use]
+pub fn srgb(red: u8, green: u8, blue: u8) -> Rgb {
+    [red, green, blue].map(|byte| {
+        let shown = ((f32::from(byte) + 0.02) / 255.0).min(0.99996);
+        shown * shown / (1.0 - shown * shown)
+    })
+}
+
 const BLOOM_STEP: usize = 4;
 const BLUR_KEEP: f32 = 0.55;
 const MAX_POLYGON_EDGES: usize = 8;
@@ -472,7 +482,7 @@ fn polygon_box(points: &[P2]) -> Option<(P2, P2)> {
 mod tests {
     use katui_scene::surface::PixelPos;
 
-    use super::{Blend, Light, P2};
+    use super::{Blend, Light, P2, srgb};
 
     fn red_at(light: &Light, x: u32, y: u32) -> u8 {
         light
@@ -526,6 +536,25 @@ mod tests {
         let mut light = Light::new(32, 32, 0.5);
         light.glow(P2::new(16.0, 16.0), 12.0, [0.7, 0.2, 0.4]);
         assert_eq!(light.to_surface().pixels(), light.to_surface().pixels());
+    }
+
+    #[test]
+    fn an_srgb_color_tone_maps_back_to_itself() {
+        for value in [0_u8, 1, 17, 128, 200, 254] {
+            let mut light = Light::new(4, 4, 1.0);
+            light.rect(
+                P2::new(0.0, 0.0),
+                4.0,
+                4.0,
+                srgb(value, value, value),
+                Blend::Over,
+            );
+            for y in 0..4 {
+                for x in 0..4 {
+                    assert_eq!(red_at(&light, x, y), value, "{value} at {x},{y}");
+                }
+            }
+        }
     }
 
     #[test]
