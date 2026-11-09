@@ -17,6 +17,7 @@ use katui_scene::surface::{PixelRect, Surface, diff_tiles};
 use super::{damage_is_dense, write_whole_image};
 use crate::anchor::Anchor;
 use crate::cells::move_cursor;
+use crate::kitty::crop_rect;
 
 /// The patched kitty surface presenter: transmits the whole surface once,
 /// then per frame retransmits only the tiles whose pixels changed, each
@@ -25,7 +26,7 @@ use crate::cells::move_cursor;
 /// replaces the image and its placements), so a tile id is simply
 /// retransmitted and its placement replaced without flicker. A frame
 /// with more damaged tiles than the patch budget, a resize, or anything
-/// that invalidates the base image falls back to one whole retransmit.
+/// that loses the base image falls back to one whole retransmit.
 /// An unchanged frame writes nothing.
 ///
 /// The default tile side is `cell.width * cell.height` pixels, a
@@ -79,11 +80,8 @@ impl PatchedKitty {
 
     /// Send every pixel again on the next frame, for when the terminal
     /// may have lost what it was showing.
-    pub fn invalidate(&mut self) {
+    pub fn repaint(&mut self) {
         self.repaint = true;
-        if let Some(anchor) = self.anchor.as_mut() {
-            anchor.forget();
-        }
     }
 
     /// Free every image this presenter sent and repaint on the next frame.
@@ -103,7 +101,7 @@ impl PatchedKitty {
     /// and it hides the anchor, and so every tile, with its pane.
     #[must_use]
     pub fn for_multiplexer(mut self, enabled: bool) -> Self {
-        self.anchor = enabled.then(|| Anchor::new(self.base.wrapping_sub(1)));
+        self.anchor = enabled.then(Anchor::new);
         self
     }
 
@@ -168,15 +166,13 @@ impl PatchedKitty {
         if resized {
             self.free_tiles(&mut bytes)?;
         }
-        if !damage.is_empty() {
-            bytes.write_all(b"\x1b[?2026h")?;
-            if let Some(anchor) = self.anchor.as_mut() {
-                anchor.write(&mut bytes)?;
-            }
-            for rect in &damage {
-                self.patch(&mut bytes, surface, *rect, area)?;
-            }
-            bytes.write_all(b"\x1b[?2026l")?;
+        if !damage.is_empty()
+            && let Some(anchor) = self.anchor.as_mut()
+        {
+            anchor.write(&mut bytes)?;
+        }
+        for rect in &damage {
+            self.patch(&mut bytes, surface, *rect, area)?;
         }
         self.prev = Some(surface.clone());
         out.write_all(&bytes)?;
@@ -269,12 +265,12 @@ impl PatchedKitty {
         place.columns = u32::from(columns);
         place.rows = u32::from(rows);
         place.placement = KittyPlacement(2 + index);
-        place.crop = Some(katui_proto::kitty::PixelRect {
+        place.crop = Some(crop_rect(PixelRect {
             x: rect.x - padded.x,
             y: rect.y - padded.y,
             width: rect.width,
             height: rect.height,
-        });
+        }));
         if let Some(anchor) = &self.anchor {
             place.parent = Some(anchor.offset_to(origin));
         } else {
@@ -459,7 +455,7 @@ mod tests {
         let text = String::from_utf8_lossy(&wire);
         assert!(!text.contains("s=64"), "no whole image travels");
         assert_eq!(
-            text.matches(",P=89,").count(),
+            text.matches(",P=16777200,").count(),
             64,
             "every tile sits on the anchor"
         );
@@ -471,26 +467,35 @@ mod tests {
     }
 
     #[test]
-    fn an_invalidated_grid_repaints_every_tile_without_a_gap() {
+    fn a_repainted_grid_resends_every_tile_and_keeps_the_anchor() {
         let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(true);
         let surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
             .render_frame(&mut wire, &surface, area())
             .expect("writing to a Vec cannot fail");
-        presenter.invalidate();
+        presenter.repaint();
         wire.clear();
         presenter
             .render_frame(&mut wire, &surface, area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
-        assert_eq!(text.matches(",P=89,").count(), 64, "every tile returns");
+        assert_eq!(
+            text.matches(",P=16777200,").count(),
+            64,
+            "every tile returns"
+        );
+        assert_eq!(
+            text.matches("a=t,").count(),
+            64,
+            "only the tiles travel, because sending the anchor again would drop every tile on it"
+        );
         assert!(!text.contains("d=R"), "old tiles stay until replaced");
         wire.clear();
         presenter
             .render_frame(&mut wire, &surface, area())
             .expect("writing to a Vec cannot fail");
-        assert!(wire.is_empty(), "one invalidate repaints once");
+        assert!(wire.is_empty(), "one repaint request repaints once");
     }
 
     #[test]

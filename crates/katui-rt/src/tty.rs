@@ -169,7 +169,7 @@ pub fn probe_default() -> Capabilities {
 
 /// The cell size the terminal driver reports, when it reports pixels.
 #[must_use]
-pub fn measured_cell() -> Option<CellPixels> {
+fn measured_cell() -> Option<CellPixels> {
     let tty = OpenOptions::new()
         .read(true)
         .write(true)

@@ -62,10 +62,10 @@ impl PixelScreen {
 
     /// Send every graphics pixel again on the next frame, for when the
     /// terminal may have lost its images, a window resize for one.
-    pub fn invalidate(&mut self) {
+    pub fn repaint(&mut self) {
         match &mut self.kitty {
-            Some(PixelStrategy::Patched(patched)) => patched.invalidate(),
-            Some(PixelStrategy::Animated(animated)) => animated.invalidate(),
+            Some(PixelStrategy::Patched(patched)) => patched.repaint(),
+            Some(PixelStrategy::Animated(animated)) => animated.repaint(),
             None => {}
         }
     }

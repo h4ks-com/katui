@@ -31,11 +31,11 @@ const TILE_HEIGHTS: u32 = 3;
 /// A game [`play`] can run.
 pub trait Game {
     /// `key` went down.
-    fn press(&mut self, key: Key);
+    fn press(&mut self, _key: Key) {}
     /// `key` auto-repeated while held.
     fn repeat(&mut self, _key: Key) {}
     /// The screen became the size of `light`, so baked art needs redoing.
-    fn resize(&mut self, light: &Light);
+    fn resize(&mut self, _light: &Light) {}
     /// Advance the world by `dt` seconds, a fixed step.
     fn step(&mut self, keys: &HeldKeys, dt: f32);
     fn render(&mut self, light: &mut Light);
@@ -163,7 +163,7 @@ impl<G: Game> App for Arcade<G> {
             AppEvent::Repaint => {
                 self.keys.clear();
                 self.last_step = Instant::now();
-                self.screen.invalidate();
+                self.screen.repaint();
             }
             AppEvent::Message(()) | AppEvent::Resized(_) => {}
         }

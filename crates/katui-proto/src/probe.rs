@@ -10,7 +10,6 @@
 use std::time::Duration;
 
 use crate::kitty;
-use crate::placeholder::wrap_for_passthrough;
 
 /// How long the probe waits per read before asking the transport again.
 /// The transport may cut the wait shorter under its own budget.
@@ -200,7 +199,7 @@ fn batch(env: &Env) -> Vec<u8> {
     )
     .into_bytes();
     if env.inside_multiplexer() {
-        wrap_for_passthrough(&queries)
+        kitty::wrap_for_passthrough(&queries)
     } else {
         queries
     }

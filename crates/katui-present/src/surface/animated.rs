@@ -65,7 +65,7 @@ impl AnimatedKitty {
 
     /// Start a fresh reel on the next frame, for when the terminal may
     /// have lost what it was showing.
-    pub fn invalidate(&mut self) {
+    pub fn repaint(&mut self) {
         self.prev = None;
     }
 
@@ -74,7 +74,7 @@ impl AnimatedKitty {
         for image in [self.base, self.base + 1] {
             out.write_all(&Delete::Free(KittyImage(image)).encode())?;
         }
-        self.invalidate();
+        self.repaint();
         Ok(())
     }
 

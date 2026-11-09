@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::io::{self, Write as _};
 
 use katui_proto::kitty::{self, ImageId as KittyImage, PlacementId as KittyPlacement};
+use katui_proto::probe::Capabilities;
 use katui_scene::cell::Position;
 use katui_scene::placement::{ImageId, Placement, PlacementDelta, PlacementId, diff};
 use katui_scene::surface::PixelRect;
@@ -68,10 +69,6 @@ pub struct Kitty {
     anchor: Option<Anchor>,
 }
 
-/// The image id of the anchor a multiplexed presenter places its images
-/// on, high enough to stay clear of scene ids.
-const MULTIPLEXER_ANCHOR: u32 = 0x00ff_fff0;
-
 impl Kitty {
     /// A fresh presenter for a fresh terminal session.
     #[must_use]
@@ -86,7 +83,7 @@ impl Kitty {
     /// synchronized update ends.
     #[must_use]
     pub fn for_multiplexer(mut self, multiplexed: bool) -> Self {
-        self.anchor = multiplexed.then(|| Anchor::new(MULTIPLEXER_ANCHOR));
+        self.anchor = multiplexed.then(Anchor::new);
         self
     }
 
@@ -202,12 +199,12 @@ pub struct KittyScreen {
 }
 
 impl KittyScreen {
-    /// A screen for a fresh terminal session, anchored under a
-    /// multiplexer.
+    /// A screen for a fresh session on the terminal `caps` describes,
+    /// anchored under a multiplexer.
     #[must_use]
-    pub fn new(multiplexed: bool) -> Self {
+    pub fn new(caps: &Capabilities) -> Self {
         Self {
-            kitty: Kitty::new().for_multiplexer(multiplexed),
+            kitty: Kitty::new().for_multiplexer(caps.multiplexed()),
             ..Self::default()
         }
     }
@@ -367,7 +364,7 @@ mod tests {
 
     #[test]
     fn a_screen_sends_only_changes_and_everything_after_a_repaint() {
-        let mut screen = super::KittyScreen::new(false);
+        let mut screen = super::KittyScreen::new(&katui_proto::probe::Capabilities::default());
         let shown = vec![placement(7, 1, 0, 0)];
         let mut first = Vec::new();
         screen

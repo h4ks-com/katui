@@ -216,7 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         caps: caps.clone(),
         chat: Chat::new(default_nick()),
         ui: Ui::new(TextEngine::new(fonts())?, options),
-        screen: KittyScreen::new(multiplexed),
+        screen: KittyScreen::new(&caps),
         cell: katui_rt::tty::cell_size(&caps),
         backdrop_image: 0,
     };

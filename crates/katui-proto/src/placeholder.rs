@@ -1,48 +1,10 @@
-//! Kitty graphics inside a terminal multiplexer: commands wrapped for
-//! passthrough, and images shown through Unicode placeholder text, which
-//! the multiplexer moves, clips and hides like any other text.
+//! Unicode placeholder text, which shows a kitty image through ordinary
+//! cells that a multiplexer moves, clips and hides like any other text.
 
 use crate::kitty::ImageId;
 
 /// The character that marks a placeholder cell.
 const PLACEHOLDER: char = '\u{10eeee}';
-
-const COMMAND_START: &[u8] = b"\x1b_G";
-const STRING_END: &[u8] = b"\x1b\\";
-
-/// `bytes` with every graphics command wrapped for passthrough, which is
-/// the only way tmux forwards one to the terminal. Other bytes pass as
-/// they are.
-#[must_use]
-pub fn wrap_for_passthrough(bytes: &[u8]) -> Vec<u8> {
-    let mut wrapped = Vec::with_capacity(bytes.len() + bytes.len() / 64 + 16);
-    let mut rest = bytes;
-    while let Some(start) = find(rest, COMMAND_START) {
-        let after_start = rest.get(start + COMMAND_START.len()..).unwrap_or_default();
-        let Some(end) = find(after_start, STRING_END) else {
-            break;
-        };
-        let command_end = start + COMMAND_START.len() + end + STRING_END.len();
-        wrapped.extend_from_slice(rest.get(..start).unwrap_or_default());
-        wrapped.extend_from_slice(b"\x1bPtmux;");
-        for byte in rest.get(start..command_end).unwrap_or_default() {
-            if *byte == 0x1b {
-                wrapped.push(0x1b);
-            }
-            wrapped.push(*byte);
-        }
-        wrapped.extend_from_slice(STRING_END);
-        rest = rest.get(command_end..).unwrap_or_default();
-    }
-    wrapped.extend_from_slice(rest);
-    wrapped
-}
-
-fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
 
 /// One row of placeholder text showing `image`: `row` of its virtual
 /// placement, from the first column through `columns`. The row diacritic
@@ -371,17 +333,8 @@ const DIACRITICS: [char; 297] = [
 
 #[cfg(test)]
 mod tests {
-    use super::{placeholder_row, wrap_for_passthrough};
+    use super::placeholder_row;
     use crate::kitty::ImageId;
-
-    #[test]
-    fn commands_are_wrapped_with_their_escapes_doubled_and_text_kept() {
-        let wrapped = wrap_for_passthrough(b"ab\x1b_Ga=t;AAAA\x1b\\cd\x1b[2J");
-        assert_eq!(
-            wrapped,
-            b"ab\x1bPtmux;\x1b\x1b_Ga=t;AAAA\x1b\x1b\\\x1b\\cd\x1b[2J".to_vec()
-        );
-    }
 
     #[test]
     fn a_placeholder_row_names_the_image_in_its_color_and_marks_the_first_cell() {

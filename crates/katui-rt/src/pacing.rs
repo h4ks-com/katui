@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use katui_present::session;
 use katui_proto::kitty;
-use katui_proto::placeholder::wrap_for_passthrough;
 use katui_proto::probe::Capabilities;
 
 use crate::events::EventPump;
@@ -53,14 +52,16 @@ impl Pacing {
 #[derive(Debug)]
 pub(crate) struct Pacer {
     configured: Pacing,
+    multiplexed: bool,
     pacing: Pacing,
     next_query: u32,
 }
 
 impl Pacer {
-    pub(crate) fn new(pacing: Pacing) -> Self {
+    pub(crate) fn new(pacing: Pacing, multiplexed: bool) -> Self {
         Self {
             configured: pacing,
+            multiplexed,
             pacing,
             next_query: QUERY_IDS_FROM,
         }
@@ -89,8 +90,7 @@ impl Pacer {
         if frame.is_empty() {
             return Ok(true);
         }
-        let multiplexed = self.configured == Pacing::Batches;
-        let parts = if multiplexed {
+        let parts = if self.pacing == Pacing::Batches {
             kitty::split_at_commands(frame, MULTIPLEXER_BATCH)
         } else {
             vec![frame]
@@ -102,8 +102,8 @@ impl Pacer {
             if let Some(query) = query {
                 session::terminal_query(&mut batch, query)?;
             }
-            if multiplexed {
-                batch = wrap_for_passthrough(&batch);
+            if self.multiplexed {
+                batch = kitty::wrap_for_passthrough(&batch);
             }
             out.write_all(&batch)?;
             out.flush()?;
