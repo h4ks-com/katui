@@ -334,6 +334,13 @@ fn parse_csi(bytes: &[u8], tail: &[u8]) -> Parsed {
     if final_byte == b'c' && parameters.starts_with('?') {
         return Parsed::Event(InputEvent::DeviceAttributes, length);
     }
+    if final_byte == b'Z' {
+        let back = Mods {
+            shift: true,
+            ..Mods::NONE
+        };
+        return key(Key::Tab, back, length);
+    }
     let parsed = match final_byte {
         b'I' => Parsed::Event(InputEvent::Focus(true), length),
         b'O' => Parsed::Event(InputEvent::Focus(false), length),
@@ -667,6 +674,15 @@ mod tests {
                 InputEvent::GraphicsAnswer(30)
             ]
         );
+    }
+
+    #[test]
+    fn a_legacy_back_tab_is_shift_tab() {
+        let back = Mods {
+            shift: true,
+            ..Mods::NONE
+        };
+        assert_eq!(parse(b"\x1b[Z"), vec![InputEvent::Key(Key::Tab, back)]);
     }
 
     #[test]
