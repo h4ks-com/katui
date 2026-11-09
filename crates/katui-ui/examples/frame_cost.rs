@@ -5,12 +5,9 @@
 
 use std::time::{Duration, Instant};
 
-use katui_draw::{Paint, Rgba, TextEngine};
+use katui_draw::{Paint, Rgba, TextEngine, bundled_fonts};
 use katui_ui::{CellPixels, Element, Length, Ui, UiOptions};
 
-const TEXT_FONT: &[u8] =
-    include_bytes!("../../katui-draw/assets/AtkinsonHyperlegibleNext[wght].ttf");
-const EMOJI_FONT: &[u8] = include_bytes!("../../katui-draw/assets/NotoColorEmoji-subset.ttf");
 const CELL: CellPixels = CellPixels {
     width: 10,
     height: 20,
@@ -52,8 +49,7 @@ fn view(edit: u32) -> Element<u32> {
 }
 
 fn main() {
-    let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), EMOJI_FONT.to_vec()])
-        .expect("the bundled fonts parse");
+    let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
     let mut ui: Ui<u32> = Ui::new(engine, UiOptions::default());
     let cold = Instant::now();
     let first = ui.render(&view(0), SCREEN, CELL);

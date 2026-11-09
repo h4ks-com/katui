@@ -30,6 +30,21 @@ pub struct UiOptions {
     pub max_layer_cells: Option<(u16, u16)>,
 }
 
+/// A layer size that keeps every upload inside what a multiplexer carries.
+const MULTIPLEXER_LAYER_CELLS: (u16, u16) = (40, 16);
+
+impl UiOptions {
+    /// Ids from `first_image_id`, with layers split into multiplexer
+    /// sized images when `multiplexed`.
+    #[must_use]
+    pub fn for_terminal(first_image_id: u32, multiplexed: bool) -> Self {
+        Self {
+            first_image_id,
+            max_layer_cells: multiplexed.then_some(MULTIPLEXER_LAYER_CELLS),
+        }
+    }
+}
+
 impl Default for UiOptions {
     fn default() -> Self {
         Self {
