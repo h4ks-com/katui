@@ -89,3 +89,108 @@ pub(crate) mod test_support {
         surface
     }
 }
+
+/// Byte budgets per frame for the case every game hits: a small sprite
+/// moving over a static scene. A presenter that regresses into sending
+/// whole frames fails here long before anyone notices a slow game.
+#[cfg(test)]
+mod budget_tests {
+    use katui_proto::probe::CellPixels;
+    use katui_scene::placement::CellRect;
+    use katui_scene::surface::{PixelPos, Rgba, Surface};
+
+    use super::{AnimatedKitty, BlocksSurface, PatchedKitty};
+
+    const WIDTH: u32 = 640;
+    const HEIGHT: u32 = 360;
+    const SPRITE: u32 = 16;
+    const FRAMES: u32 = 30;
+    /// About four times what each strategy spends today, and a hundredth
+    /// of one whole frame.
+    const BUDGET: usize = 8 * 1024;
+
+    fn background() -> Surface {
+        let mut surface = Surface::new(WIDTH, HEIGHT);
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let shade = Rgba::solid((x / 3) as u8, (y / 2) as u8, 90);
+                surface.set(PixelPos::new(x, y), shade);
+            }
+        }
+        surface
+    }
+
+    fn scene(background: &Surface, frame: u32) -> Surface {
+        let mut surface = background.clone();
+        let left = 40 + frame * 4;
+        for y in 100..100 + SPRITE {
+            for x in left..left + SPRITE {
+                surface.set(PixelPos::new(x, y), Rgba::solid(255, 240, 40));
+            }
+        }
+        surface
+    }
+
+    /// The largest frame after the first, in bytes.
+    fn worst_frame(mut render: impl FnMut(&mut Vec<u8>, &Surface) -> usize) -> usize {
+        let background = background();
+        let mut out = Vec::new();
+        render(&mut out, &scene(&background, 0));
+        (1..FRAMES)
+            .map(|frame| {
+                out.clear();
+                render(&mut out, &scene(&background, frame))
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn area() -> CellRect {
+        CellRect::full(80, 20)
+    }
+
+    #[test]
+    fn a_moving_sprite_costs_a_few_kilobytes_a_frame_in_every_strategy() {
+        let cell = CellPixels {
+            width: 8,
+            height: 18,
+        };
+        let mut patched = PatchedKitty::with_tiles(900, cell, 32, 64);
+        let patched_worst = worst_frame(|out, surface| {
+            patched
+                .render_frame(out, surface, area())
+                .expect("writing to a Vec cannot fail")
+        });
+        let mut tiled = PatchedKitty::with_tiles(900, cell, 32, 64).for_multiplexer(true);
+        let tiled_worst = worst_frame(|out, surface| {
+            tiled
+                .render_frame(out, surface, area())
+                .expect("writing to a Vec cannot fail")
+        });
+        let mut animated = AnimatedKitty::new(900, 60, 32, 64);
+        let animated_worst = worst_frame(|out, surface| {
+            animated
+                .render_frame(out, surface, area())
+                .expect("writing to a Vec cannot fail")
+        });
+        let mut blocks = BlocksSurface::new();
+        let blocks_worst = worst_frame(|out, surface| {
+            blocks
+                .render_frame(out, surface)
+                .expect("writing to a Vec cannot fail")
+        });
+        let worst = [
+            ("patched", patched_worst),
+            ("multiplexer tiles", tiled_worst),
+            ("animated", animated_worst),
+            ("blocks", blocks_worst),
+        ];
+        for (strategy, bytes) in worst {
+            assert!(bytes > 0, "{strategy} sends the moved sprite");
+            assert!(
+                bytes <= BUDGET,
+                "{strategy} spent {bytes} bytes on one frame"
+            );
+        }
+    }
+}
