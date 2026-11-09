@@ -8,6 +8,16 @@ mod canvas;
 mod text;
 
 pub use canvas::Canvas;
+
+/// The fonts this crate ships: Atkinson Hyperlegible Next for text and a
+/// Noto Color Emoji subset, both under the SIL Open Font License.
+#[must_use]
+pub fn bundled_fonts() -> Vec<Vec<u8>> {
+    vec![TEXT_FONT.to_vec(), EMOJI_FONT.to_vec()]
+}
+
+const TEXT_FONT: &[u8] = include_bytes!("../assets/AtkinsonHyperlegibleNext[wght].ttf");
+const EMOJI_FONT: &[u8] = include_bytes!("../assets/NotoColorEmoji-subset.ttf");
 pub use katui_scene::surface::Rgba;
 pub use text::{TextEngine, TextLayout, TextSpan, TextStyle};
 
@@ -113,12 +123,8 @@ pub(crate) mod testing {
 
     use crate::text::TextEngine;
 
-    pub(crate) const TEXT_FONT: &[u8] =
-        include_bytes!("../assets/AtkinsonHyperlegibleNext[wght].ttf");
-    pub(crate) const EMOJI_FONT: &[u8] = include_bytes!("../assets/NotoColorEmoji-subset.ttf");
-
     pub(crate) fn engine() -> TextEngine {
-        TextEngine::new(vec![TEXT_FONT.to_vec(), EMOJI_FONT.to_vec()]).expect("fixture fonts parse")
+        TextEngine::new(super::bundled_fonts()).expect("fixture fonts parse")
     }
 
     pub(crate) fn save_png(name: &str, surface: &Surface) {
