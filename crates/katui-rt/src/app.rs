@@ -131,6 +131,15 @@ fn restore<W: io::Write>(out: &mut W) -> io::Result<()> {
     out.flush()
 }
 
+/// Whether `event` answers one of our pacing queries, which belongs to
+/// the loop and never reaches the app.
+pub(crate) fn is_terminal_answer(event: &InputEvent) -> bool {
+    matches!(
+        event,
+        InputEvent::GraphicsAnswer(_) | InputEvent::DeviceAttributes
+    )
+}
+
 /// The most demanding of two requests made since the last frame.
 pub(crate) fn merge(pending: Control, control: Control) -> Control {
     match (pending, control) {
@@ -195,7 +204,7 @@ impl EventLoop {
         let mut signal = first;
         while let Some(current) = signal {
             match current {
-                Signal::Input(InputEvent::GraphicsAnswer(_) | InputEvent::DeviceAttributes) => {}
+                Signal::Input(event) if is_terminal_answer(&event) => {}
                 Signal::Input(event) => self.apply(app, AppEvent::Input(event)),
                 Signal::Message(message) => self.apply(app, AppEvent::Message(message)),
                 Signal::Pane(view) => {

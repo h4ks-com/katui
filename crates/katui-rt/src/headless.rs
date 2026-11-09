@@ -47,9 +47,12 @@ where
         }
     }
 
-    /// Deliver one input event.
+    /// Deliver one input event; answers to pacing queries stay with the
+    /// loop, as they do on a terminal.
     pub fn input(&mut self, event: InputEvent) {
-        self.update(AppEvent::Input(event));
+        if !crate::app::is_terminal_answer(&event) {
+            self.update(AppEvent::Input(event));
+        }
     }
 
     /// Deliver every message the app's threads queued so far.
@@ -66,6 +69,7 @@ where
         self.size = size;
         self.update(AppEvent::Resized(size));
         self.update(AppEvent::Repaint);
+        self.pending = crate::app::merge(self.pending, Control::Redraw);
     }
 
     /// Draw one frame when the app asked for one; `None` when it waits or
@@ -170,7 +174,18 @@ mod tests {
             driver.frame().expect("drawing works"),
             Some(b"80x24 hi 5".to_vec())
         );
+        driver.type_bytes(b"\x1b[?62;4c");
+        assert_eq!(
+            driver.frame().expect("drawing works"),
+            None,
+            "an answer is no key and draws nothing"
+        );
         driver.resize(size(40, 10));
+        assert_eq!(
+            driver.frame().expect("drawing works"),
+            Some(b"40x10 hi 5".to_vec()),
+            "a resize redraws"
+        );
         driver.type_bytes(b"!");
         assert_eq!(
             driver.frame().expect("drawing works"),
