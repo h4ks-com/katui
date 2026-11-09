@@ -83,6 +83,18 @@ impl PatchedKitty {
         self.repaint = true;
     }
 
+    /// Free every image this presenter sent and repaint on the next frame.
+    pub fn free<W: Sink>(&mut self, out: &mut W) -> io::Result<()> {
+        let mut bytes = Vec::new();
+        self.free_tiles(&mut bytes)?;
+        for image in [self.base, self.base + 1] {
+            bytes.write_all(&Delete::Free(KittyImage(image)).encode())?;
+        }
+        self.base_shown = None;
+        self.repaint = true;
+        out.write_all(&bytes)
+    }
+
     /// Send every frame as small complete tiles: a multiplexer drops
     /// commands from an upload bigger than it buffers.
     #[must_use]

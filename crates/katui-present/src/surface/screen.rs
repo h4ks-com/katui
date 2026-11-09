@@ -70,6 +70,16 @@ impl PixelScreen {
         }
     }
 
+    /// Free every graphics image this screen sent and repaint on the next
+    /// frame, for a screen that went out of view or is being replaced.
+    pub fn free<W: Sink>(&mut self, out: &mut W) -> io::Result<()> {
+        match &mut self.kitty {
+            Some(PixelStrategy::Patched(patched)) => patched.free(out),
+            Some(PixelStrategy::Animated(animated)) => animated.free(out),
+            None => Ok(()),
+        }
+    }
+
     /// Write `surface` scaled to the whole `columns` x `rows` screen and
     /// return the bytes written.
     pub fn render_frame<W: Sink>(

@@ -69,6 +69,15 @@ impl AnimatedKitty {
         self.prev = None;
     }
 
+    /// Free both reels and start a fresh one on the next frame.
+    pub fn free<W: Sink>(&mut self, out: &mut W) -> io::Result<()> {
+        for image in [self.base, self.base + 1] {
+            out.write_all(&Delete::Free(KittyImage(image)).encode())?;
+        }
+        self.invalidate();
+        Ok(())
+    }
+
     /// Write one frame's data and return the bytes written.
     pub fn render_frame<W: Sink>(
         &mut self,
