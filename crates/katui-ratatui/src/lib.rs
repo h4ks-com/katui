@@ -17,9 +17,37 @@ use katui_scene::CellSize;
 use katui_scene::cell::{Attrs, Buffer, Cell as SceneCell, Color, Position};
 use katui_scene::placement::{self, CellRect, ImageId, Placement, PlacementId};
 use ratatui::backend::{Backend, ClearType, WindowSize};
-use ratatui::buffer::Cell as RatCell;
-use ratatui::layout::{Position as RatPosition, Size};
+use ratatui::buffer::{Buffer as RatBuffer, Cell as RatCell, CellDiffOption};
+use ratatui::layout::{Position as RatPosition, Rect, Size};
 use ratatui::style::{Color as RatColor, Modifier};
+use ratatui::widgets::Widget;
+
+/// One image a frame shows: its scene id, its pixels and the cells it
+/// covers.
+#[derive(Debug, Clone, Copy)]
+pub struct ImageFrame<'a> {
+    /// The scene id; new pixels take a new id.
+    pub image: ImageId,
+    /// The RGBA pixels.
+    pub pixels: RgbaImage<'a>,
+    /// The cells the image covers.
+    pub area: CellRect,
+}
+
+/// A widget that hands its area to an image: ratatui skips those cells, so
+/// the text layer never draws over the picture.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ImageSlot;
+
+impl Widget for ImageSlot {
+    fn render(self, area: Rect, buf: &mut RatBuffer) {
+        for position in area.positions() {
+            if let Some(cell) = buf.cell_mut(position) {
+                cell.set_diff_option(CellDiffOption::Skip);
+            }
+        }
+    }
+}
 
 /// The katui backend for ratatui, writing bytes to any [`io::Write`]:
 /// `Vec<u8>` in tests, stdout in applications.
@@ -53,7 +81,7 @@ impl<W: io::Write> KatuiBackend<W> {
         self
     }
 
-    /// The scene mirror of everything drawn so far.
+    /// The scene mirror of every cell drawn so far.
     pub fn screen(&self) -> &Buffer {
         &self.screen
     }
@@ -63,16 +91,8 @@ impl<W: io::Write> KatuiBackend<W> {
         self.out
     }
 
-    /// Draw one RGBA image at `area`: the placement bookkeeping diffs
-    /// against the previous image state, so an unchanged image costs
-    /// nothing, a move re-places without re-transmitting, and a new
-    /// image id transmits once. Returns the bytes written, the frame
-    /// budget's input.
-    ///
-    /// One image at a time is the whole contract today: a second call
-    /// replaces the first image entirely. Cells under `area` are the
-    /// app's to keep clear: the ratatui cell stream knows nothing of
-    /// images yet, and the scene mirror does not mark them.
+    /// Draw one RGBA image at `area`, replacing every image drawn
+    /// before; [`Self::draw_images`] with one entry.
     pub fn draw_image(
         &mut self,
         image: ImageId,
@@ -81,20 +101,37 @@ impl<W: io::Write> KatuiBackend<W> {
         height: u32,
         area: CellRect,
     ) -> io::Result<usize> {
-        let mut images = Images::default();
-        let Some(rgba) = RgbaImage::new(width, height, pixels) else {
+        let Some(pixels) = RgbaImage::new(width, height, pixels) else {
             // a mismatched payload transmits nothing rather than a
             // corrupt frame; the caller learns it by the zero bytes
             return Ok(0);
         };
-        images.insert(image, rgba);
-        let next = vec![Placement {
+        self.draw_images(&[ImageFrame {
             image,
-            id: PlacementId(1),
+            pixels,
             area,
-            crop: None,
-            z: 0,
-        }];
+        }])
+    }
+
+    /// Show exactly `frames` this frame: the placement bookkeeping diffs
+    /// against the previous frame, so an unchanged image costs nothing, a
+    /// move re-places without re-transmitting, a new image id transmits
+    /// once and an image left out is removed. Returns the bytes written,
+    /// the frame budget's input. Render an [`ImageSlot`] over each area so
+    /// ratatui leaves those cells to the image.
+    pub fn draw_images(&mut self, frames: &[ImageFrame<'_>]) -> io::Result<usize> {
+        let mut images = Images::default();
+        let mut next = Vec::with_capacity(frames.len());
+        for (index, frame) in frames.iter().enumerate() {
+            images.insert(frame.image, frame.pixels);
+            next.push(Placement {
+                image: frame.image,
+                id: PlacementId(u32::try_from(index + 1).unwrap_or(u32::MAX)),
+                area: frame.area,
+                crop: None,
+                z: 0,
+            });
+        }
         let delta = placement::diff(&self.placements, &next);
         let written = self.kitty.render(&mut self.out, &delta, &images)?;
         self.placements = next;
@@ -658,6 +695,66 @@ mod tests {
         let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("i=8,"), "the new id transmits");
         assert!(text.contains("d=i,i=7"), "the old id retires");
+    }
+
+    #[test]
+    fn an_image_slot_keeps_ratatui_off_its_cells_and_two_images_share_a_frame() {
+        use super::{ImageFrame, ImageSlot};
+        use katui_present::kitty::RgbaImage;
+        use katui_scene::placement::{CellRect, ImageId};
+        use ratatui::layout::Rect;
+
+        let mut terminal =
+            Terminal::new(KatuiBackend::new(10, 4, Vec::new())).expect("terminal constructs");
+        terminal
+            .draw(|frame| {
+                Paragraph::new("xxxxxxxxxx\nxxxxxxxxxx").render(frame.area(), frame.buffer_mut());
+                ImageSlot.render(Rect::new(2, 0, 3, 2), frame.buffer_mut());
+            })
+            .expect("drawing to a Vec cannot fail");
+        let screen = terminal.backend().screen();
+        let symbol = |x, y| {
+            screen
+                .get(ScenePosition { x, y })
+                .map(|cell| cell.symbol.clone())
+        };
+        assert_eq!(symbol(1, 0).as_deref(), Some("x"));
+        assert_eq!(
+            symbol(2, 0).as_deref(),
+            Some(" "),
+            "the slot stays untouched"
+        );
+        let pixel = [0xff, 0, 0, 0xff];
+        let rgba = RgbaImage::new(1, 1, &pixel).expect("one pixel");
+        let frames = [
+            ImageFrame {
+                image: ImageId(7),
+                pixels: rgba,
+                area: CellRect::full(2, 2),
+            },
+            ImageFrame {
+                image: ImageId(8),
+                pixels: rgba,
+                area: CellRect {
+                    x: 4,
+                    y: 0,
+                    columns: 2,
+                    rows: 2,
+                },
+            },
+        ];
+        terminal
+            .backend_mut()
+            .draw_images(&frames)
+            .expect("writing to a Vec cannot fail");
+        let bytes = terminal
+            .backend_mut()
+            .draw_images(&frames[..1])
+            .expect("writing to a Vec cannot fail");
+        assert!(bytes > 0, "the dropped image is removed");
+        let text = String::from_utf8_lossy(&terminal.backend().out);
+        assert!(text.contains("i=7,") && text.contains("i=8,"));
+        assert!(text.contains("d=i,i=8"), "the image left out retires");
     }
 
     #[test]
