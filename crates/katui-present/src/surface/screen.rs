@@ -1,14 +1,17 @@
 //! The composite pixel strategy: the patched kitty presenter when the
-//! terminal speaks graphics, the damage-tracked blocks otherwise.
+//! terminal speaks kitty graphics, sixel tiles when it speaks sixel, the
+//! damage-tracked blocks otherwise.
 
 use crate::Sink;
 use std::io;
 
 use katui_proto::probe::Capabilities;
+
+use crate::select::{Backend, select};
 use katui_scene::placement::CellRect;
 use katui_scene::surface::Surface;
 
-use super::{AnimatedKitty, BlocksSurface, PatchedKitty};
+use super::{AnimatedKitty, BlocksSurface, PatchedKitty, SixelSurface};
 
 /// The pixel strategy a [`PixelScreen`] drives on a graphics terminal.
 #[derive(Debug)]
@@ -17,30 +20,47 @@ pub(super) enum PixelStrategy {
     Patched(PatchedKitty),
     /// Terminal-side animation frames, played by the compositor.
     Animated(AnimatedKitty),
+    /// Sixel tiles, for terminals without kitty graphics.
+    Sixel(SixelSurface),
 }
 
 /// The demo-grade pixel presenter for a terminal: one object that
 /// renders a pixel surface full-screen through whatever the terminal
 /// offers, so callers stop hand-picking strategies per capability. The
 /// kitty strategy comes pre-built by the caller (tiles and budget are
-/// policy); it is used only when the terminal actually speaks
-/// graphics, and the blocks path carries every other terminal.
+/// policy); it is used only when the terminal speaks kitty graphics,
+/// sixel takes its cell size, and the blocks path carries every other
+/// terminal.
 #[derive(Debug, Default)]
 pub struct PixelScreen {
-    kitty: Option<PixelStrategy>,
+    graphics: Option<PixelStrategy>,
     blocks: BlocksSurface,
 }
 
 impl PixelScreen {
     /// The screen for `caps`: `patched` when the terminal speaks the
-    /// kitty graphics protocol, quarter blocks otherwise.
+    /// kitty graphics protocol, sixel tiles at `patched`'s cell size when
+    /// it speaks sixel, quarter blocks otherwise.
     #[must_use]
     pub fn new(caps: &Capabilities, patched: PatchedKitty) -> Self {
-        let patched = patched.for_multiplexer(caps.multiplexed());
+        let strategy = match select(caps) {
+            Backend::Kitty => Some(PixelStrategy::Patched(
+                patched.for_multiplexer(caps.multiplexed()),
+            )),
+            Backend::Sixel => Some(PixelStrategy::Sixel(SixelSurface::new(patched.cell()))),
+            Backend::Blocks => None,
+        };
         Self {
-            kitty: caps.kitty.then_some(PixelStrategy::Patched(patched)),
+            graphics: strategy,
             blocks: BlocksSurface::new(),
         }
+    }
+
+    /// Whether frames go out as sixel, which shows the surface at the
+    /// screen's own pixels.
+    #[must_use]
+    pub fn draws_sixel(&self) -> bool {
+        matches!(self.graphics, Some(PixelStrategy::Sixel(_)))
     }
 
     /// The same screen driven by a terminal-side animation, falling back
@@ -55,7 +75,7 @@ impl PixelScreen {
             PixelStrategy::Patched(fallback.for_multiplexer(caps.multiplexed()))
         };
         Self {
-            kitty: caps.kitty.then_some(strategy),
+            graphics: caps.kitty.then_some(strategy),
             blocks: BlocksSurface::new(),
         }
     }
@@ -63,9 +83,10 @@ impl PixelScreen {
     /// Send every graphics pixel again on the next frame, for when the
     /// terminal may have lost its images, a window resize for one.
     pub fn repaint(&mut self) {
-        match &mut self.kitty {
+        match &mut self.graphics {
             Some(PixelStrategy::Patched(patched)) => patched.repaint(),
             Some(PixelStrategy::Animated(animated)) => animated.repaint(),
+            Some(PixelStrategy::Sixel(sixel)) => sixel.repaint(),
             None => {}
         }
     }
@@ -73,9 +94,13 @@ impl PixelScreen {
     /// Free every graphics image this screen sent and repaint on the next
     /// frame, for a screen that went out of view or is being replaced.
     pub fn free<W: Sink>(&mut self, out: &mut W) -> io::Result<()> {
-        match &mut self.kitty {
+        match &mut self.graphics {
             Some(PixelStrategy::Patched(patched)) => patched.free(out),
             Some(PixelStrategy::Animated(animated)) => animated.free(out),
+            Some(PixelStrategy::Sixel(sixel)) => {
+                sixel.repaint();
+                Ok(())
+            }
             None => Ok(()),
         }
     }
@@ -89,13 +114,14 @@ impl PixelScreen {
         columns: u16,
         rows: u16,
     ) -> io::Result<usize> {
-        match &mut self.kitty {
+        match &mut self.graphics {
             Some(PixelStrategy::Patched(patched)) => {
                 patched.render_frame(out, surface, CellRect::full(columns, rows))
             }
             Some(PixelStrategy::Animated(animated)) => {
                 animated.render_frame(out, surface, CellRect::full(columns, rows))
             }
+            Some(PixelStrategy::Sixel(sixel)) => sixel.render_frame(out, surface, columns, rows),
             None => self.blocks.render_frame(out, surface),
         }
     }
@@ -150,6 +176,26 @@ mod tests {
         let text = String::from_utf8_lossy(&out);
         assert!(text.contains("a=t"), "the surface transmits as an image");
         assert!(text.contains("a=p"), "and is placed");
+    }
+
+    #[test]
+    fn a_sixel_terminal_gets_sixel_tiles() {
+        let patched = crate::surface::PatchedKitty::new(
+            90,
+            CellPixels {
+                width: 2,
+                height: 4,
+            },
+        );
+        let mut sixel = caps(false);
+        sixel.sixel = true;
+        let mut screen = PixelScreen::new(&sixel, patched);
+        assert!(screen.draws_sixel());
+        let mut out = Vec::new();
+        screen
+            .render_frame(&mut out, &plain(8, 4), 4, 2)
+            .expect("writing to a Vec cannot fail");
+        assert!(String::from_utf8_lossy(&out).contains("\x1bP0;1;0q"));
     }
 
     #[test]

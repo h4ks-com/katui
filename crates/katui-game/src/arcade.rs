@@ -3,6 +3,7 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use katui_present::select::{Backend, select};
 use katui_present::session;
 use katui_present::surface::{PatchedKitty, PixelScreen};
 use katui_proto::input::{InputEvent, Key};
@@ -61,7 +62,7 @@ struct Arcade<G> {
 }
 
 fn density(size: CellSize, caps: &Capabilities) -> (u32, u32) {
-    if !caps.kitty {
+    if select(caps) == Backend::Blocks {
         return (2, 2);
     }
     let shrink = if caps.multiplexed() {

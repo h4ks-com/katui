@@ -1,6 +1,7 @@
-//! Surface presenters: two kitty strategies, the whole-frame baseline
-//! with alternating image ids and the tile-patched refinement, plus the
-//! damage-tracked blocks fallback every truecolor terminal runs.
+//! Surface presenters: the kitty strategies (whole frames with
+//! alternating image ids, tile patches, terminal-side animation), sixel
+//! tiles for terminals without kitty graphics, and the damage-tracked
+//! blocks fallback every truecolor terminal runs.
 
 mod animated;
 mod blocks;
@@ -8,6 +9,7 @@ mod buffer;
 mod full;
 mod patched;
 mod screen;
+mod sixel;
 
 pub use animated::AnimatedKitty;
 pub use blocks::{BlocksSurface, render_blocks};
@@ -15,6 +17,7 @@ pub use buffer::BufferSurface;
 pub use full::KittySurface;
 pub use patched::PatchedKitty;
 pub use screen::PixelScreen;
+pub use sixel::SixelSurface;
 
 use crate::Sink;
 use std::io;

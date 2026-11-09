@@ -37,6 +37,7 @@ use crate::kitty::crop_rect;
 #[derive(Debug)]
 pub struct PatchedKitty {
     base: u32,
+    cell: CellPixels,
     tile_side: u32,
     budget: usize,
     prev: Option<Surface>,
@@ -65,9 +66,10 @@ impl PatchedKitty {
     /// wins. Fine-grained surfaces want small tiles and a high budget;
     /// the tile's cell span always follows the surface-to-area scale.
     #[must_use]
-    pub fn with_tiles(base: u32, _cell: CellPixels, tile_side: u32, budget: usize) -> Self {
+    pub fn with_tiles(base: u32, cell: CellPixels, tile_side: u32, budget: usize) -> Self {
         Self {
             base,
+            cell,
             tile_side: tile_side.max(1),
             budget,
             prev: None,
@@ -82,6 +84,11 @@ impl PatchedKitty {
     /// may have lost what it was showing.
     pub fn repaint(&mut self) {
         self.repaint = true;
+    }
+
+    /// The cell size this presenter was built for.
+    pub(super) fn cell(&self) -> CellPixels {
+        self.cell
     }
 
     /// Free every image this presenter sent and repaint on the next frame.

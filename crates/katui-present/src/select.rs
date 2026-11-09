@@ -2,15 +2,12 @@
 
 use katui_proto::probe::Capabilities;
 
-/// The graphics backend a presenter strategy drives. [`Backend::Sixel`]
-/// is reserved: no sixel presenter ships yet, and a terminal reporting
-/// sixel alone still renders through the blocks floor until one does.
+/// The graphics backend a presenter strategy drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Backend {
     /// The kitty graphics protocol: images, placements, animation.
     Kitty,
-    /// Sixel: paletted bands, one shot per image. Reserved, no presenter
-    /// ships yet.
+    /// Sixel: paletted bands, one image per changed tile.
     Sixel,
     /// Half and quarter block glyphs over SGR truecolor, the floor every
     /// color terminal understands.
@@ -18,12 +15,13 @@ pub enum Backend {
 }
 
 /// Pick the best backend the terminal offers. Kitty wins when present,
-/// sixel comes second, blocks carry everything else. Needs-aware choices
+/// sixel comes second outside multiplexers, which place sixel images
+/// themselves, and blocks carry everything else. Needs-aware choices
 /// (alpha, z-order, frame budget) are the presenter strategies' concern.
 pub fn select(caps: &Capabilities) -> Backend {
     if caps.kitty {
         Backend::Kitty
-    } else if caps.sixel {
+    } else if caps.sixel && !caps.multiplexed() {
         Backend::Sixel
     } else {
         Backend::Blocks
