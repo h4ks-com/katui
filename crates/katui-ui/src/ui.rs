@@ -80,6 +80,59 @@ pub struct RenderOutput {
     pub layer_areas: HashMap<u64, CellRect>,
 }
 
+impl RenderOutput {
+    /// Every placement blended in stacking order onto a transparent
+    /// `size` pixel surface, the way a terminal shows them at `cell`
+    /// pixels per cell: a screenshot without a terminal.
+    #[must_use]
+    pub fn flatten(&self, cell: CellPixels, size: (u32, u32)) -> Option<Surface> {
+        let images: HashMap<ImageId, &LayerImage> =
+            self.images.iter().map(|image| (image.id, image)).collect();
+        let (cell_width, cell_height) = (u32::from(cell.width), u32::from(cell.height));
+        let mut target = vec![0_u8; (size.0 as usize) * (size.1 as usize) * 4];
+        for placement in &self.placements {
+            let Some(image) = images.get(&placement.image) else {
+                continue;
+            };
+            let (crop_x, crop_y) = placement.crop.map_or((0, 0), |crop| (crop.x, crop.y));
+            let left = u32::from(placement.area.x) * cell_width;
+            let top = u32::from(placement.area.y) * cell_height;
+            let columns =
+                (u32::from(placement.area.columns) * cell_width).min(size.0.saturating_sub(left));
+            let rows =
+                (u32::from(placement.area.rows) * cell_height).min(size.1.saturating_sub(top));
+            for row in 0..rows {
+                let from = (((row + crop_y) * image.width() + crop_x) * 4) as usize;
+                let to = (((top + row) * size.0 + left) * 4) as usize;
+                let length = columns as usize * 4;
+                if let (Some(source), Some(destination)) = (
+                    image.rgba().get(from..from + length),
+                    target.get_mut(to..to + length),
+                ) {
+                    blend_row(destination, source);
+                }
+            }
+        }
+        Surface::from_rgba(size.0, size.1, target)
+    }
+}
+
+fn blend_row(target: &mut [u8], source: &[u8]) {
+    let pixels = target.as_chunks_mut::<4>().0.iter_mut();
+    for (to, &[red, green, blue, alpha]) in pixels.zip(source.as_chunks::<4>().0) {
+        let weight = u32::from(alpha);
+        let mix = |over: u8, under: u8| {
+            ((u32::from(over) * weight + u32::from(under) * (255 - weight)) / 255) as u8
+        };
+        *to = [
+            mix(red, to[0]),
+            mix(green, to[1]),
+            mix(blue, to[2]),
+            to[3].max(alpha),
+        ];
+    }
+}
+
 struct Tile {
     image: LayerImage,
     columns: u32,

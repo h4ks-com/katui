@@ -5,7 +5,7 @@
     clippy::cast_possible_truncation
 )]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 use katui_draw::{ColorStop, Paint, Point, Rgba, TextEngine};
 use katui_scene::placement::{ImageId, Placement};
 use katui_scene::surface::Surface;
-use katui_ui::{Align, CellPixels, Element, LayerImage, Length, RenderOutput, Ui, UiOptions};
+use katui_ui::{Align, CellPixels, Element, Length, RenderOutput, Ui, UiOptions};
 
 const TEXT_FONT: &[u8] =
     include_bytes!("../../katui-draw/assets/AtkinsonHyperlegibleNext[wght].ttf");
@@ -334,10 +334,7 @@ fn split_tiles_recompose_the_layer_pixels() {
     let root = Element::column([wide_layer()]);
     let tiled = split.render(&root, SCREEN, CELL);
     let single = whole.render(&root, SCREEN, CELL);
-    assert_eq!(
-        compose(&tiled, CELL, SCREEN),
-        compose(&single, CELL, SCREEN)
-    );
+    assert_eq!(tiled.flatten(CELL, SCREEN), single.flatten(CELL, SCREEN));
 }
 
 #[test]
@@ -374,46 +371,6 @@ fn content_outside_layers_lands_in_a_root_layer_under_them() {
         (40, 12)
     );
     assert!(output.placements[0].z < output.placements[1].z);
-}
-
-fn compose(output: &RenderOutput, cell: CellPixels, size: (u32, u32)) -> Surface {
-    let images: HashMap<ImageId, &LayerImage> = output
-        .images
-        .iter()
-        .map(|image| (image.id, image))
-        .collect();
-    let (cell_width, cell_height) = (u32::from(cell.width), u32::from(cell.height));
-    let mut target = vec![0_u8; (size.0 * size.1 * 4) as usize];
-    for placement in &output.placements {
-        let image = images[&placement.image];
-        let source = image.rgba();
-        let (crop_x, crop_y) = placement.crop.map_or((0, 0), |crop| (crop.x, crop.y));
-        let rows = u32::from(placement.area.rows) * cell_height;
-        let columns = u32::from(placement.area.columns) * cell_width;
-        for row in 0..rows {
-            for column in 0..columns {
-                let from = (((row + crop_y) * image.width() + column + crop_x) * 4) as usize;
-                let x = u32::from(placement.area.x) * cell_width + column;
-                let y = u32::from(placement.area.y) * cell_height + row;
-                if x >= size.0 || y >= size.1 {
-                    continue;
-                }
-                let to = ((y * size.0 + x) * 4) as usize;
-                blend(&mut target[to..to + 4], &source[from..from + 4]);
-            }
-        }
-    }
-    Surface::from_rgba(size.0, size.1, target).expect("the target holds 4 bytes per pixel")
-}
-
-fn blend(target: &mut [u8], source: &[u8]) {
-    let alpha = u32::from(source[3]);
-    for channel in 0..3 {
-        let blended =
-            u32::from(source[channel]) * alpha + u32::from(target[channel]) * (255 - alpha);
-        target[channel] = (blended / 255) as u8;
-    }
-    target[3] = target[3].max(source[3]);
 }
 
 fn avatar(hue: u8) -> Arc<Surface> {
@@ -530,7 +487,9 @@ fn writes_a_composed_chat_png() {
     let output = ui.render(&chat_view(30.0, 12), size, CELL);
     assert!(output.placements.len() >= 8);
 
-    let surface = compose(&output, CELL, size);
+    let surface = output
+        .flatten(CELL, size)
+        .expect("the size holds whole pixels");
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/katui-ui");
     fs::create_dir_all(&dir).expect("the target directory is writable");
     image::save_buffer(
