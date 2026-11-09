@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use katui_present::session;
 use katui_present::surface::{PatchedKitty, PixelScreen};
 use katui_proto::input::{InputEvent, Key};
-use katui_proto::probe::{Capabilities, CellPixels};
+use katui_proto::probe::Capabilities;
 use katui_rt::RtError;
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
@@ -27,10 +27,6 @@ const MULTIPLEXED_SHRINK: u32 = 2;
 /// We keep each height at twice its width so a tile of three heights spans whole cells.
 const DENSITIES: [(u32, u32); 5] = [(10, 20), (8, 16), (5, 10), (4, 8), (2, 4)];
 const TILE_HEIGHTS: u32 = 3;
-const TYPICAL_CELL: CellPixels = CellPixels {
-    width: 10,
-    height: 20,
-};
 
 /// A game [`play`] can run.
 pub trait Game {
@@ -99,11 +95,7 @@ impl<G: Game> Arcade<G> {
         if self.fitted == Some(size) {
             return Ok(());
         }
-        let cell = self
-            .caps
-            .cell
-            .or_else(katui_rt::tty::measured_cell)
-            .unwrap_or(TYPICAL_CELL);
+        let cell = katui_rt::tty::cell_size(&self.caps);
         let (across, down) = density(size, &self.caps);
         let pixel_width = f32::from(cell.width) / across as f32;
         let pixel_height = f32::from(cell.height) / down as f32;

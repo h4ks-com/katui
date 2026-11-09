@@ -185,24 +185,16 @@ pub fn measured_cell() -> Option<CellPixels> {
     })
 }
 
-/// The pixel size of one cell for a pixel-surface run: what the probe
-/// measured, else a typical terminal cell under kitty (under a
-/// multiplexer the cell size never gets probed, and the placement's
-/// cell span scales whatever we choose) and the 2x2 quarter-block
-/// cell on the blocks path.
+/// The pixel size of one cell: what the probe answered, else what the
+/// terminal driver reports, else a typical cell. A multiplexer leaves
+/// both unanswered at times, and a placement's cell span scales whatever
+/// we choose, so the typical cell is a safe guess.
 #[must_use]
-pub fn pixel_cell(caps: &Capabilities) -> CellPixels {
-    if caps.kitty {
-        caps.cell.unwrap_or(CellPixels {
-            width: 10,
-            height: 20,
-        })
-    } else {
-        CellPixels {
-            width: 2,
-            height: 2,
-        }
-    }
+pub fn cell_size(caps: &Capabilities) -> CellPixels {
+    caps.cell.or_else(measured_cell).unwrap_or(CellPixels {
+        width: 10,
+        height: 20,
+    })
 }
 
 fn timespec(wait: Duration) -> Timespec {
@@ -288,7 +280,7 @@ impl Transport for TtyTransport {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{LocalModes, OpenOptions, TtyTransport, pixel_cell, tcgetattr};
+    use super::{LocalModes, OpenOptions, TtyTransport, cell_size, tcgetattr};
     use katui_proto::probe::{Capabilities, CellPixels, ProbeSource};
     use std::os::fd::AsFd as _;
 
@@ -396,41 +388,11 @@ mod tests {
     }
 
     #[test]
-    fn a_measured_cell_wins() {
-        assert_eq!(
-            pixel_cell(&caps(
-                true,
-                Some(CellPixels {
-                    width: 8,
-                    height: 16
-                })
-            )),
-            CellPixels {
-                width: 8,
-                height: 16
-            }
-        );
-    }
-
-    #[test]
-    fn an_unprobed_kitty_cell_falls_back_to_the_typical_cell() {
-        assert_eq!(
-            pixel_cell(&caps(true, None)),
-            CellPixels {
-                width: 10,
-                height: 20
-            }
-        );
-    }
-
-    #[test]
-    fn the_blocks_path_uses_the_quarter_cell() {
-        assert_eq!(
-            pixel_cell(&caps(false, None)),
-            CellPixels {
-                width: 2,
-                height: 2
-            }
-        );
+    fn a_probed_cell_wins() {
+        let probed = CellPixels {
+            width: 8,
+            height: 16,
+        };
+        assert_eq!(cell_size(&caps(true, Some(probed))), probed);
     }
 }

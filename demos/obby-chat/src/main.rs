@@ -13,13 +13,13 @@ use std::io;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use katui_draw::TextEngine;
-use katui_present::kitty::{Images, Kitty, RgbaImage};
+use katui_present::kitty::{Images, KittyScreen, RgbaImage};
 use katui_proto::input::InputEvent;
 use katui_proto::probe::Capabilities;
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
 use katui_scene::CellSize;
-use katui_scene::placement::{self, CellRect, ImageId, Placement, PlacementId};
+use katui_scene::placement::{CellRect, ImageId, Placement, PlacementId};
 use katui_ui::{CellPixels, Ui, UiOptions};
 
 use crate::chat::{Action, Chat, Message};
@@ -56,10 +56,8 @@ struct ChatApp {
     caps: Capabilities,
     chat: Chat,
     ui: Ui<Action>,
-    kitty: Kitty,
-    start_fresh: bool,
+    screen: KittyScreen,
     cell: CellPixels,
-    placements: Vec<Placement>,
     backdrop_image: u32,
 }
 
@@ -105,14 +103,14 @@ impl App for ChatApp {
             AppEvent::Input(input) => self.handle_input(input),
             AppEvent::Message(message) => self.chat.receive(message),
             AppEvent::Resized(_) => {
-                self.cell = cell_pixels(&self.caps);
-                self.start_fresh = true;
+                self.cell = katui_rt::tty::cell_size(&self.caps);
+                self.screen.repaint();
                 self.chat.hovered = None;
                 self.chat.effects.clear();
                 Control::Redraw
             }
             AppEvent::Repaint => {
-                self.start_fresh = true;
+                self.screen.repaint();
                 self.chat.effects.clear();
                 Control::Redraw
             }
@@ -120,9 +118,7 @@ impl App for ChatApp {
     }
 
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control> {
-        if std::mem::take(&mut self.start_fresh) {
-            self.kitty.reset(out)?;
-            self.placements.clear();
+        if self.screen.sends_everything() {
             self.chat.backdrop.mark_unsent();
         }
         let (cell_width, cell_height) = (u32::from(self.cell.width), u32::from(self.cell.height));
@@ -182,9 +178,7 @@ impl App for ChatApp {
                 images.insert(layer.id, image);
             }
         }
-        let delta = placement::diff(&self.placements, &next);
-        self.kitty.render(out, &delta, &images)?;
-        self.placements = next;
+        self.screen.present(out, next, &images)?;
         Ok(if self.chat.effects.is_animating() {
             Control::Animate
         } else {
@@ -198,12 +192,6 @@ fn contains(outer: CellRect, inner: CellRect) -> bool {
         && inner.y >= outer.y
         && inner.x + inner.columns <= outer.x + outer.columns
         && inner.y + inner.rows <= outer.y + outer.rows
-}
-
-fn cell_pixels(caps: &Capabilities) -> CellPixels {
-    caps.cell
-        .or_else(katui_rt::tty::measured_cell)
-        .unwrap_or_else(|| katui_rt::tty::pixel_cell(caps))
 }
 
 fn default_nick() -> String {
@@ -228,10 +216,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         caps: caps.clone(),
         chat: Chat::new(default_nick()),
         ui: Ui::new(TextEngine::new(fonts())?, options),
-        kitty: Kitty::new().for_multiplexer(multiplexed),
-        start_fresh: false,
-        cell: cell_pixels(&caps),
-        placements: Vec::new(),
+        screen: KittyScreen::new(multiplexed),
+        cell: katui_rt::tty::cell_size(&caps),
         backdrop_image: 0,
     };
     if std::env::args().any(|argument| argument == "--connect") {

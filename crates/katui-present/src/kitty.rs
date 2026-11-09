@@ -15,7 +15,7 @@ use std::io::{self, Write as _};
 
 use katui_proto::kitty::{self, ImageId as KittyImage, PlacementId as KittyPlacement};
 use katui_scene::cell::Position;
-use katui_scene::placement::{ImageId, Placement, PlacementDelta, PlacementId};
+use katui_scene::placement::{ImageId, Placement, PlacementDelta, PlacementId, diff};
 use katui_scene::surface::PixelRect;
 
 /// One image's RGBA payload, ready to transmit. `pixels` holds exactly
@@ -192,6 +192,58 @@ impl Kitty {
     }
 }
 
+/// A [`Kitty`] presenter that remembers what it showed: each frame passes
+/// every placement it wants on screen, and only the difference goes out.
+#[derive(Debug, Default)]
+pub struct KittyScreen {
+    kitty: Kitty,
+    shown: Vec<Placement>,
+    fresh: bool,
+}
+
+impl KittyScreen {
+    /// A screen for a fresh terminal session, anchored under a
+    /// multiplexer.
+    #[must_use]
+    pub fn new(multiplexed: bool) -> Self {
+        Self {
+            kitty: Kitty::new().for_multiplexer(multiplexed),
+            ..Self::default()
+        }
+    }
+
+    /// Send everything again on the next frame, for a terminal that may
+    /// have lost what it showed.
+    pub fn repaint(&mut self) {
+        self.fresh = true;
+    }
+
+    /// Whether the next frame sends everything, so the caller passes the
+    /// pixels of every image it shows.
+    #[must_use]
+    pub fn sends_everything(&self) -> bool {
+        self.fresh || self.shown.is_empty()
+    }
+
+    /// Show exactly `next`, sending only what changed, and return the
+    /// byte count.
+    pub fn present<W: Sink>(
+        &mut self,
+        out: &mut W,
+        next: Vec<Placement>,
+        images: &Images<'_>,
+    ) -> io::Result<usize> {
+        if std::mem::take(&mut self.fresh) {
+            self.kitty.reset(out)?;
+            self.shown.clear();
+        }
+        let delta = diff(&self.shown, &next);
+        let written = self.kitty.render(out, &delta, images)?;
+        self.shown = next;
+        Ok(written)
+    }
+}
+
 /// Scene crop rectangle to protocol crop rectangle: the one place the
 /// layer-parallel types meet, so presenters never field-copy.
 pub(crate) fn crop_rect(crop: PixelRect) -> kitty::PixelRect {
@@ -311,6 +363,30 @@ mod tests {
         let text = String::from_utf8_lossy(&out);
         assert!(!text.contains("2026"), "queries travel between batches");
         assert!(text.contains(",z=-5,"), "the layer order reaches the wire");
+    }
+
+    #[test]
+    fn a_screen_sends_only_changes_and_everything_after_a_repaint() {
+        let mut screen = super::KittyScreen::new(false);
+        let shown = vec![placement(7, 1, 0, 0)];
+        let mut first = Vec::new();
+        screen
+            .present(&mut first, shown.clone(), &images())
+            .expect("writing to a Vec cannot fail");
+        assert!(!screen.sends_everything());
+        let mut same = Vec::new();
+        screen
+            .present(&mut same, shown.clone(), &images())
+            .expect("writing to a Vec cannot fail");
+        assert!(same.is_empty(), "an unchanged frame writes nothing");
+        screen.repaint();
+        assert!(screen.sends_everything());
+        let mut again = Vec::new();
+        screen
+            .present(&mut again, shown, &images())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&again);
+        assert!(text.contains("a=t,") && text.contains("a=p,"));
     }
 
     fn occurrences(text: &str, needle: &str) -> usize {
