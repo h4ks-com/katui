@@ -36,7 +36,7 @@ pub enum Signal<M> {
 
 /// Lets any thread put a message on the event queue.
 #[derive(Debug)]
-pub struct Waker<M>(Sender<Signal<M>>);
+pub struct Waker<M>(pub(crate) Sender<Signal<M>>);
 
 impl<M> Clone for Waker<M> {
     fn clone(&self) -> Self {

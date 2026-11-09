@@ -131,6 +131,16 @@ fn restore<W: io::Write>(out: &mut W) -> io::Result<()> {
     out.flush()
 }
 
+/// The most demanding of two requests made since the last frame.
+pub(crate) fn merge(pending: Control, control: Control) -> Control {
+    match (pending, control) {
+        (Control::Quit, _) | (_, Control::Quit) => Control::Quit,
+        (Control::Animate, _) | (_, Control::Animate) => Control::Animate,
+        (Control::Redraw, _) | (_, Control::Redraw) => Control::Redraw,
+        (Control::Wait, Control::Wait) => Control::Wait,
+    }
+}
+
 struct EventLoop {
     pacer: Pacer,
     resize: ResizeWatch,
@@ -220,14 +230,8 @@ impl EventLoop {
         self.merge(control);
     }
 
-    /// Keep the most demanding request made since the last frame.
     fn merge(&mut self, control: Control) {
-        self.pending = match (self.pending, control) {
-            (Control::Quit, _) | (_, Control::Quit) => Control::Quit,
-            (Control::Animate, _) | (_, Control::Animate) => Control::Animate,
-            (Control::Redraw, _) | (_, Control::Redraw) => Control::Redraw,
-            (Control::Wait, Control::Wait) => Control::Wait,
-        };
+        self.pending = merge(self.pending, control);
     }
 
     fn draw<A: App, W: io::Write>(

@@ -11,6 +11,8 @@ pub mod app;
 #[cfg(unix)]
 pub mod events;
 #[cfg(unix)]
+pub mod headless;
+#[cfg(unix)]
 pub mod pacing;
 #[cfg(unix)]
 pub mod pane;
