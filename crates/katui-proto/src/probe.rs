@@ -130,7 +130,7 @@ impl std::fmt::Display for Identity {
 }
 
 /// One cell in pixels, the geometry every image placement needs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CellPixels {
     /// Cell width in pixels.
     pub width: u16,
