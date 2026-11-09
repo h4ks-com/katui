@@ -19,6 +19,10 @@ use katui_scene::cell::Position;
 use katui_scene::placement::{ImageId, Placement, PlacementDelta, PlacementId, diff};
 use katui_scene::surface::PixelRect;
 
+/// The raw pixel bytes of one upload command under a multiplexer, small
+/// enough that one compressed band fits a paced batch.
+const MULTIPLEXER_BAND_BYTES: usize = 12 * 1024;
+
 /// One image's RGBA payload, ready to transmit. `pixels` holds exactly
 /// `4 * width * height` bytes.
 #[derive(Debug, Clone, Copy)]
@@ -134,15 +138,18 @@ impl Kitty {
                 && !transmitted.contains(&image)
                 && let Some(payload) = images.get(image)
             {
-                let mut transmit = kitty::Transmit::new(
+                let band = if self.anchor.is_some() {
+                    MULTIPLEXER_BAND_BYTES
+                } else {
+                    usize::MAX
+                };
+                for frame in kitty::banded_upload(
                     KittyImage(image.0),
-                    kitty::Format::Rgba,
                     payload.width,
                     payload.height,
                     payload.pixels,
-                );
-                transmit.compressed = true;
-                for frame in transmit.encode()? {
+                    band,
+                )? {
                     bytes.write_all(&frame)?;
                 }
                 transmitted.insert(image);

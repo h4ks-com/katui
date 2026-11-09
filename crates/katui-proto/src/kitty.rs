@@ -398,6 +398,54 @@ impl FrameTransmit<'_> {
     }
 }
 
+/// A compressed RGBA upload as commands of at most `band_bytes` raw
+/// pixels each: a blank image of the full size, then one edit of its root
+/// frame per band of rows. Each command finishes its own chunked load, so
+/// a writer can pause between them, which tmux needs because it discards
+/// its whole output buffer once that grows past eight bytes per screen
+/// cell.
+pub fn banded_upload(
+    id: ImageId,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    band_bytes: usize,
+) -> std::io::Result<Vec<Vec<u8>>> {
+    let row_bytes = (width as usize).saturating_mul(4).max(1);
+    if pixels.len() <= band_bytes || height <= 1 {
+        let mut whole = Transmit::new(id, Format::Rgba, width, height, pixels);
+        whole.compressed = true;
+        return whole.encode();
+    }
+    let blank = vec![0; pixels.len()];
+    let mut root = Transmit::new(id, Format::Rgba, width, height, &blank);
+    root.compressed = true;
+    let mut frames = root.encode()?;
+    let band_rows = (band_bytes / row_bytes).max(1);
+    for (index, band) in pixels.chunks(band_rows * row_bytes).enumerate() {
+        let rows = u32::try_from(band.len() / row_bytes).unwrap_or(height);
+        let top = u32::try_from(index * band_rows).unwrap_or(height);
+        let edit = FrameTransmit {
+            id,
+            edit: Some(1),
+            canvas: Canvas::Blank,
+            rect: Some(PixelRect {
+                x: 0,
+                y: top,
+                width,
+                height: rows,
+            }),
+            width,
+            height: rows,
+            payload: band,
+            compressed: true,
+            gap_ms: None,
+        };
+        frames.extend(edit.encode()?);
+    }
+    Ok(frames)
+}
+
 /// Animation control (`a=a`): start, stop or pace an animation. In
 /// loading mode the terminal plays the frames it holds and waits for
 /// more instead of looping, so the wire becomes a buffer and the
@@ -709,6 +757,25 @@ mod tests {
         assert_eq!(parts.concat(), wire);
         assert_eq!(parts.len(), 2, "the upload, then the placement");
         assert_eq!(parts[0], frames.concat().as_slice());
+    }
+
+    #[test]
+    fn a_big_upload_goes_up_as_a_blank_image_and_bands_of_rows() {
+        let pixels = vec![0x40; 4 * 8 * 10];
+        let frames = super::banded_upload(ImageId(5), 8, 10, &pixels, 4 * 8 * 4)
+            .expect("encoding cannot fail");
+        let text: Vec<String> = frames
+            .iter()
+            .map(|frame| String::from_utf8_lossy(frame).into_owned())
+            .collect();
+        assert!(text[0].starts_with("\x1b_Ga=t,f=32,t=d,o=z,s=8,v=10,i=5"));
+        let bands: Vec<&String> = text.iter().filter(|frame| frame.contains("a=f")).collect();
+        assert_eq!(bands.len(), 3, "rows 0..4, 4..8 and 8..10");
+        assert!(bands[0].contains("r=1,x=0,y=0,s=8,v=4"));
+        assert!(bands[2].contains("r=1,x=0,y=8,s=8,v=2"));
+        let small = super::banded_upload(ImageId(5), 8, 10, &pixels, pixels.len())
+            .expect("encoding cannot fail");
+        assert_eq!(small.len(), 1, "a small upload stays one transmit");
     }
 
     #[test]
