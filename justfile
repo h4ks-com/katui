@@ -62,6 +62,10 @@ demo-plasma:
 demo-snake:
     cargo run --release -p katui-game --example snake
 
+# the to-do demo: a task list on the widgets crate through katui-app
+demo-todo:
+    cargo run --release -p katui-app --example todo
+
 # the cube demo: a lit cube turning in software 3D, arrow keys steer its spin
 demo-cube:
     cargo run --release -p katui-game --example cube

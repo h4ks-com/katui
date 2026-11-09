@@ -1,0 +1,25 @@
+[package]
+name = "katui-app"
+description = "Run pixel UI programs on the terminal in one call"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+categories.workspace = true
+keywords.workspace = true
+repository.workspace = true
+
+[dependencies]
+katui-draw.workspace = true
+katui-present.workspace = true
+katui-proto.workspace = true
+katui-rt.workspace = true
+katui-scene.workspace = true
+katui-ui.workspace = true
+katui-widgets.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+
+[lints]
+workspace = true
