@@ -189,7 +189,6 @@ pub struct Chat {
     pub previews: HashMap<String, Preview>,
     pub backdrop: Backdrop,
     pub effects: Effects,
-    pub pixel_mouse: bool,
     waker: Option<Waker<Message>>,
     started: Instant,
     last_typing_ms: u64,
@@ -280,7 +279,6 @@ impl Chat {
             previews: HashMap::new(),
             backdrop: Backdrop::default(),
             effects: Effects::default(),
-            pixel_mouse: false,
             waker: None,
             started: Instant::now(),
             last_typing_ms: 0,
@@ -687,10 +685,6 @@ impl Chat {
                 self.form_key(&event)
             }
             InputEvent::Key(..) | InputEvent::Paste(_) => self.composer_key(&event),
-            InputEvent::Mode(1016, on) => {
-                self.pixel_mouse = on;
-                Control::Wait
-            }
             InputEvent::Focus(focused) => {
                 self.focused = focused;
                 Control::Wait

@@ -3,6 +3,7 @@
 //! panicking, and a sequence split across reads waits for its tail.
 
 use crate::kitty;
+use crate::probe::CellPixels;
 
 /// The longest incomplete sequence kept before it is discarded.
 const MAX_PENDING: usize = 4 * 1024 * 1024;
@@ -153,6 +154,71 @@ impl InputEvent {
             Self::Key(Key::Escape | Key::Char('q'), Mods::NONE) => true,
             Self::Key(Key::Char('c'), mods) => mods.ctrl,
             _ => false,
+        }
+    }
+}
+
+/// The pixel mode we ask for in mouse reports.
+const PIXEL_MOUSE_MODE: u32 = 1016;
+
+/// Places mouse reports on the pixel surface, whichever unit the terminal
+/// reports in.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Pointer {
+    pixels: bool,
+    reported_cell: Option<CellPixels>,
+}
+
+impl Pointer {
+    /// A pointer for a terminal that reported its cell as `reported_cell`.
+    /// Pixel reports come in that unit, which can be a fraction of the
+    /// surface pixel on a high density screen.
+    #[must_use]
+    pub fn new(reported_cell: Option<CellPixels>) -> Self {
+        Self {
+            pixels: false,
+            reported_cell,
+        }
+    }
+
+    /// Learn the report unit from a pixel mode report.
+    pub fn observe(&mut self, event: &InputEvent) {
+        if let InputEvent::Mode(PIXEL_MOUSE_MODE, on) = event {
+            self.pixels = *on;
+        }
+    }
+
+    /// The surface pixel `mouse` points at, on a grid of `columns` by
+    /// `rows` cells of `cell` pixels. Some terminals send pixels while
+    /// reporting the pixel mode as unsupported, so we switch to pixels
+    /// once a report lands beyond a known grid.
+    pub fn locate(
+        &mut self,
+        mouse: &MouseEvent,
+        cell: CellPixels,
+        columns: u16,
+        rows: u16,
+    ) -> (f32, f32) {
+        let known = columns > 0 && rows > 0;
+        if known && (mouse.x >= u32::from(columns) || mouse.y >= u32::from(rows)) {
+            self.pixels = true;
+        }
+        let coordinate = |value: u32| f32::from(u16::try_from(value).unwrap_or(u16::MAX));
+        let (x, y) = (coordinate(mouse.x), coordinate(mouse.y));
+        if self.pixels {
+            let reported = self
+                .reported_cell
+                .filter(|reported| reported.width > 0 && reported.height > 0)
+                .unwrap_or(cell);
+            (
+                x * f32::from(cell.width) / f32::from(reported.width),
+                y * f32::from(cell.height) / f32::from(reported.height),
+            )
+        } else {
+            (
+                (x + 0.5) * f32::from(cell.width),
+                (y + 0.5) * f32::from(cell.height),
+            )
         }
     }
 }
@@ -497,10 +563,50 @@ fn mouse_action(code: u32, released: bool) -> Option<MouseAction> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Button, InputEvent, InputParser, Key, Mods, MouseAction, MouseEvent};
+    use super::{Button, InputEvent, InputParser, Key, Mods, MouseAction, MouseEvent, Pointer};
+    use crate::probe::CellPixels;
 
     fn parse(bytes: &[u8]) -> Vec<InputEvent> {
         InputParser::default().feed(bytes)
+    }
+
+    #[test]
+    fn a_report_beyond_the_grid_switches_the_pointer_to_pixels() {
+        let cell = CellPixels {
+            width: 7,
+            height: 17,
+        };
+        let click = |x, y| MouseEvent {
+            action: MouseAction::Press(Button::Left),
+            x,
+            y,
+            mods: Mods::NONE,
+        };
+        let mut pointer = Pointer::default();
+        pointer.observe(&InputEvent::Mode(1016, false));
+        assert_eq!(pointer.locate(&click(2, 1), cell, 80, 25), (17.5, 25.5));
+        assert_eq!(
+            pointer.locate(&click(210, 159), cell, 80, 25),
+            (210.0, 159.0)
+        );
+        assert_eq!(
+            pointer.locate(&click(2, 1), cell, 80, 25),
+            (2.0, 1.0),
+            "later reports stay in pixels"
+        );
+        let mut honored = Pointer::default();
+        honored.observe(&InputEvent::Mode(1016, true));
+        assert_eq!(honored.locate(&click(2, 1), cell, 80, 25), (2.0, 1.0));
+        let retina = CellPixels {
+            width: 14,
+            height: 34,
+        };
+        let mut scaled = Pointer::new(Some(cell));
+        assert_eq!(
+            scaled.locate(&click(211, 92), retina, 80, 25),
+            (422.0, 184.0),
+            "reports in points land on the double density surface"
+        );
     }
 
     const CTRL: Mods = Mods {

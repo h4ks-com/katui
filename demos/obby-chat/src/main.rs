@@ -14,7 +14,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use katui_draw::TextEngine;
 use katui_present::kitty::{Images, KittyScreen, RgbaImage};
-use katui_proto::input::InputEvent;
+use katui_proto::input::{InputEvent, Pointer};
 use katui_proto::probe::Capabilities;
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
@@ -59,24 +59,20 @@ struct ChatApp {
     screen: KittyScreen,
     cell: CellPixels,
     backdrop_image: u32,
+    pointer: Pointer,
+    grid: CellSize,
 }
 
 impl ChatApp {
-    fn pointer(&self, x: u32, y: u32) -> (f32, f32) {
-        if self.chat.pixel_mouse {
-            (x as f32, y as f32)
-        } else {
-            let (width, height) = (f32::from(self.cell.width), f32::from(self.cell.height));
-            ((x as f32 + 0.5) * width, (y as f32 + 0.5) * height)
-        }
-    }
-
     fn handle_input(&mut self, event: InputEvent) -> Control {
         if let InputEvent::Mouse(mouse) = event {
-            let (x, y) = self.pointer(mouse.x, mouse.y);
+            let (x, y) =
+                self.pointer
+                    .locate(&mouse, self.cell, self.grid.columns, self.grid.rows);
             let hit = self.ui.hit_test(x, y).map(|hit| (hit.id, hit.on_click));
             return self.chat.mouse(mouse, hit);
         }
+        self.pointer.observe(&event);
         self.chat.input(event)
     }
 
@@ -118,6 +114,7 @@ impl App for ChatApp {
     }
 
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control> {
+        self.grid = size;
         if self.screen.sends_everything() {
             self.chat.backdrop.mark_unsent();
         }
@@ -216,6 +213,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         screen: KittyScreen::new(&caps),
         cell: katui_rt::tty::cell_size(&caps),
         backdrop_image: 0,
+        pointer: Pointer::new(caps.cell),
+        grid: CellSize {
+            columns: 0,
+            rows: 0,
+        },
     };
     if std::env::args().any(|argument| argument == "--connect") {
         app.chat.connect_on_start();

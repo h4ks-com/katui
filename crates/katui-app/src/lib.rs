@@ -8,7 +8,7 @@ use std::io;
 use katui_draw::{TextEngine, bundled_fonts};
 use katui_present::kitty::{Images, KittyScreen, RgbaImage};
 use katui_present::surface::{PatchedKitty, PixelScreen};
-use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent};
+use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent, Pointer};
 use katui_proto::probe::Capabilities;
 use katui_rt::RtError;
 use katui_rt::app::{App, AppEvent, run_app};
@@ -93,7 +93,8 @@ struct Runner<A: UiApp> {
     theme: Theme,
     ui: Ui<A::Message>,
     screen: Screen,
-    pixel_mouse: bool,
+    pointer: Pointer,
+    grid: CellSize,
 }
 
 impl<A: UiApp> Runner<A> {
@@ -110,23 +111,18 @@ impl<A: UiApp> Runner<A> {
             cell,
             ui: Ui::new(engine, options),
             screen: Screen::for_terminal(caps, cell),
-            pixel_mouse: false,
+            pointer: Pointer::new(caps.cell),
+            grid: CellSize {
+                columns: 0,
+                rows: 0,
+            },
         })
     }
 
-    fn pointer(&self, mouse: MouseEvent) -> (f32, f32) {
-        let coordinate = |value: u32| f32::from(u16::try_from(value).unwrap_or(u16::MAX));
-        let (x, y) = (coordinate(mouse.x), coordinate(mouse.y));
-        if self.pixel_mouse {
-            (x, y)
-        } else {
-            let (width, height) = (f32::from(self.cell.width), f32::from(self.cell.height));
-            ((x + 0.5) * width, (y + 0.5) * height)
-        }
-    }
-
     fn mouse(&mut self, mouse: MouseEvent) -> Control {
-        let (x, y) = self.pointer(mouse);
+        let (x, y) = self
+            .pointer
+            .locate(&mouse, self.cell, self.grid.columns, self.grid.rows);
         let Some(hit) = self.ui.hit_test(x, y) else {
             return Control::Wait;
         };
@@ -142,8 +138,8 @@ impl<A: UiApp> Runner<A> {
         match event {
             InputEvent::Key(Key::Char('c'), Mods { ctrl: true, .. }) => Control::Quit,
             InputEvent::Mouse(mouse) => self.mouse(mouse),
-            InputEvent::Mode(1016, on) => {
-                self.pixel_mouse = on;
+            InputEvent::Mode(..) => {
+                self.pointer.observe(&event);
                 Control::Wait
             }
             other => self.app.input(&other),
@@ -176,6 +172,7 @@ impl<A: UiApp> App for Runner<A> {
     }
 
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control> {
+        self.grid = size;
         let pixels = (
             u32::from(size.columns) * u32::from(self.cell.width),
             u32::from(size.rows) * u32::from(self.cell.height),
