@@ -7,6 +7,7 @@ pub mod kitty;
 pub mod placeholder;
 pub mod probe;
 pub mod rgp;
+pub mod sixel;
 
 /// The seeded RNG the parser fuzz loops share: dependency-free xorshift.
 #[cfg(test)]
