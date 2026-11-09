@@ -12,6 +12,16 @@ repository.workspace = true
 [dependencies]
 katui-scene.workspace = true
 pulldown-cmark.workspace = true
+ego-tree = { workspace = true, optional = true }
+katui-draw = { workspace = true, optional = true }
+katui-ui = { workspace = true, optional = true }
+scraper = { workspace = true, optional = true }
+
+[features]
+html = ["dep:ego-tree", "dep:katui-draw", "dep:katui-ui", "dep:scraper"]
+
+[dev-dependencies]
+image.workspace = true
 
 [lints]
 workspace = true

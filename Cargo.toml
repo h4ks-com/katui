@@ -41,6 +41,8 @@ katui-widgets = { path = "crates/katui-widgets" }
 pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = { version = "0.30", default-features = false }
 signal-hook = { version = "0.3", default-features = false }
+scraper = { version = "0.29", default-features = false }
+ego-tree = "0.11"
 rustix = { version = "1", default-features = false, features = ["std", "termios", "event", "pty", "fs"] }
 taffy = "0.15"
 thiserror = "2"

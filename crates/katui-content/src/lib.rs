@@ -1,6 +1,15 @@
-//! Documents as scene cells. The markdown renderer covers the subset a
-//! terminal actually shows: headings, paragraphs, lists, fenced code and
-//! inline code; the HTML subset follows on this crate, same shape.
+//! Documents for the terminal. The markdown renderer covers the subset a
+//! terminal actually shows as scene cells: headings, paragraphs, lists,
+//! fenced code and inline code. With the `html` feature, an HTML and CSS
+//! subset renders as katui-ui elements in pixels.
+
+#[cfg(feature = "html")]
+mod css;
+#[cfg(feature = "html")]
+mod html;
+
+#[cfg(feature = "html")]
+pub use html::{HtmlDefaults, HtmlHost, html};
 
 use katui_scene::CellSize;
 use katui_scene::cell::{Attrs, Buffer, Color, Position};
