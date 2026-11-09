@@ -20,6 +20,7 @@ katui-widgets.workspace = true
 
 [dev-dependencies]
 image.workspace = true
+katui-content = { workspace = true, features = ["html"] }
 
 [lints]
 workspace = true

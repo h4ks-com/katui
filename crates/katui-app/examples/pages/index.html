@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  body { color: #e8e4f0 }
+  header { display: flex; align-items: center; gap: 12px }
+  .tag { background: #8aa8ff; color: #10121e }
+  .card { border: 1px solid #4a4560; border-radius: 10px; padding: 12px }
+  .row { display: flex; gap: 16px }
+  .row > div { background: #2a2638; padding: 10px; border-radius: 8px }
+</style>
+</head>
+<body>
+  <header><h1>katui pages</h1><span class="tag">html subset</span></header>
+  <p>This page is plain <b>HTML</b> and <i>CSS</i>, laid out with flexbox and drawn in real pixels.
+     Press Down and Up to scroll, click a link to follow it, and press Left to go back.</p>
+  <div class="card">
+    <h3>What the subset covers</h3>
+    <ul>
+      <li>Block and flex layout with gaps and alignment</li>
+      <li>Colors, backgrounds, borders, rounded corners and padding</li>
+      <li><b>Bold</b>, <i>italic</i>, <u>underlined</u>, <s>struck</s> and <code>code</code> text</li>
+      <li>Links between local pages and local images</li>
+    </ul>
+  </div>
+  <div class="row">
+    <div><h4>Selectors</h4><p>Types, classes, ids and combinators.</p></div>
+    <div><h4>Cascade</h4><p>Specificity, order and style attributes.</p></div>
+    <div><h4>Units</h4><p>Pixels, em and rem.</p></div>
+  </div>
+  <p>Read <a href="about.html">how the renderer works</a>.</p>
+</body>
+</html>

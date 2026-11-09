@@ -14,12 +14,13 @@ crates/katui-present/   L1: presenters: cells, blocks, kitty placements, full-fr
 crates/katui-ratatui/   ratatui Backend adapter, image decode/fit, the gallery demo
 crates/katui-rt/        the impure layer: /dev/tty transport, frame clock, session guard
 crates/katui-layout/    L4: constraint splitting of cell rectangles (pure)
-crates/katui-content/   L6: documents to scene cells, markdown today (pure)
+crates/katui-content/   L6: markdown to scene cells, and an html and css subset to ui
+                        elements behind the html feature (pure)
 crates/katui-draw/      L3: canvas and text rasterizing onto surfaces (pure)
 crates/katui-ui/        L5: reactive element trees over retained layers (pure)
 crates/katui-widgets/   L5: theme, text field, focus, list and control views (pure)
 crates/katui-app/       run(app): pixel UI programs on the terminal in one call,
-                        the to-do demo
+                        the to-do and page viewer demos
 crates/katui-game/      pixel apps: a light buffer, held keys and a fixed-step runner,
                         the demos (lumenshaft, shardrift, cube, dvd, snake, plasma,
                         life)

@@ -66,6 +66,10 @@ demo-snake:
 demo-todo:
     cargo run --release -p katui-app --example todo
 
+# the page viewer: local html through the html and css subset, links included
+demo-browse page="":
+    cargo run --release -p katui-app --example browse -- {{page}}
+
 # the cube demo: a lit cube turning in software 3D, arrow keys steer its spin
 demo-cube:
     cargo run --release -p katui-game --example cube

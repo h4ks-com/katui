@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  body { color: #e8e4f0 }
+  blockquote { color: #c8c2d8 }
+</style>
+</head>
+<body>
+  <h2>How the renderer works</h2>
+  <ol>
+    <li>The parser builds the document tree.</li>
+    <li>Style rules match through CSS selectors and cascade by specificity.</li>
+    <li>Each block becomes a container, and each run of inline text becomes styled text.</li>
+    <li>The layout engine places everything with flexbox, and the terminal shows it as images.</li>
+  </ol>
+  <blockquote>Floats, tables, positioning and scripts stay out of the subset.</blockquote>
+  <pre>just demo-browse path/to/page.html</pre>
+  <p><a href="index.html">Go back to the start page</a></p>
+</body>
+</html>
