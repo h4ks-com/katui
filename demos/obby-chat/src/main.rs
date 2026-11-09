@@ -60,7 +60,6 @@ struct ChatApp {
     kitty: Kitty,
     multiplexed: bool,
     start_fresh: bool,
-    paused: bool,
     cell: CellPixels,
     placements: Vec<Placement>,
     backdrop_image: u32,
@@ -121,15 +120,8 @@ impl App for ChatApp {
                 self.chat.effects.clear();
                 Control::Redraw
             }
-            AppEvent::Pane(change) => {
-                self.paused = change.view != PaneView::Active;
-                self.start_fresh |= change.view == PaneView::Active;
-                if change.view == PaneView::Hidden
-                    && let Some(mut client) = change.open_client()
-                {
-                    let _ = self.kitty.reset(&mut client);
-                    self.placements.clear();
-                }
+            AppEvent::Pane(view) => {
+                self.start_fresh |= view == PaneView::Active;
                 self.chat.effects.clear();
                 Control::Redraw
             }
@@ -141,9 +133,6 @@ impl App for ChatApp {
     }
 
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control> {
-        if self.paused {
-            return Ok(Control::Wait);
-        }
         if std::mem::take(&mut self.start_fresh) {
             self.kitty.reset(out)?;
             self.placements.clear();
@@ -255,7 +244,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         kitty: Kitty::new().for_multiplexer(multiplexed),
         multiplexed,
         start_fresh: false,
-        paused: false,
         cell: cell_pixels(&caps),
         placements: Vec::new(),
         backdrop_image: 0,

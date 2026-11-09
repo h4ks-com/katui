@@ -10,7 +10,6 @@ use katui_proto::probe::{Capabilities, CellPixels};
 use katui_rt::RtError;
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
-use katui_rt::pane::PaneView;
 use katui_scene::CellSize;
 
 use crate::keys::HeldKeys;
@@ -63,7 +62,6 @@ struct Arcade<G> {
     last_step: Instant,
     banked: Duration,
     asked_for_releases: bool,
-    on_screen: bool,
 }
 
 fn density(size: CellSize, caps: &Capabilities) -> (u32, u32) {
@@ -94,7 +92,6 @@ impl<G: Game> Arcade<G> {
             last_step: Instant::now(),
             banked: Duration::ZERO,
             asked_for_releases: false,
-            on_screen: true,
         }
     }
 
@@ -159,15 +156,7 @@ impl<G: Game> Arcade<G> {
             InputEvent::Focus(false) => self.keys.clear(),
             _ => {}
         }
-        self.next_control()
-    }
-
-    fn next_control(&self) -> Control {
-        if self.on_screen {
-            Control::Animate
-        } else {
-            Control::Wait
-        }
+        Control::Animate
     }
 }
 
@@ -180,24 +169,20 @@ impl<G: Game> App for Arcade<G> {
         match event {
             AppEvent::Input(input) => return self.on_input(&input, Instant::now()),
             AppEvent::Settled => self.screen.invalidate(),
-            AppEvent::Pane(change) => {
-                self.on_screen = change.view == PaneView::Active;
+            AppEvent::Pane(_) => {
                 self.keys.clear();
                 self.last_step = Instant::now();
                 self.screen.invalidate();
             }
             AppEvent::Message(()) | AppEvent::Resized(_) => {}
         }
-        self.next_control()
+        Control::Animate
     }
 
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control> {
         if !self.asked_for_releases {
             self.asked_for_releases = true;
             session::report_key_releases(out)?;
-        }
-        if !self.on_screen {
-            return Ok(Control::Wait);
         }
         self.fit(out, size)?;
         self.advance();

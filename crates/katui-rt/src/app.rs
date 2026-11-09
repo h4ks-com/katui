@@ -13,7 +13,7 @@ use katui_scene::CellSize;
 use crate::RtError;
 use crate::events::{EventPump, Signal, Waker};
 use crate::pacing::{Pacer, Pacing};
-use crate::pane::{PaneChange, PaneView};
+use crate::pane::PaneView;
 use crate::session::{ResizeEvent, ResizeWatch};
 
 /// How often an idle loop checks the terminal size.
@@ -28,10 +28,11 @@ pub enum AppEvent<M> {
     Message(M),
     /// The terminal has a new size.
     Resized(CellSize),
-    /// What our multiplexer pane can show changed. Unless it is
-    /// [`PaneView::Active`], anything drawn is lost or lands over other
-    /// windows, so we should wait and send everything again afterwards.
-    Pane(PaneChange),
+    /// What our multiplexer pane can show changed. The loop draws only
+    /// while it is [`PaneView::Active`], and the terminal may have lost
+    /// images meanwhile, so everything on screen needs sending again
+    /// when it comes back.
+    Pane(PaneView),
     /// The size has held for a while. The terminal may have dropped
     /// images while resizing, so everything on screen needs sending again.
     Settled,
@@ -97,6 +98,7 @@ pub fn run_app<A: App, W: io::Write>(
         frame_time: Duration::from_secs_f64(1.0 / f64::from(frames_per_second.max(1))),
         next_draw: Instant::now(),
         pending: Control::Redraw,
+        pane: PaneView::Active,
         wire: Vec::new(),
     };
     let result = event_loop.run(app, terminal.out, &mut pump);
@@ -137,6 +139,7 @@ struct EventLoop {
     frame_time: Duration,
     next_draw: Instant,
     pending: Control,
+    pane: PaneView,
     wire: Vec<u8>,
 }
 
@@ -151,7 +154,8 @@ impl EventLoop {
             let first = pump.next(self.wait());
             self.handle_signals(app, first, pump);
             self.handle_resize(app);
-            let wants_frame = matches!(self.pending, Control::Redraw | Control::Animate);
+            let wants_frame = matches!(self.pending, Control::Redraw | Control::Animate)
+                && self.pane == PaneView::Active;
             if self.pending != Control::Quit && wants_frame && Instant::now() >= self.next_draw {
                 self.draw(app, out, pump)?;
             }
@@ -160,6 +164,9 @@ impl EventLoop {
     }
 
     fn wait(&self) -> Duration {
+        if self.pane != PaneView::Active {
+            return IDLE_POLL;
+        }
         match self.pending {
             Control::Redraw | Control::Animate => self
                 .next_draw
@@ -181,11 +188,12 @@ impl EventLoop {
                 Signal::Input(InputEvent::GraphicsAnswer(_)) => {}
                 Signal::Input(event) => self.apply(app, AppEvent::Input(event)),
                 Signal::Message(message) => self.apply(app, AppEvent::Message(message)),
-                Signal::Pane(change) => {
-                    if change.view == PaneView::Active {
+                Signal::Pane(view) => {
+                    self.pane = view;
+                    if view == PaneView::Active {
                         self.pacer.restore();
                     }
-                    self.apply(app, AppEvent::Pane(change));
+                    self.apply(app, AppEvent::Pane(view));
                 }
             }
             signal = pump.next(Duration::ZERO);
@@ -259,6 +267,7 @@ mod tests {
             frame_time: Duration::from_millis(16),
             next_draw: Instant::now(),
             pending,
+            pane: super::PaneView::Active,
             wire: Vec::new(),
         }
     }

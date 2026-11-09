@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use katui_proto::input::{InputEvent, InputParser};
 
-use crate::pane::{self, PaneChange};
+use crate::pane::{self, PaneView};
 use crate::tty::RawInput;
 
 /// How long a reader waits for input before checking for shutdown, and
@@ -31,7 +31,7 @@ pub enum Signal<M> {
     /// A message from one of the application's threads.
     Message(M),
     /// What our multiplexer pane can show changed.
-    Pane(PaneChange),
+    Pane(PaneView),
 }
 
 /// Lets any thread put a message on the event queue.
@@ -84,8 +84,8 @@ impl<M: Send + 'static> EventPump<M> {
     /// Report what the multiplexer `program` lets our pane show.
     pub fn watch_pane_visibility(&self, program: &str) {
         let sender = self.sender.clone();
-        pane::watch(program.to_owned(), self.stop.clone(), move |change| {
-            sender.send(Signal::Pane(change)).is_ok()
+        pane::watch(program.to_owned(), self.stop.clone(), move |view| {
+            sender.send(Signal::Pane(view)).is_ok()
         });
     }
 
