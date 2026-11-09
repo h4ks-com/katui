@@ -62,6 +62,10 @@ demo-plasma:
 demo-snake:
     cargo run --release -p katui-game --example snake
 
+# the cube demo: a lit cube turning in software 3D, arrow keys steer its spin
+demo-cube:
+    cargo run --release -p katui-game --example cube
+
 # the dvd demo: the immortal bouncing logo, color per bounce, corner-hit flash
 demo-dvd:
     cargo run --release -p katui-game --example dvd
