@@ -13,6 +13,7 @@ use katui_scene::CellSize;
 use crate::RtError;
 use crate::events::{EventPump, Signal, Waker};
 use crate::pacing::{Pacer, Pacing};
+use crate::pane::{PaneChange, PaneView};
 use crate::session::{ResizeEvent, ResizeWatch};
 
 /// How often an idle loop checks the terminal size.
@@ -27,6 +28,10 @@ pub enum AppEvent<M> {
     Message(M),
     /// The terminal has a new size.
     Resized(CellSize),
+    /// What our multiplexer pane can show changed. Unless it is
+    /// [`PaneView::Active`], anything drawn is lost or lands over other
+    /// windows, so we should wait and send everything again afterwards.
+    Pane(PaneChange),
     /// The size has held for a while. The terminal may have dropped
     /// images while resizing, so everything on screen needs sending again.
     Settled,
@@ -76,6 +81,9 @@ pub fn run_app<A: App, W: io::Write>(
     } else {
         Pacing::Timer
     };
+    if let Some(identity) = caps.identity.as_ref().filter(|_| caps.multiplexed()) {
+        pump.watch_pane_visibility(&identity.name);
+    }
     let size = crate::tty::size()?;
     let terminal = RestoringTerminal { out: &mut out };
     session::enter(terminal.out)?;
@@ -174,6 +182,12 @@ impl EventLoop {
                 Signal::Input(InputEvent::GraphicsAnswer(_)) => {}
                 Signal::Input(event) => self.apply(app, AppEvent::Input(event)),
                 Signal::Message(message) => self.apply(app, AppEvent::Message(message)),
+                Signal::Pane(change) => {
+                    if change.view == PaneView::Active {
+                        self.pacer.restore();
+                    }
+                    self.apply(app, AppEvent::Pane(change));
+                }
             }
             signal = pump.next(Duration::ZERO);
         }

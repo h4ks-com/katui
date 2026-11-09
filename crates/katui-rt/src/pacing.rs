@@ -51,6 +51,7 @@ impl Pacing {
 /// terminal stops answering.
 #[derive(Debug)]
 pub(crate) struct Pacer {
+    configured: Pacing,
     pacing: Pacing,
     next_query: u32,
 }
@@ -58,9 +59,16 @@ pub(crate) struct Pacer {
 impl Pacer {
     pub(crate) fn new(pacing: Pacing) -> Self {
         Self {
+            configured: pacing,
             pacing,
             next_query: QUERY_IDS_FROM,
         }
+    }
+
+    /// Go back to the configured pacing: a pane that lost focus stops
+    /// getting answers, which says nothing about the terminal.
+    pub(crate) fn restore(&mut self) {
+        self.pacing = self.configured;
     }
 
     pub(crate) fn is_answer_paced(&self) -> bool {

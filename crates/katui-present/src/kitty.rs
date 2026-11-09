@@ -83,6 +83,18 @@ impl Kitty {
         self
     }
 
+    /// Free every image this presenter sent and forget them all, as for a
+    /// new window. Other programs on the terminal keep theirs.
+    pub fn reset<W: Sink>(&mut self, out: &mut W) -> io::Result<()> {
+        let mut sent: Vec<ImageId> = self.sent.drain().collect();
+        sent.sort_unstable();
+        self.live.clear();
+        for image in sent {
+            out.write_all(&kitty::Delete::Free(KittyImage(image.0)).encode())?;
+        }
+        Ok(())
+    }
+
     /// Write `delta` as kitty graphics frames and return the byte count,
     /// the input of the frame budget pacing. The whole exchange sits in
     /// DEC 2026 synchronized output and leaves in one write, so a
@@ -251,6 +263,26 @@ mod tests {
             joined.push_str(&String::from_utf8_lossy(&frame));
         }
         joined
+    }
+
+    #[test]
+    fn a_reset_frees_everything_and_sends_it_all_again() {
+        let mut presenter = Kitty::new();
+        let shown = placement(7, 1, 0, 0);
+        let mut out = Vec::new();
+        presenter
+            .render(&mut out, &delta(&[shown], &[], &[]), &images())
+            .expect("writing to a Vec cannot fail");
+        out.clear();
+        presenter
+            .reset(&mut out)
+            .expect("writing to a Vec cannot fail");
+        assert_eq!(out, kitty::Delete::Free(KittyImage(7)).encode());
+        out.clear();
+        presenter
+            .render(&mut out, &delta(&[shown], &[], &[]), &images())
+            .expect("writing to a Vec cannot fail");
+        assert_eq!(occurrences(&String::from_utf8_lossy(&out), "a=t,"), 1);
     }
 
     #[test]
