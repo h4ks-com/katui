@@ -28,14 +28,10 @@ pub enum AppEvent<M> {
     Message(M),
     /// The terminal has a new size.
     Resized(CellSize),
-    /// What our multiplexer pane can show changed. The loop draws only
-    /// while it is [`PaneView::Active`], and the terminal may have lost
-    /// images meanwhile, so everything on screen needs sending again
-    /// when it comes back.
-    Pane(PaneView),
-    /// The size has held for a while. The terminal may have dropped
-    /// images while resizing, so everything on screen needs sending again.
-    Settled,
+    /// The terminal may have lost what we showed: a resize has settled,
+    /// or our multiplexer pane is back in view after the loop paused its
+    /// drawing. Everything on screen needs sending again.
+    Repaint,
 }
 
 /// What the loop does next.
@@ -192,8 +188,8 @@ impl EventLoop {
                     self.pane = view;
                     if view == PaneView::Active {
                         self.pacer.restore();
+                        self.apply(app, AppEvent::Repaint);
                     }
-                    self.apply(app, AppEvent::Pane(view));
                 }
             }
             signal = pump.next(Duration::ZERO);
@@ -208,7 +204,7 @@ impl EventLoop {
                 self.merge(Control::Redraw);
             }
             Some(ResizeEvent::Settled) => {
-                self.apply(app, AppEvent::Settled);
+                self.apply(app, AppEvent::Repaint);
                 self.merge(Control::Redraw);
             }
             None => {}

@@ -18,7 +18,6 @@ use katui_proto::input::InputEvent;
 use katui_proto::probe::Capabilities;
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
-use katui_rt::pane::PaneView;
 use katui_scene::CellSize;
 use katui_scene::placement::{self, CellRect, ImageId, Placement, PlacementId};
 use katui_ui::{CellPixels, Ui, UiOptions};
@@ -58,7 +57,6 @@ struct ChatApp {
     chat: Chat,
     ui: Ui<Action>,
     kitty: Kitty,
-    multiplexed: bool,
     start_fresh: bool,
     cell: CellPixels,
     placements: Vec<Placement>,
@@ -82,13 +80,6 @@ impl ChatApp {
             return self.chat.mouse(mouse, hit);
         }
         self.chat.input(event)
-    }
-
-    /// Forget what the terminal holds, so the next draw sends it all.
-    fn resend_everything(&mut self) {
-        self.placements.clear();
-        self.kitty = Kitty::new().for_multiplexer(self.multiplexed);
-        self.chat.backdrop.mark_unsent();
     }
 
     fn backdrop_placement(&mut self, size: CellSize) -> Placement {
@@ -120,13 +111,9 @@ impl App for ChatApp {
                 self.chat.effects.clear();
                 Control::Redraw
             }
-            AppEvent::Pane(view) => {
-                self.start_fresh |= view == PaneView::Active;
+            AppEvent::Repaint => {
+                self.start_fresh = true;
                 self.chat.effects.clear();
-                Control::Redraw
-            }
-            AppEvent::Settled => {
-                self.resend_everything();
                 Control::Redraw
             }
         }
@@ -242,7 +229,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         chat: Chat::new(default_nick()),
         ui: Ui::new(TextEngine::new(fonts())?, options),
         kitty: Kitty::new().for_multiplexer(multiplexed),
-        multiplexed,
         start_fresh: false,
         cell: cell_pixels(&caps),
         placements: Vec::new(),

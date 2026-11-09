@@ -168,8 +168,7 @@ impl<G: Game> App for Arcade<G> {
     fn update(&mut self, event: AppEvent<()>) -> Control {
         match event {
             AppEvent::Input(input) => return self.on_input(&input, Instant::now()),
-            AppEvent::Settled => self.screen.invalidate(),
-            AppEvent::Pane(_) => {
+            AppEvent::Repaint => {
                 self.keys.clear();
                 self.last_step = Instant::now();
                 self.screen.invalidate();
