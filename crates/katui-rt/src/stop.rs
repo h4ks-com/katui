@@ -5,30 +5,46 @@ use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use signal_hook::SigId;
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use signal_hook::flag;
 
 const STOPPING: [i32; 4] = [SIGTERM, SIGHUP, SIGINT, SIGQUIT];
 
-/// Set once the process was asked to stop.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct StopRequest(Arc<AtomicBool>);
+/// Set once the process was asked to stop. Dropping it gives the signals
+/// their usual meaning back.
+#[derive(Debug, Default)]
+pub(crate) struct StopRequest {
+    requested: Arc<AtomicBool>,
+    handlers: Vec<SigId>,
+}
 
 impl StopRequest {
     /// Watch the signals that end a program. A second signal while we
     /// restore the terminal ends the process at once, so a hung restore
     /// never traps the user.
     pub(crate) fn watch() -> io::Result<Self> {
-        let requested = Arc::new(AtomicBool::new(false));
+        let mut stop = Self::default();
         for signal in STOPPING {
-            flag::register_conditional_shutdown(signal, 1, Arc::clone(&requested))?;
-            flag::register(signal, Arc::clone(&requested))?;
+            let shutdown =
+                flag::register_conditional_shutdown(signal, 1, Arc::clone(&stop.requested))?;
+            stop.handlers.push(shutdown);
+            stop.handlers
+                .push(flag::register(signal, Arc::clone(&stop.requested))?);
         }
-        Ok(Self(requested))
+        Ok(stop)
     }
 
     pub(crate) fn requested(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
+        self.requested.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for StopRequest {
+    fn drop(&mut self) {
+        for handler in self.handlers.drain(..) {
+            signal_hook::low_level::unregister(handler);
+        }
     }
 }
 
@@ -36,11 +52,23 @@ impl StopRequest {
 mod tests {
     use super::StopRequest;
 
+    /// One test only: signal handlers are process-wide, so a second test
+    /// running alongside would see this one's signals.
     #[test]
-    fn a_terminating_signal_sets_the_request_instead_of_killing_us() {
-        let stop = StopRequest::watch().expect("signal handlers register");
-        assert!(!stop.requested());
-        signal_hook::low_level::raise(signal_hook::consts::SIGHUP).expect("raise works");
-        assert!(stop.requested());
+    fn a_signal_sets_the_request_and_a_later_watch_starts_fresh() {
+        let earlier = StopRequest::watch().expect("signal handlers register");
+        assert!(!earlier.requested());
+        signal_hook::low_level::raise(signal_hook::consts::SIGQUIT).expect("raise works");
+        assert!(
+            earlier.requested(),
+            "the signal set the flag and the process lives"
+        );
+        drop(earlier);
+        let later = StopRequest::watch().expect("signal handlers register");
+        assert!(!later.requested());
+        // with the earlier handlers still installed, its set flag would
+        // end this test process here instead of setting the new flag
+        signal_hook::low_level::raise(signal_hook::consts::SIGQUIT).expect("raise works");
+        assert!(later.requested());
     }
 }
