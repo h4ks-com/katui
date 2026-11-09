@@ -104,6 +104,30 @@ impl Surface {
         self.height
     }
 
+    /// This surface resized to `width` x `height`, nearest pixel; `None`
+    /// for an empty target.
+    #[must_use]
+    pub fn scaled(&self, width: u32, height: u32) -> Option<Surface> {
+        if width == 0 || height == 0 || self.width() == 0 || self.height() == 0 {
+            return None;
+        }
+        let source = self.pixels();
+        let source_row = self.width() as usize * 4;
+        let columns: Vec<usize> = (0..width)
+            .map(|x| (u64::from(x) * u64::from(self.width()) / u64::from(width)) as usize * 4)
+            .collect();
+        let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
+        for y in 0..height {
+            let row = (u64::from(y) * u64::from(self.height()) / u64::from(height)) as usize;
+            let start = row * source_row;
+            for column in &columns {
+                let at = start + column;
+                pixels.extend_from_slice(source.get(at..at + 4).unwrap_or(&[0, 0, 0, 255]));
+            }
+        }
+        Surface::from_rgba(width, height, pixels)
+    }
+
     /// The RGBA bytes.
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
@@ -226,6 +250,19 @@ mod tests {
 
     const RED: Rgba = Rgba::solid(255, 0, 0);
     const BLUE: Rgba = Rgba::solid(0, 0, 255);
+
+    #[test]
+    fn scaling_repeats_pixels_up_and_samples_them_down() {
+        let mut surface = Surface::new(2, 1);
+        surface.set(PixelPos::new(0, 0), RED);
+        surface.set(PixelPos::new(1, 0), BLUE);
+        let up = surface.scaled(4, 2).expect("a nonempty target");
+        let row: Vec<Option<Rgba>> = (0..4).map(|x| up.get(PixelPos::new(x, 1))).collect();
+        assert_eq!(row, [Some(RED), Some(RED), Some(BLUE), Some(BLUE)]);
+        let down = up.scaled(2, 1).expect("a nonempty target");
+        assert_eq!(down, surface);
+        assert_eq!(surface.scaled(0, 3), None);
+    }
 
     #[test]
     fn a_new_surface_is_transparent_black() {

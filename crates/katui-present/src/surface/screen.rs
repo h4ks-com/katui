@@ -105,7 +105,8 @@ impl PixelScreen {
     }
 
     /// Write `surface` scaled to the whole `columns` x `rows` screen and
-    /// return the bytes written.
+    /// return the bytes written. Blocks show two by two pixels a cell, so
+    /// a surface of another size is resized to that first.
     pub fn render_frame<W: Sink>(
         &mut self,
         out: &mut W,
@@ -121,7 +122,16 @@ impl PixelScreen {
                 animated.render_frame(out, surface, CellRect::full(columns, rows))
             }
             Some(PixelStrategy::Sixel(sixel)) => sixel.render_frame(out, surface, columns, rows),
-            None => self.blocks.render_frame(out, surface),
+            None => {
+                let (width, height) = (u32::from(columns) * 2, u32::from(rows) * 2);
+                if (surface.width(), surface.height()) == (width, height) {
+                    self.blocks.render_frame(out, surface)
+                } else {
+                    surface
+                        .scaled(width, height)
+                        .map_or(Ok(0), |fitted| self.blocks.render_frame(out, &fitted))
+                }
+            }
         }
     }
 }

@@ -45,7 +45,7 @@ impl SixelSurface {
     ) -> io::Result<usize> {
         let width = u32::from(columns) * u32::from(self.cell.width);
         let height = u32::from(rows.saturating_sub(1)) * u32::from(self.cell.height);
-        let Some(screen) = scaled(surface, width, height) else {
+        let Some(screen) = surface.scaled(width, height) else {
             return Ok(0);
         };
         let tile_side = u32::from(self.cell.width) * u32::from(self.cell.height);
@@ -92,29 +92,6 @@ fn whole(width: u32, height: u32) -> PixelRect {
         width,
         height,
     }
-}
-
-/// `surface` resized to `width` x `height`, nearest pixel; `None` for an
-/// empty target.
-fn scaled(surface: &Surface, width: u32, height: u32) -> Option<Surface> {
-    if width == 0 || height == 0 || surface.width() == 0 || surface.height() == 0 {
-        return None;
-    }
-    let source = surface.pixels();
-    let source_row = surface.width() as usize * 4;
-    let columns: Vec<usize> = (0..width)
-        .map(|x| (u64::from(x) * u64::from(surface.width()) / u64::from(width)) as usize * 4)
-        .collect();
-    let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
-    for y in 0..height {
-        let row = (u64::from(y) * u64::from(surface.height()) / u64::from(height)) as usize;
-        let start = row * source_row;
-        for column in &columns {
-            let at = start + column;
-            pixels.extend_from_slice(source.get(at..at + 4).unwrap_or(&[0, 0, 0, 255]));
-        }
-    }
-    Surface::from_rgba(width, height, pixels)
 }
 
 #[cfg(test)]
