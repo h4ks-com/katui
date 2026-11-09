@@ -155,13 +155,17 @@ pub struct Capabilities {
     pub trust: ProbeSource,
 }
 
+impl Identity {
+    fn is_multiplexer(&self) -> bool {
+        matches!(self.name.as_str(), "tmux" | "rmux")
+    }
+}
+
 impl Capabilities {
     /// Whether a terminal multiplexer answered the probe.
     #[must_use]
     pub fn multiplexed(&self) -> bool {
-        self.identity
-            .as_ref()
-            .is_some_and(|identity| matches!(identity.name.as_str(), "tmux" | "rmux"))
+        self.identity.as_ref().is_some_and(Identity::is_multiplexer)
     }
 }
 
@@ -190,6 +194,9 @@ fn batch() -> Vec<u8> {
     )
     .into_bytes()
 }
+
+/// How many quiet reads we allow a multiplexer to relay the kitty answer.
+const RELAY_WAIT_READS: u32 = 5;
 
 /// Everything the reply stream told us.
 #[allow(clippy::struct_excessive_bools)] // a reply scan is flags
@@ -223,14 +230,16 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     }
     let mut stream = Vec::new();
     let mut replies = parse_replies(&stream);
-    // a multiplexer answers DA1 itself, ahead of the kitty answers it
-    // relays, so we keep listening for those or they reach the shell
-    while !replies.barrier || (replies.kitty_ok && replies.animation_answer.is_none()) {
-        let Some(chunk) = transport.read_timeout(READ_WAIT) else {
-            break;
-        };
-        stream.extend_from_slice(&chunk);
-        replies = parse_replies(&stream);
+    let mut silent_reads = 0;
+    while still_listening(&replies, silent_reads) {
+        match transport.read_timeout(READ_WAIT) {
+            Some(chunk) => {
+                stream.extend_from_slice(&chunk);
+                replies = parse_replies(&stream);
+            }
+            None if replies.awaits_relay() => silent_reads += 1,
+            None => break,
+        }
     }
     let answered = replies.barrier
         || replies.kitty_ok
@@ -240,7 +249,9 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     if answered {
         caps.trust = ProbeSource::Probed;
     }
-    caps.kitty |= replies.kitty_ok;
+    // a multiplexer that never relays our query is keeping graphics from
+    // the terminal behind it, whatever the inherited environment claims
+    caps.kitty = replies.kitty_ok || (caps.kitty && !replies.is_multiplexed());
     caps.animation = replies.animation_answer == Some(true);
     caps.sixel |= replies.sixel;
     if let Some(identity) = replies.identity {
@@ -250,6 +261,15 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
         caps.cell = Some(cell);
     }
     caps
+}
+
+/// Whether the exchange is unfinished. A multiplexer answers DA1 itself,
+/// ahead of the kitty answers it relays, so we keep listening for those or
+/// they reach the shell.
+fn still_listening(replies: &Replies, silent_reads: u32) -> bool {
+    !replies.barrier
+        || (replies.kitty_ok && replies.animation_answer.is_none())
+        || (replies.awaits_relay() && silent_reads < RELAY_WAIT_READS)
 }
 
 /// Seed capabilities from environment markers alone.
@@ -262,6 +282,16 @@ pub fn sniff(env: &Env) -> Capabilities {
         identity: None,
         cell: None,
         trust: ProbeSource::Sniffed,
+    }
+}
+
+impl Replies {
+    fn is_multiplexed(&self) -> bool {
+        self.identity.as_ref().is_some_and(Identity::is_multiplexer)
+    }
+
+    fn awaits_relay(&self) -> bool {
+        self.barrier && self.is_multiplexed() && !self.kitty_ok
     }
 }
 
@@ -569,6 +599,30 @@ mod tests {
                 version: Some("3.8".to_owned()),
             })
         );
+    }
+
+    #[test]
+    fn a_multiplexer_blocking_graphics_is_no_graphics_terminal() {
+        let mut mux = env();
+        mux.tmux = Some("pane".to_owned());
+        mux.rmux = Some("pane".to_owned());
+        assert!(sniff(&mux).kitty, "the environment claims graphics");
+        let mut transport = Scripted::new(&[b"\x1bP>|rmux 0.10.0\x1b\\\x1b[?62c"]);
+        let caps = probe(&mut transport, &mux);
+        assert!(!caps.kitty, "the query never came back through it");
+        assert!(caps.multiplexed());
+    }
+
+    #[test]
+    fn a_kitty_answer_relayed_after_the_barrier_proves_graphics() {
+        let mut mux = env();
+        mux.rmux = Some("pane".to_owned());
+        let mut transport = Scripted::new(&[
+            b"\x1bP>|rmux 0.10.0\x1b\\\x1b[?62c",
+            b"\x1b_Gi=31;OK\x1b\\\x1b_Gi=30,r=2;OK\x1b\\",
+        ]);
+        let caps = probe(&mut transport, &mux);
+        assert!(caps.kitty, "the outer terminal answered through it");
     }
 
     #[test]
