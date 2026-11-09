@@ -3,7 +3,9 @@
 //! `just demo-browse` for the bundled pages, or pass a path to a page.
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -32,23 +34,19 @@ fn main() -> Result<(), katui_rt::RtError> {
 
 struct Browser {
     page: PathBuf,
-    source: Result<String, String>,
-    images: HashMap<String, Option<Arc<Surface>>>,
+    source: io::Result<String>,
+    images: RefCell<HashMap<String, Option<Arc<Surface>>>>,
     scroll: f32,
     history: Vec<PathBuf>,
 }
 
 impl Browser {
     fn open(page: PathBuf) -> Self {
-        let source = std::fs::read_to_string(&page).map_err(|error| error.to_string());
-        let images = source
-            .as_ref()
-            .map(|source| load_images(&page, source))
-            .unwrap_or_default();
+        let source = read_page(&page);
         Self {
             page,
             source,
-            images,
+            images: RefCell::default(),
             scroll: 0.0,
             history: Vec::new(),
         }
@@ -72,33 +70,34 @@ impl Browser {
     }
 }
 
-/// The local file `href` points at from `page`, for relative links.
+/// The local file `href` points at from `page`, for relative links. A
+/// link with a scheme, `https:` or `mailto:` for one, stays out.
 fn local_target(page: &Path, href: &str) -> Option<PathBuf> {
     let path = href
         .split(['#', '?'])
         .next()
         .filter(|path| !path.is_empty())?;
-    if path.contains("://") {
+    let scheme = path
+        .split_once(':')
+        .is_some_and(|(scheme, _)| !scheme.contains('/'));
+    if scheme {
         return None;
     }
     Some(page.parent().unwrap_or(Path::new(".")).join(path))
 }
 
-/// Decode every local image the page refers to, once.
-fn load_images(page: &Path, source: &str) -> HashMap<String, Option<Arc<Surface>>> {
-    source
-        .split("src=\"")
-        .skip(1)
-        .filter_map(|rest| rest.split('"').next())
-        .map(|src| {
-            let decoded = local_target(page, src)
-                .and_then(|path| image::open(path).ok())
-                .map(|image| image.to_rgba8())
-                .and_then(|rgba| Surface::from_rgba(rgba.width(), rgba.height(), rgba.into_raw()))
-                .map(Arc::new);
-            (src.to_owned(), decoded)
-        })
-        .collect()
+/// The text of `page`, which has to be a regular file: a device such as
+/// `/dev/zero` would never finish reading.
+fn read_page(page: &Path) -> io::Result<String> {
+    if !std::fs::metadata(page)?.is_file() {
+        return Err(io::Error::other("the path is not a regular file"));
+    }
+    std::fs::read_to_string(page)
+}
+
+fn decode(path: &Path) -> Option<Arc<Surface>> {
+    let rgba = image::open(path).ok()?.to_rgba8();
+    Surface::from_rgba(rgba.width(), rgba.height(), rgba.into_raw()).map(Arc::new)
 }
 
 impl HtmlHost<String> for Browser {
@@ -107,7 +106,15 @@ impl HtmlHost<String> for Browser {
     }
 
     fn image(&self, src: &str) -> Option<Arc<Surface>> {
-        self.images.get(src).cloned().flatten()
+        self.images
+            .borrow_mut()
+            .entry(src.to_owned())
+            .or_insert_with(|| {
+                local_target(&self.page, src)
+                    .filter(|path| path.is_file())
+                    .and_then(|path| decode(&path))
+            })
+            .clone()
     }
 }
 
@@ -216,5 +223,6 @@ mod tests {
         );
         assert_eq!(local_target(page, "https://example.com"), None);
         assert_eq!(local_target(page, "#section"), None);
+        assert_eq!(local_target(page, "mailto:someone@example.com"), None);
     }
 }
