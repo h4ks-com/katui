@@ -37,7 +37,6 @@ use crate::kitty::crop_rect;
 #[derive(Debug)]
 pub struct PatchedKitty {
     base: u32,
-    cell: CellPixels,
     tile_side: u32,
     budget: usize,
     prev: Option<Surface>,
@@ -66,10 +65,9 @@ impl PatchedKitty {
     /// wins. Fine-grained surfaces want small tiles and a high budget;
     /// the tile's cell span always follows the surface-to-area scale.
     #[must_use]
-    pub fn with_tiles(base: u32, cell: CellPixels, tile_side: u32, budget: usize) -> Self {
+    pub fn with_tiles(base: u32, _cell: CellPixels, tile_side: u32, budget: usize) -> Self {
         Self {
             base,
-            cell,
             tile_side: tile_side.max(1),
             budget,
             prev: None,
@@ -84,11 +82,6 @@ impl PatchedKitty {
     /// may have lost what it was showing.
     pub fn repaint(&mut self) {
         self.repaint = true;
-    }
-
-    /// The cell size this presenter was built for.
-    pub(super) fn cell(&self) -> CellPixels {
-        self.cell
     }
 
     /// Free every image this presenter sent and repaint on the next frame.
@@ -107,12 +100,9 @@ impl PatchedKitty {
     /// anchor, for a multiplexer: it drops uploads bigger than it buffers,
     /// and it hides the anchor, and so every tile, with its pane.
     #[must_use]
-    pub fn for_multiplexer(mut self, enabled: bool) -> Self {
-        if enabled {
-            let space = IdSpace::of_process();
-            self.base = space.image(self.base).0;
-            self.anchor = Some(Anchor::new(space));
-        }
+    pub fn for_multiplexer(mut self, space: IdSpace) -> Self {
+        self.base = space.image(self.base).0;
+        self.anchor = Some(Anchor::new(space));
         self
     }
 
@@ -455,14 +445,18 @@ mod tests {
         assert!(placed < freed, "the new base appears before the tiles go");
     }
 
+    fn space() -> katui_proto::kitty::IdSpace {
+        katui_proto::kitty::IdSpace::of_process(4242)
+    }
+
     fn anchored() -> String {
-        let anchor = katui_proto::kitty::IdSpace::of_process().image(0x00ff_fff0);
+        let anchor = space().image(0x00ff_fff0);
         format!(",P={},", anchor.0)
     }
 
     #[test]
     fn a_multiplexer_grid_places_tiles_on_the_anchor_and_never_a_whole_image() {
-        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(true);
+        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space());
         let surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
@@ -484,7 +478,7 @@ mod tests {
 
     #[test]
     fn a_repainted_grid_resends_every_tile_and_keeps_the_anchor() {
-        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(true);
+        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space());
         let surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
@@ -512,7 +506,7 @@ mod tests {
 
     #[test]
     fn a_multiplexer_grid_frees_the_old_tiles_on_a_resize() {
-        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(true);
+        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space());
         let mut wire = Vec::new();
         presenter
             .render_frame(&mut wire, &plain_surface(64, 64), area())

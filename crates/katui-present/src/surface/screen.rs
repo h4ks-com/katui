@@ -5,7 +5,7 @@
 use crate::Sink;
 use std::io;
 
-use katui_proto::probe::Capabilities;
+use katui_proto::probe::{Capabilities, CellPixels};
 
 use crate::select::{Backend, select};
 use katui_scene::placement::CellRect;
@@ -38,45 +38,44 @@ pub struct PixelScreen {
 }
 
 impl PixelScreen {
-    /// The screen for `caps`: `patched` when the terminal speaks the
-    /// kitty graphics protocol, sixel tiles at `patched`'s cell size when
-    /// it speaks sixel, quarter blocks otherwise.
+    /// The screen for `caps` with cells of `cell` pixels: `patched` when
+    /// the terminal speaks the kitty graphics protocol, sixel tiles when it
+    /// speaks sixel, quarter blocks otherwise.
     #[must_use]
-    pub fn new(caps: &Capabilities, patched: PatchedKitty) -> Self {
-        let strategy = match select(caps) {
-            Backend::Kitty => Some(PixelStrategy::Patched(
-                patched.for_multiplexer(caps.multiplexed()),
-            )),
-            Backend::Sixel => Some(PixelStrategy::Sixel(SixelSurface::new(patched.cell()))),
+    pub fn new(caps: &Capabilities, cell: CellPixels, patched: PatchedKitty) -> Self {
+        let patched = if caps.multiplexed() {
+            patched.for_multiplexer(caps.id_space)
+        } else {
+            patched
+        };
+        let graphics = match select(caps) {
+            Backend::Kitty => Some(PixelStrategy::Patched(patched)),
+            Backend::Sixel => Some(PixelStrategy::Sixel(SixelSurface::new(cell))),
             Backend::Blocks => None,
         };
         Self {
-            graphics: strategy,
+            graphics,
             blocks: BlocksSurface::new(),
         }
     }
 
-    /// Whether frames go out as sixel, which shows the surface at the
-    /// screen's own pixels.
+    /// The same screen driven by a terminal-side animation when the
+    /// terminal stores animation frames outside a multiplexer, which
+    /// swallows frames, and by [`Self::new`] with `fallback` otherwise.
     #[must_use]
-    pub fn draws_sixel(&self) -> bool {
-        matches!(self.graphics, Some(PixelStrategy::Sixel(_)))
-    }
-
-    /// The same screen driven by a terminal-side animation, falling back
-    /// to `fallback` patches when the terminal speaks graphics but not
-    /// the animation extension, a multiplexer that swallows frames
-    /// included.
-    #[must_use]
-    pub fn animated(caps: &Capabilities, animated: AnimatedKitty, fallback: PatchedKitty) -> Self {
-        let strategy = if caps.animation && !caps.multiplexed() {
-            PixelStrategy::Animated(animated)
+    pub fn animated(
+        caps: &Capabilities,
+        cell: CellPixels,
+        animated: AnimatedKitty,
+        fallback: PatchedKitty,
+    ) -> Self {
+        if select(caps) == Backend::Kitty && caps.animation && !caps.multiplexed() {
+            Self {
+                graphics: Some(PixelStrategy::Animated(animated)),
+                blocks: BlocksSurface::new(),
+            }
         } else {
-            PixelStrategy::Patched(fallback.for_multiplexer(caps.multiplexed()))
-        };
-        Self {
-            graphics: caps.kitty.then_some(strategy),
-            blocks: BlocksSurface::new(),
+            Self::new(caps, cell, fallback)
         }
     }
 
@@ -133,6 +132,11 @@ mod tests {
     use katui_proto::probe::{Capabilities, CellPixels, ProbeSource};
     use katui_scene::surface::{Rgba, Surface};
 
+    const CELL: CellPixels = CellPixels {
+        width: 2,
+        height: 4,
+    };
+
     fn caps(kitty: bool) -> Capabilities {
         Capabilities {
             kitty,
@@ -142,6 +146,7 @@ mod tests {
             identity: None,
             cell: None,
             text_area: None,
+            id_space: katui_proto::kitty::IdSpace::default(),
             trust: ProbeSource::Sniffed,
         }
     }
@@ -168,7 +173,7 @@ mod tests {
                 height: 4,
             },
         );
-        let mut screen = PixelScreen::new(&caps(true), patched);
+        let mut screen = PixelScreen::new(&caps(true), CELL, patched);
         let mut out = Vec::new();
         screen
             .render_frame(&mut out, &plain(8, 8), 4, 2)
@@ -189,8 +194,7 @@ mod tests {
         );
         let mut sixel = caps(false);
         sixel.sixel = true;
-        let mut screen = PixelScreen::new(&sixel, patched);
-        assert!(screen.draws_sixel());
+        let mut screen = PixelScreen::new(&sixel, CELL, patched);
         let mut out = Vec::new();
         screen
             .render_frame(&mut out, &plain(8, 4), 4, 2)
@@ -207,7 +211,7 @@ mod tests {
                 height: 4,
             },
         );
-        let mut screen = PixelScreen::new(&caps(false), patched);
+        let mut screen = PixelScreen::new(&caps(false), CELL, patched);
         let mut out = Vec::new();
         screen
             .render_frame(&mut out, &plain(8, 4), 4, 2)
@@ -229,7 +233,7 @@ mod tests {
                 height: 4,
             },
         );
-        let mut screen = PixelScreen::animated(&no_animation, animated, fallback);
+        let mut screen = PixelScreen::animated(&no_animation, CELL, animated, fallback);
         let mut out = Vec::new();
         screen
             .render_frame(&mut out, &plain(8, 8), 4, 2)
@@ -251,7 +255,7 @@ mod tests {
                 height: 4,
             },
         );
-        let mut screen = PixelScreen::animated(&animated_caps, animated, fallback);
+        let mut screen = PixelScreen::animated(&animated_caps, CELL, animated, fallback);
         let mut out = Vec::new();
         screen
             .render_frame(&mut out, &plain(8, 8), 4, 2)

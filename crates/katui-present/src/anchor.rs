@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn the_anchor_image_goes_out_once_and_its_cell_every_frame() {
-        let mut anchor = Anchor::new(katui_proto::kitty::IdSpace::of_process());
+        let mut anchor = Anchor::new(katui_proto::kitty::IdSpace::of_process(4242));
         let (mut first, mut second) = (Vec::new(), Vec::new());
         anchor
             .write(&mut first)

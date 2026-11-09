@@ -67,17 +67,17 @@ pub(crate) struct Pacer {
     multiplexed: bool,
     pacing: Pacing,
     next_query: u32,
-    space: Option<IdSpace>,
+    space: IdSpace,
 }
 
 impl Pacer {
-    pub(crate) fn new(pacing: Pacing, multiplexed: bool) -> Self {
+    pub(crate) fn new(pacing: Pacing, multiplexed: bool, space: IdSpace) -> Self {
         Self {
             configured: pacing,
             multiplexed,
             pacing,
             next_query: QUERY_IDS_FROM,
-            space: multiplexed.then(IdSpace::of_process),
+            space,
         }
     }
 
@@ -94,7 +94,7 @@ impl Pacer {
         } else {
             QUERY_IDS_FROM
         };
-        self.space.map_or(local, |space| space.image(local).0)
+        self.space.image(local).0
     }
 
     /// Write `frame`; `false` when this frame lost the terminal's answers.
@@ -202,12 +202,10 @@ mod tests {
 
     #[test]
     fn a_multiplexed_pacer_asks_with_ids_of_its_own_space() {
-        let mut pacer = super::Pacer::new(Pacing::Batches, true);
+        let space = katui_proto::kitty::IdSpace::of_process(4242);
+        let mut pacer = super::Pacer::new(Pacing::Batches, true, space);
         let first = pacer.take_query_id();
-        assert_eq!(
-            first >> 24,
-            katui_proto::kitty::IdSpace::of_process().image(0).0 >> 24
-        );
+        assert_eq!(first >> 24, space.image(0).0 >> 24);
         assert_ne!(pacer.take_query_id(), first);
     }
 

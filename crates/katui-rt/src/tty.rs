@@ -5,6 +5,7 @@ use std::fs::{File, OpenOptions};
 use std::os::fd::AsFd;
 use std::time::{Duration, Instant};
 
+use katui_proto::kitty::IdSpace;
 use katui_proto::probe::CellPixels;
 use katui_proto::probe::{Capabilities, Env};
 use katui_proto::probe::{Transport, probe, sniff};
@@ -149,6 +150,14 @@ pub fn size() -> Result<katui_scene::CellSize, RtError> {
 /// over the controlling terminal, falling back to the environment sniff
 /// when no terminal answers.
 pub fn probe_default() -> Capabilities {
+    let mut caps = probe_terminal();
+    if caps.multiplexed() {
+        caps.id_space = IdSpace::of_process(std::process::id());
+    }
+    caps
+}
+
+fn probe_terminal() -> Capabilities {
     let env = Env::capture();
     match TtyTransport::open(Duration::from_millis(300)) {
         Ok(mut transport) => {

@@ -9,7 +9,7 @@
 use std::time::{Duration, Instant};
 
 use katui_present::surface::{AnimatedKitty, PatchedKitty};
-use katui_proto::kitty::{self, Delete, ImageId};
+use katui_proto::kitty::{self, Delete, IdSpace, ImageId};
 use katui_proto::probe::{CellPixels, Transport as _};
 use katui_rt::tty::TtyTransport;
 use katui_scene::placement::CellRect;
@@ -48,8 +48,8 @@ fn main() {
         FRAMES, "strategy", "damage", "fps", "p50 ms", "p95 ms", "KB/frame"
     )];
     for damage in [5, 20, 60] {
-        let mut tiles =
-            PatchedKitty::with_tiles(BASE_IMAGE, cell(), TILE, usize::MAX).for_multiplexer(true);
+        let mut tiles = PatchedKitty::with_tiles(BASE_IMAGE, cell(), TILE, usize::MAX)
+            .for_multiplexer(IdSpace::of_process(std::process::id()));
         lines.push(run(
             "tiles",
             damage,
@@ -121,7 +121,7 @@ fn run(
     }
     let elapsed = started.elapsed().as_secs_f32();
     let _ = transport.write(&Delete::AllVisible.encode());
-    let space = katui_proto::kitty::IdSpace::of_process();
+    let space = IdSpace::of_process(std::process::id());
     for (first, last) in [
         (ImageId(BASE_IMAGE), ImageId(BASE_IMAGE + 200_000)),
         (space.image(BASE_IMAGE), space.image(BASE_IMAGE + 200_000)),

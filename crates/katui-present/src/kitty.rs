@@ -72,6 +72,7 @@ pub struct Kitty {
     live: HashSet<(ImageId, PlacementId)>,
     anchor: Option<Anchor>,
     space: Option<IdSpace>,
+    banded: bool,
 }
 
 impl Kitty {
@@ -86,13 +87,21 @@ impl Kitty {
     /// out the synchronized-output wrapper there, because we send terminal
     /// queries between batches and a terminal holds its answers until a
     /// synchronized update ends.
+    /// Every image id goes into `space`, so programs sharing the terminal
+    /// keep their images apart.
     #[must_use]
-    pub fn for_multiplexer(mut self, multiplexed: bool) -> Self {
-        if multiplexed {
-            let space = IdSpace::of_process();
-            self.space = Some(space);
-            self.anchor = Some(Anchor::new(space));
-        }
+    pub fn for_multiplexer(mut self, space: IdSpace) -> Self {
+        self.space = Some(space);
+        self.anchor = Some(Anchor::new(space));
+        self
+    }
+
+    /// Send big images as a blank image plus bands of rows, so a
+    /// multiplexer can pace between them. The bands are frame edits, so
+    /// only a terminal that stores animation frames takes them.
+    #[must_use]
+    pub fn banded(mut self, banded: bool) -> Self {
+        self.banded = banded;
         self
     }
 
@@ -150,7 +159,7 @@ impl Kitty {
                 && !transmitted.contains(&image)
                 && let Some(payload) = images.get(image)
             {
-                let band = if self.anchor.is_some() {
+                let band = if self.banded {
                     MULTIPLEXER_BAND_BYTES
                 } else {
                     usize::MAX
@@ -226,11 +235,18 @@ pub struct KittyScreen {
 
 impl KittyScreen {
     /// A screen for a fresh session on the terminal `caps` describes,
-    /// anchored under a multiplexer.
+    /// anchored and banded under a multiplexer.
     #[must_use]
     pub fn new(caps: &Capabilities) -> Self {
+        let kitty = if caps.multiplexed() {
+            Kitty::new()
+                .for_multiplexer(caps.id_space)
+                .banded(caps.animation)
+        } else {
+            Kitty::new()
+        };
         Self {
-            kitty: Kitty::new().for_multiplexer(caps.multiplexed()),
+            kitty,
             ..Self::default()
         }
     }
@@ -378,8 +394,52 @@ mod tests {
     }
 
     #[test]
+    fn a_shared_screen_bands_big_images_only_where_frames_are_stored() {
+        use super::KittyScreen;
+        use katui_proto::probe::{Capabilities, Identity};
+
+        let big = vec![0x80; 4 * 64 * 64];
+        let send = |animation: bool| {
+            let caps = Capabilities {
+                kitty: true,
+                animation,
+                identity: Some(Identity {
+                    name: "tmux".to_owned(),
+                    version: None,
+                }),
+                id_space: kitty::IdSpace::of_process(7),
+                ..Capabilities::default()
+            };
+            let mut screen = KittyScreen::new(&caps);
+            let mut images = Images::default();
+            images.insert(
+                ImageId(3),
+                RgbaImage::new(64, 64, &big).expect("exact pixels"),
+            );
+            let mut out = Vec::new();
+            screen
+                .present(&mut out, vec![placement(3, 1, 0, 0)], &images)
+                .expect("writing to a Vec cannot fail");
+            String::from_utf8_lossy(&out).into_owned()
+        };
+        let space = kitty::IdSpace::of_process(7).image(3).0;
+        let banded = send(true);
+        assert!(banded.contains("a=f,"), "frame edits carry the bands");
+        assert!(
+            banded.contains(&format!("i={space},")),
+            "the id sits in our space"
+        );
+        let whole = send(false);
+        assert!(
+            !whole.contains("a=f,"),
+            "a terminal without frames gets one transmit"
+        );
+        assert_eq!(whole.matches("a=t,").count(), 2, "the anchor and the image");
+    }
+
+    #[test]
     fn a_multiplexer_render_has_no_sync_wrapper_and_keeps_z() {
-        let mut presenter = Kitty::new().for_multiplexer(true);
+        let mut presenter = Kitty::new().for_multiplexer(katui_proto::kitty::IdSpace::default());
         let layered = Placement {
             z: -5,
             ..placement(7, 1, 0, 0)

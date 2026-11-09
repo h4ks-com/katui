@@ -108,6 +108,7 @@ impl<G: Game> Arcade<G> {
         self.screen.free(out)?;
         self.screen = PixelScreen::new(
             &self.caps,
+            cell,
             PatchedKitty::with_tiles(BASE_IMAGE, cell, down * TILE_HEIGHTS, TILE_BUDGET),
         );
         self.fitted = Some(size);

@@ -25,16 +25,17 @@ pub struct ImageId(pub u32);
 
 /// The image ids one program owns on a terminal it shares with others:
 /// its own high byte over 24-bit local ids. The high byte fits the
-/// placeholder diacritic, so anchored ids keep working.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// placeholder diacritic, so anchored ids keep working. The default space
+/// leaves local ids as they are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct IdSpace(u8);
 
 impl IdSpace {
-    /// The space of the running process, from its process id.
+    /// The space a process with id `process` takes: a nonzero high byte.
     // Two processes whose ids match modulo 255 share a space, a rare clash we accept.
     #[must_use]
-    pub fn of_process() -> Self {
-        Self(u8::try_from(std::process::id() % 255).unwrap_or(0) + 1)
+    pub fn of_process(process: u32) -> Self {
+        Self(u8::try_from(process % 255).unwrap_or(0) + 1)
     }
 
     /// The id `local` takes inside this space.
@@ -782,7 +783,7 @@ mod tests {
 
     #[test]
     fn an_id_space_puts_its_byte_above_the_local_id() {
-        let space = super::IdSpace::of_process();
+        let space = super::IdSpace::of_process(4242);
         let image = space.image(0x0100_0007);
         assert_eq!(image.0 & 0x00ff_ffff, 7, "local ids keep 24 bits");
         assert_ne!(image.0 >> 24, 0, "every process space is nonzero");

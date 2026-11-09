@@ -55,6 +55,7 @@ mod tests {
             identity: None,
             cell: None,
             text_area: None,
+            id_space: katui_proto::kitty::IdSpace::default(),
             trust: ProbeSource::Probed,
         }
     }

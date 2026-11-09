@@ -90,7 +90,7 @@ pub fn run_app<A: App, W: io::Write>(
     terminal.out.flush()?;
     app.start(pump.waker());
     let mut event_loop = EventLoop {
-        pacer: Pacer::new(pacing, caps.multiplexed()),
+        pacer: Pacer::new(pacing, caps.multiplexed(), caps.id_space),
         resize: ResizeWatch::new(size),
         size,
         frame_time: Duration::from_secs_f64(1.0 / f64::from(frames_per_second.max(1))),
@@ -265,7 +265,7 @@ mod tests {
             rows: 24,
         };
         EventLoop {
-            pacer: Pacer::new(Pacing::Timer, false),
+            pacer: Pacer::new(Pacing::Timer, false, katui_proto::kitty::IdSpace::default()),
             resize: ResizeWatch::new(size),
             size,
             frame_time: Duration::from_millis(16),

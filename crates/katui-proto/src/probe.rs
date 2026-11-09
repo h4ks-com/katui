@@ -9,7 +9,7 @@
 
 use std::time::Duration;
 
-use crate::kitty;
+use crate::kitty::{self, IdSpace};
 
 /// How long the probe waits per read before asking the transport again.
 /// The transport may cut the wait shorter under its own budget.
@@ -158,6 +158,9 @@ pub struct Capabilities {
     /// The pixel size of the whole text area, when the `CSI 14 t` answer
     /// arrived; divided by the cell count it gives the cell size.
     pub text_area: Option<CellPixels>,
+    /// The image ids this program owns. The runtime gives each program its
+    /// own space under a multiplexer, where programs share one terminal.
+    pub id_space: IdSpace,
     /// The strongest source behind any value in this report: a barrier
     /// answer proves the terminal listened, whatever each field says.
     pub trust: ProbeSource,
@@ -296,6 +299,7 @@ pub fn sniff(env: &Env) -> Capabilities {
         identity: None,
         cell: None,
         text_area: None,
+        id_space: IdSpace::default(),
         trust: ProbeSource::Sniffed,
     }
 }
@@ -511,6 +515,7 @@ mod tests {
                     width: 560,
                     height: 700
                 }),
+                id_space: super::IdSpace::default(),
                 trust: super::ProbeSource::Probed,
             }
         );
