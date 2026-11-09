@@ -70,6 +70,14 @@ demo-dvd:
 demo-life:
     cargo run --release -p katui-rt --example life
 
+# the lumenshaft demo: stack glowing blocks down a 3d shaft
+demo-lumenshaft:
+    cargo run --release -p katui-game --example lumenshaft
+
+# the shardrift demo: drift through a nebula and split crystal rocks
+demo-shardrift:
+    cargo run --release -p katui-game --example shardrift
+
 # the pacing instrument: fps, latency and bytes per frame for each pixel strategy
 pace:
     cargo run --release -p katui-rt --example pace

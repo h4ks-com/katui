@@ -51,6 +51,7 @@ same scene and presenters under all three:
 ```
 katui-ratatui ─┐                        (compat adapter, spans L5..L1 from the side)
 katui-ffi ──────┤
+katui-game ─────┤  arcade games: light buffer, held keys, fixed-step runner over katui-rt
 katui-rt ───────┤  owns ALL I/O: raw mode, signals, event pump, frame clock,
                 │  loops, MCP server, emergency restore
 katui-content ──┤  markdown / tree-sitter / html-subset / charts -> scene

@@ -18,6 +18,8 @@ crates/katui-layout/    L4: constraint splitting of cell rectangles (pure)
 crates/katui-content/   L6: documents to scene cells, markdown today (pure)
 crates/katui-draw/      L3: canvas and text rasterizing onto surfaces (pure)
 crates/katui-ui/        L5: reactive element trees over retained layers (pure)
+crates/katui-game/      arcade games: a light buffer, held keys and a fixed-step runner,
+                        the game demos (lumenshaft, shardrift)
 demos/obby-chat/        an IRC client on the full engine, GPL, outside the workspace
 scripts/                repo tooling (the commit-message gate)
 .opencode/              repo commands and skills (/rev review fan-out)

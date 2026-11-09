@@ -1,0 +1,22 @@
+[package]
+name = "katui-game"
+description = "Arcade games on katui: a light buffer, held keys and a fixed-step runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+categories.workspace = true
+keywords.workspace = true
+repository.workspace = true
+
+[dependencies]
+katui-present.workspace = true
+katui-proto.workspace = true
+katui-rt.workspace = true
+katui-scene.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+
+[lints]
+workspace = true

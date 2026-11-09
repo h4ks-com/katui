@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/katui-content",
     "crates/katui-draw",
+    "crates/katui-game",
     "crates/katui-layout",
     "crates/katui-present",
     "crates/katui-proto",
