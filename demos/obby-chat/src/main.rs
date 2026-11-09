@@ -23,7 +23,7 @@ use katui_scene::placement::{CellRect, ImageId, Placement, PlacementId};
 use katui_ui::{CellPixels, Ui, UiOptions};
 
 use crate::chat::{Action, Chat, Message};
-use crate::view::{Metrics, view};
+use crate::view::view;
 
 const FRAMES_PER_SECOND: u32 = 30;
 const TEXT_FONT: &[u8] =
@@ -122,11 +122,8 @@ impl App for ChatApp {
             self.chat.backdrop.mark_unsent();
         }
         let (cell_width, cell_height) = (u32::from(self.cell.width), u32::from(self.cell.height));
-        let metrics = Metrics {
-            cell_width: f32::from(self.cell.width),
-            cell_height: f32::from(self.cell.height),
-        };
-        let root = view(&self.chat, metrics);
+        let metrics = crate::theme::widgets(self.cell);
+        let root = view(&self.chat, &metrics);
         let surface = (
             u32::from(size.columns) * cell_width,
             u32::from(size.rows) * cell_height,
@@ -238,7 +235,7 @@ mod tests {
     use super::{SMALL_EMOJI_FONT, TEXT_FONT};
     use crate::chat::{Action, Chat};
     use crate::effects::{Effects, Kind};
-    use crate::view::{Metrics, view};
+    use crate::view::view;
 
     const CELL: CellPixels = CellPixels {
         width: 9,
@@ -270,15 +267,12 @@ mod tests {
     /// Compose the screen, playing `effect` on the newest message for a
     /// moment first.
     fn composed_with(chat: &Chat, effect: Option<Kind>, steps: u64) -> Surface {
-        let metrics = Metrics {
-            cell_width: 9.0,
-            cell_height: 19.0,
-        };
+        let metrics = crate::theme::widgets(CELL);
         let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), SMALL_EMOJI_FONT.to_vec()])
             .expect("fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let (width, height) = (9 * 170, 19 * 46);
-        let output = ui.render(&view(chat, metrics), (width, height), CELL);
+        let output = ui.render(&view(chat, &metrics), (width, height), CELL);
         let mut canvas = Canvas::new(width, height).expect("canvas");
         canvas.clear(Rgba::solid(27, 24, 38));
         let mut backdrop = crate::backdrop::Backdrop::default();
@@ -414,15 +408,12 @@ mod tests {
         let lines: Vec<&str> = script.iter().map(String::as_str).collect();
         let mut chat = Chat::new("acme".to_owned());
         chat.add_scripted_server("acme", &lines, "#bots");
-        let metrics = Metrics {
-            cell_width: 9.0,
-            cell_height: 19.0,
-        };
+        let metrics = crate::theme::widgets(CELL);
         let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), SMALL_EMOJI_FONT.to_vec()])
             .expect("the bundled fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let rows = 46;
-        let output = ui.render(&view(&chat, metrics), (9 * 170, 19 * rows), CELL);
+        let output = ui.render(&view(&chat, &metrics), (9 * 170, 19 * rows), CELL);
         let composer = output.layer_areas[&crate::view::COMPOSER_KEY];
         assert!(
             u32::from(composer.y + composer.rows) <= rows,
@@ -435,19 +426,16 @@ mod tests {
     fn hovering_a_message_redraws_only_that_message() {
         let mut chat = Chat::new("acme".to_owned());
         chat.add_scripted_server("acme", SCRIPT, "#bots");
-        let metrics = Metrics {
-            cell_width: 9.0,
-            cell_height: 19.0,
-        };
+        let metrics = crate::theme::widgets(CELL);
         let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), SMALL_EMOJI_FONT.to_vec()])
             .expect("the bundled fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let screen = (9 * 170, 19 * 46);
-        let before = ui.render(&view(&chat, metrics), screen, CELL);
+        let before = ui.render(&view(&chat, &metrics), screen, CELL);
         let (_, channel) = chat.active().expect("the script joins #bots");
         let key = crate::view::message_key(channel.log.first().expect("the script sent messages"));
         chat.hovered = Some(key);
-        let after = ui.render(&view(&chat, metrics), screen, CELL);
+        let after = ui.render(&view(&chat, &metrics), screen, CELL);
         assert_eq!(after.new_images.len(), 1, "one message changed");
         assert_eq!(before.layer_areas, after.layer_areas, "nothing moved");
     }

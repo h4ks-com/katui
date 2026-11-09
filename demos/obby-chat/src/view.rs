@@ -1,8 +1,8 @@
 //! What the interface looks like, as a function of the chat state.
 
-use katui_draw::{Paint, Rgba};
-use katui_ui::{Align, CellPixels, Element, Length};
-use katui_widgets::{Theme, text_field};
+use katui_draw::Paint;
+use katui_ui::{Align, Element, Length};
+use katui_widgets::{Emphasis, Theme, button, label, text_field};
 use obby_client::{Channel, ChatMessage, MessageKind};
 
 use crate::chat::{Action, Chat, Command, Field, Preview, Server};
@@ -35,55 +35,19 @@ pub const SPINNER_DOTS: usize = 3;
 
 type Node = Element<Action>;
 
-/// Sizes that follow the terminal's cell, so type stays proportionate.
-#[derive(Clone, Copy)]
-pub struct Metrics {
-    pub cell_width: f32,
-    pub cell_height: f32,
-}
-
-impl Metrics {
-    fn body(self) -> f32 {
-        (self.cell_height * 0.78).max(11.0)
-    }
-
-    fn small(self) -> f32 {
-        (self.cell_height * 0.66).max(10.0)
-    }
-
-    fn title(self) -> f32 {
-        (self.cell_height * 1.5).max(18.0)
-    }
-
-    fn columns(self, count: f32) -> Length {
-        Length::Px(self.cell_width * count)
-    }
-
-    fn theme(self) -> Theme {
-        theme::widgets(CellPixels {
-            width: self.cell_width as u16,
-            height: self.cell_height as u16,
-        })
-    }
-
-    fn rows(self, count: f32) -> Length {
-        Length::Px(self.cell_height * count)
-    }
-}
-
-pub fn view(chat: &Chat, metrics: Metrics) -> Node {
+pub fn view(chat: &Chat, theme: &Theme) -> Node {
     let content = match chat.active() {
         Some((server, channel)) => vec![
-            channel_list(chat, metrics),
-            conversation(chat, server, channel, metrics),
-            members(server, channel, metrics),
+            channel_list(chat, theme),
+            conversation(chat, server, channel, theme),
+            members(server, channel, theme),
         ],
         None if chat.selected_server().is_some() && !chat.form.visible => {
-            vec![channel_list(chat, metrics), connecting(chat, metrics)]
+            vec![channel_list(chat, theme), connecting(chat, theme)]
         }
-        None => vec![welcome(chat, metrics)],
+        None => vec![welcome(chat, theme)],
     };
-    let mut panes = vec![server_rail(chat, metrics)];
+    let mut panes = vec![server_rail(chat, theme)];
     panes.extend(content);
     let body = Element::row(panes).size(Length::Fill, Length::Fill);
     if chat.form.visible && chat.active().is_some() {
@@ -92,11 +56,7 @@ pub fn view(chat: &Chat, metrics: Metrics) -> Node {
             .background(theme::scrim())
             .on_click(Action::ShowForm)
             .layer(SCRIM_KEY);
-        Element::stack([
-            body,
-            scrim,
-            centered(form(chat, metrics)).width(Length::Fill),
-        ])
+        Element::stack([body, scrim, centered(form(chat, theme)).width(Length::Fill)])
     } else {
         body
     }
@@ -110,12 +70,8 @@ fn centered(child: Node) -> Node {
         .height(Length::Fill)
 }
 
-fn label(text: impl Into<std::sync::Arc<str>>, size: f32, color: Rgba) -> Node {
-    Element::text(text).font_size(size).color(color)
-}
-
-fn server_rail(chat: &Chat, metrics: Metrics) -> Node {
-    let side = metrics.rows(2.0);
+fn server_rail(chat: &Chat, theme: &Theme) -> Node {
+    let side = theme.rows(2.0);
     let mut buttons: Vec<Node> = chat
         .servers
         .iter()
@@ -130,57 +86,56 @@ fn server_rail(chat: &Chat, metrics: Metrics) -> Node {
                 .unwrap_or('?')
                 .to_uppercase()
                 .to_string();
-            badge(initial, selected, side, metrics).on_click(Action::SelectServer(index))
+            badge(initial, selected, side, theme).on_click(Action::SelectServer(index))
         })
         .collect();
-    buttons
-        .push(badge("+".to_owned(), chat.form.visible, side, metrics).on_click(Action::ShowForm));
+    buttons.push(badge("+".to_owned(), chat.form.visible, side, theme).on_click(Action::ShowForm));
     Element::column(buttons)
-        .gap(metrics.cell_height * 0.5)
+        .gap(theme.cell_height() * 0.5)
         .align(Align::Center)
-        .padding(metrics.cell_height * 0.5)
-        .width(metrics.columns(7.0))
+        .padding(theme.cell_height() * 0.5)
+        .width(theme.columns(7.0))
         .height(Length::Fill)
         .background(theme::rail())
         .layer(RAIL_KEY)
 }
 
-fn badge(text: String, selected: bool, side: Length, metrics: Metrics) -> Node {
+fn badge(text: String, selected: bool, side: Length, theme: &Theme) -> Node {
     let (fill, ink) = if selected {
         (Paint::Solid(ASH), INK_ON_LIGHT)
     } else {
         (theme::raised(), ASH)
     };
-    Element::column([label(text, metrics.body(), ink).weight(700)])
+    Element::column([label(text, theme.body(), ink).weight(700)])
         .align(Align::Center)
         .justify(Align::Center)
         .size(side, side)
-        .radius(metrics.cell_height * 0.6)
+        .radius(theme.cell_height() * 0.6)
         .background(fill)
 }
 
-fn channel_list(chat: &Chat, metrics: Metrics) -> Node {
+fn channel_list(chat: &Chat, theme: &Theme) -> Node {
     let Some(index) = chat.selected_server() else {
         return Element::spacer();
     };
     let server = &chat.servers[index];
     let mut rows = vec![
-        label(server.endpoint.host.clone(), metrics.body(), ASH).weight(700),
-        label(server.status(), metrics.small(), PUMICE),
+        label(server.endpoint.host.clone(), theme.body(), ASH).weight(700),
+        label(server.status(), theme.small(), PUMICE),
     ];
     for channel in server.channels() {
-        rows.push(channel_row(chat, index, channel, metrics));
+        rows.push(channel_row(chat, index, channel, theme));
     }
     Element::column(rows)
-        .gap(metrics.cell_height * 0.25)
-        .padding(metrics.cell_height * 0.75)
-        .width(metrics.columns(26.0))
+        .gap(theme.cell_height() * 0.25)
+        .padding(theme.cell_height() * 0.75)
+        .width(theme.columns(26.0))
         .height(Length::Fill)
         .background(theme::panel())
         .layer(CHANNELS_KEY)
 }
 
-fn channel_row(chat: &Chat, server: usize, channel: &Channel, metrics: Metrics) -> Node {
+fn channel_row(chat: &Chat, server: usize, channel: &Channel, theme: &Theme) -> Node {
     let selected = chat.is_selected(server, &channel.name);
     let name_color = if selected || channel.unread > 0 {
         ASH
@@ -188,20 +143,20 @@ fn channel_row(chat: &Chat, server: usize, channel: &Channel, metrics: Metrics) 
         PUMICE
     };
     let mut parts = vec![
-        label(channel.name.clone(), metrics.body(), name_color)
+        label(channel.name.clone(), theme.body(), name_color)
             .weight(if channel.unread > 0 { 700 } else { 400 })
             .grow(1.0),
     ];
     if !selected && channel.mentions > 0 {
-        parts.push(label(channel.mentions.to_string(), metrics.small(), SULFUR).weight(700));
+        parts.push(label(channel.mentions.to_string(), theme.small(), SULFUR).weight(700));
     } else if !selected && channel.unread > 0 {
-        parts.push(label(channel.unread.to_string(), metrics.small(), PUMICE));
+        parts.push(label(channel.unread.to_string(), theme.small(), PUMICE));
     }
     let row = Element::row(parts)
-        .gap(metrics.cell_width)
+        .gap(theme.cell_width())
         .align(Align::Center)
-        .padding_xy(metrics.cell_width, metrics.cell_height * 0.2)
-        .radius(metrics.cell_height * 0.4)
+        .padding_xy(theme.cell_width(), theme.cell_height() * 0.2)
+        .radius(theme.cell_height() * 0.4)
         .on_click(Action::SelectChannel(server, channel.name.clone()));
     if selected {
         row.background(theme::lifted())
@@ -210,7 +165,7 @@ fn channel_row(chat: &Chat, server: usize, channel: &Channel, metrics: Metrics) 
     }
 }
 
-fn conversation(chat: &Chat, server: &Server, channel: &Channel, metrics: Metrics) -> Node {
+fn conversation(chat: &Chat, server: &Server, channel: &Channel, theme: &Theme) -> Node {
     let total = channel.log.len();
     let end = total.saturating_sub(chat.scroll);
     let start = end.saturating_sub(VISIBLE_MESSAGES);
@@ -220,12 +175,12 @@ fn conversation(chat: &Chat, server: &Server, channel: &Channel, metrics: Metric
         .skip(start)
         .take(end - start)
         .filter(|message| shows_in_log(message))
-        .map(|message| message_row(chat, server, channel, message, metrics))
+        .map(|message| message_row(chat, server, channel, message, theme))
         .collect();
     let log = if rows.is_empty() {
         centered(label(
             "No messages yet. Say something below.",
-            metrics.body(),
+            theme.body(),
             PUMICE,
         ))
     } else {
@@ -234,36 +189,32 @@ fn conversation(chat: &Chat, server: &Server, channel: &Channel, metrics: Metric
             .size(Length::Fill, Length::Fill)
             .scroll(0.0)
     };
-    let pane = Element::column([
-        header(channel, metrics),
-        log,
-        composer(chat, channel, metrics),
-    ])
-    .size(Length::Fill, Length::Fill);
+    let pane = Element::column([header(channel, theme), log, composer(chat, channel, theme)])
+        .size(Length::Fill, Length::Fill);
     let matches = chat.command_matches();
     if matches.is_empty() {
         return pane.grow(1.0);
     }
-    let menu = command_menu(&matches, chat.menu_selection(), metrics);
+    let menu = command_menu(&matches, chat.menu_selection(), theme);
     let anchored = Element::column([menu])
         .justify(Align::End)
-        .padding_xy(metrics.cell_width * 2.0, metrics.cell_height * 3.5)
+        .padding_xy(theme.cell_width() * 2.0, theme.cell_height() * 3.5)
         .size(Length::Fill, Length::Fill);
     Element::stack([pane, anchored])
         .grow(1.0)
         .height(Length::Fill)
 }
 
-fn command_menu(matches: &[&Command], selected: usize, metrics: Metrics) -> Node {
+fn command_menu(matches: &[&Command], selected: usize, theme: &Theme) -> Node {
     let rows = matches.iter().enumerate().map(|(index, command)| {
         let row = Element::row([
-            label(format!("/{}", command.name), metrics.body(), ASH).weight(700),
-            label(command.usage, metrics.small(), PUMICE),
+            label(format!("/{}", command.name), theme.body(), ASH).weight(700),
+            label(command.usage, theme.small(), PUMICE),
         ])
-        .gap(metrics.cell_width)
+        .gap(theme.cell_width())
         .align(Align::Center)
-        .padding_xy(metrics.cell_width, metrics.cell_height * 0.2)
-        .radius(metrics.cell_height * 0.3)
+        .padding_xy(theme.cell_width(), theme.cell_height() * 0.2)
+        .radius(theme.cell_height() * 0.3)
         .width(Length::Fill)
         .on_click(Action::Complete(command.name.to_owned()));
         if index == selected {
@@ -273,11 +224,11 @@ fn command_menu(matches: &[&Command], selected: usize, metrics: Metrics) -> Node
         }
     });
     Element::column(rows)
-        .padding(metrics.cell_height * 0.3)
-        .radius(metrics.cell_height * 0.5)
+        .padding(theme.cell_height() * 0.3)
+        .radius(theme.cell_height() * 0.5)
         .background(Paint::Solid(theme::MENU))
         .border(1.0, theme::lifted())
-        .width(metrics.columns(40.0))
+        .width(theme.columns(40.0))
         .layer(MENU_KEY)
 }
 
@@ -286,13 +237,13 @@ fn shows_in_log(message: &ChatMessage) -> bool {
         && !message.redacted
 }
 
-fn header(channel: &Channel, metrics: Metrics) -> Node {
+fn header(channel: &Channel, theme: &Theme) -> Node {
     let topic = channel.topic.clone().unwrap_or_default();
     Element::column([
-        label(channel.name.clone(), metrics.title(), ASH).weight(800),
-        label(topic, metrics.small(), PUMICE),
+        label(channel.name.clone(), theme.title(), ASH).weight(800),
+        label(topic, theme.small(), PUMICE),
     ])
-    .padding_xy(metrics.cell_width * 2.0, metrics.cell_height * 0.5)
+    .padding_xy(theme.cell_width() * 2.0, theme.cell_height() * 0.5)
     .width(Length::Fill)
     .layer(HEADER_KEY)
 }
@@ -306,34 +257,34 @@ fn message_row(
     server: &Server,
     channel: &Channel,
     message: &ChatMessage,
-    metrics: Metrics,
+    theme: &Theme,
 ) -> Node {
     let key = message_key(message);
     let hovered = chat.hovered == Some(key);
-    let mut lines = vec![message_heading(chat, channel, message, hovered, metrics)];
-    if let Some(quote) = reply_quote(channel, message, metrics) {
+    let mut lines = vec![message_heading(chat, channel, message, hovered, theme)];
+    if let Some(quote) = reply_quote(channel, message, theme) {
         lines.push(quote);
     }
-    lines.push(message_body(message, metrics));
-    if let Some(card) = preview_card(chat, message, metrics) {
+    lines.push(message_body(message, theme));
+    if let Some(card) = preview_card(chat, message, theme) {
         lines.push(card);
     }
-    if let Some(chips) = reaction_chips(server, channel, message, metrics) {
+    if let Some(chips) = reaction_chips(server, channel, message, theme) {
         lines.push(chips);
     }
     let body = Element::column(lines)
-        .gap(metrics.cell_height * 0.15)
+        .gap(theme.cell_height() * 0.15)
         .grow(1.0);
     let row = Element::row([
         avatar(
             &message.sender,
             is_online(server, channel, &message.sender),
-            metrics,
+            theme,
         ),
         body,
     ])
-    .gap(metrics.cell_width * 1.5)
-    .padding_xy(metrics.cell_width * 2.0, metrics.cell_height * 0.4)
+    .gap(theme.cell_width() * 1.5)
+    .padding_xy(theme.cell_width() * 2.0, theme.cell_height() * 0.4)
     .width(Length::Fill)
     .id(key)
     .on_hover(Action::Hover(key));
@@ -351,39 +302,39 @@ fn is_online(server: &Server, channel: &Channel, nick: &str) -> bool {
         .contains_key(&server.client.isupport().fold(nick))
 }
 
-fn message_body(message: &ChatMessage, metrics: Metrics) -> Node {
+fn message_body(message: &ChatMessage, theme: &Theme) -> Node {
     let mut spans = irc_text::parse(&message.text);
     if is_action(message) {
         spans.iter_mut().for_each(|span| span.italic = true);
     }
-    Element::rich(spans).font_size(metrics.body()).color(ASH)
+    Element::rich(spans).font_size(theme.body()).color(ASH)
 }
 
 fn is_action(message: &ChatMessage) -> bool {
     matches!(&message.kind, MessageKind::Ctcp { command } if command == "ACTION")
 }
 
-fn avatar(nick: &str, online: bool, metrics: Metrics) -> Node {
-    let side = metrics.rows(2.0);
+fn avatar(nick: &str, online: bool, theme: &Theme) -> Node {
+    let side = theme.rows(2.0);
     let initial = nick
         .chars()
         .next()
         .unwrap_or('?')
         .to_uppercase()
         .to_string();
-    let disc = Element::column([label(initial, metrics.body(), theme::WHITE).weight(800)])
+    let disc = Element::column([label(initial, theme.body(), theme::WHITE).weight(800)])
         .align(Align::Center)
         .justify(Align::Center)
         .size(side, side)
-        .radius(metrics.cell_height)
+        .radius(theme.cell_height())
         .background(Paint::Solid(theme::AVATAR));
     if !online {
         return disc;
     }
-    let dot_side = Length::Px(metrics.cell_height * 0.5);
+    let dot_side = Length::Px(theme.cell_height() * 0.5);
     let dot = Element::row([])
         .size(dot_side, dot_side)
-        .radius(metrics.cell_height * 0.25)
+        .radius(theme.cell_height() * 0.25)
         .border(2.0, Paint::Solid(theme::AVATAR))
         .background(Paint::Solid(theme::ONLINE));
     let corner = Element::column([dot])
@@ -398,37 +349,37 @@ fn message_heading(
     channel: &Channel,
     message: &ChatMessage,
     hovered: bool,
-    metrics: Metrics,
+    theme: &Theme,
 ) -> Node {
     let mut parts = vec![
         label(
             message.sender.clone(),
-            metrics.body(),
+            theme.body(),
             nick_color(&message.sender),
         )
         .weight(700),
         label(
             relative_age(chat.now_ms(), message.key.time_ms),
-            metrics.small(),
+            theme.small(),
             PUMICE,
         )
         .grow(1.0),
     ];
     if hovered && let Some(msgid) = &message.msgid {
-        parts.push(hover_actions(channel, msgid, &message.sender, metrics));
+        parts.push(hover_actions(channel, msgid, &message.sender, theme));
     }
     Element::row(parts)
-        .gap(metrics.cell_width)
+        .gap(theme.cell_width())
         .align(Align::Center)
-        .height(metrics.rows(HEADING_ROWS))
+        .height(theme.rows(HEADING_ROWS))
 }
 
-fn hover_actions(channel: &Channel, msgid: &str, sender: &str, metrics: Metrics) -> Node {
+fn hover_actions(channel: &Channel, msgid: &str, sender: &str, theme: &Theme) -> Node {
     let mut actions: Vec<Node> = REACTIONS
         .iter()
         .map(|emoji| {
-            label(*emoji, metrics.body(), ASH)
-                .padding_xy(metrics.cell_width * 0.4, 0.0)
+            label(*emoji, theme.body(), ASH)
+                .padding_xy(theme.cell_width() * 0.4, 0.0)
                 .on_click(Action::React(
                     channel.name.clone(),
                     msgid.to_owned(),
@@ -437,17 +388,17 @@ fn hover_actions(channel: &Channel, msgid: &str, sender: &str, metrics: Metrics)
         })
         .collect();
     actions.push(
-        label("Reply", metrics.small(), ASH)
-            .padding_xy(metrics.cell_width, 0.0)
+        label("Reply", theme.small(), ASH)
+            .padding_xy(theme.cell_width(), 0.0)
             .on_click(Action::Reply(msgid.to_owned(), sender.to_owned())),
     );
     Element::row(actions)
         .align(Align::Center)
-        .radius(metrics.cell_height * 0.4)
+        .radius(theme.cell_height() * 0.4)
         .background(theme::raised())
 }
 
-fn reply_quote(channel: &Channel, message: &ChatMessage, metrics: Metrics) -> Option<Node> {
+fn reply_quote(channel: &Channel, message: &ChatMessage, theme: &Theme) -> Option<Node> {
     let original = channel.log.get(message.reply_to.as_deref()?)?;
     let excerpt: String = irc_text::strip(&original.text).chars().take(90).collect();
     let accent = nick_color(&original.sender);
@@ -456,24 +407,24 @@ fn reply_quote(channel: &Channel, message: &ChatMessage, metrics: Metrics) -> Op
         .background(Paint::Solid(accent));
     let quote = Element::column([
         Element::row([
-            label("\u{21A9}", metrics.small(), accent),
-            label(original.sender.clone(), metrics.small(), accent).weight(700),
+            label("\u{21A9}", theme.small(), accent),
+            label(original.sender.clone(), theme.small(), accent).weight(700),
         ])
-        .gap(metrics.cell_width * 0.5)
+        .gap(theme.cell_width() * 0.5)
         .align(Align::Center),
-        label(excerpt, metrics.small(), PUMICE),
+        label(excerpt, theme.small(), PUMICE),
     ])
-    .gap(metrics.cell_height * 0.1)
-    .padding_xy(metrics.cell_width, metrics.cell_height * 0.25);
+    .gap(theme.cell_height() * 0.1)
+    .padding_xy(theme.cell_width(), theme.cell_height() * 0.25);
     Some(
         Element::row([bar, quote])
-            .radius(metrics.cell_height * 0.2)
+            .radius(theme.cell_height() * 0.2)
             .background(Paint::Solid(theme::QUOTE))
             .width(Length::Fill),
     )
 }
 
-fn preview_card(chat: &Chat, message: &ChatMessage, metrics: Metrics) -> Option<Node> {
+fn preview_card(chat: &Chat, message: &ChatMessage, theme: &Theme) -> Option<Node> {
     let link = message.link_preview.as_ref();
     let url = link
         .and_then(|preview| preview.image.as_deref())
@@ -485,14 +436,14 @@ fn preview_card(chat: &Chat, message: &ChatMessage, metrics: Metrics) -> Option<
                     Length::Px(surface.width() as f32),
                     Length::Px(surface.height() as f32),
                 )
-                .radius(metrics.cell_height * 0.5);
-            let title = link.map(|preview| label(preview.title.clone(), metrics.small(), PUMICE));
+                .radius(theme.cell_height() * 0.5);
+            let title = link.map(|preview| label(preview.title.clone(), theme.small(), PUMICE));
             Some(
                 Element::column(std::iter::once(picture).chain(title))
-                    .gap(metrics.cell_height * 0.2),
+                    .gap(theme.cell_height() * 0.2),
             )
         }
-        Preview::Loading => Some(label("Loading image", metrics.small(), PUMICE)),
+        Preview::Loading => Some(label("Loading image", theme.small(), PUMICE)),
         Preview::Failed => None,
     }
 }
@@ -501,7 +452,7 @@ fn reaction_chips(
     server: &Server,
     channel: &Channel,
     message: &ChatMessage,
-    metrics: Metrics,
+    theme: &Theme,
 ) -> Option<Node> {
     let msgid = message.msgid.as_ref()?;
     if message.reactions.is_empty() {
@@ -512,11 +463,11 @@ fn reaction_chips(
         let mine = who.iter().any(|nick| nick.eq_ignore_ascii_case(me));
         label(
             format!("{emoji} {}", who.len()),
-            metrics.small(),
+            theme.small(),
             if mine { SULFUR } else { ASH },
         )
-        .padding_xy(metrics.cell_width * 0.7, metrics.cell_height * 0.05)
-        .radius(metrics.cell_height * 0.5)
+        .padding_xy(theme.cell_width() * 0.7, theme.cell_height() * 0.05)
+        .radius(theme.cell_height() * 0.5)
         .background(if mine {
             theme::raised()
         } else {
@@ -528,10 +479,10 @@ fn reaction_chips(
             emoji.clone(),
         ))
     });
-    Some(Element::row(chips).gap(metrics.cell_width * 0.5))
+    Some(Element::row(chips).gap(theme.cell_width() * 0.5))
 }
 
-fn composer(chat: &Chat, channel: &Channel, metrics: Metrics) -> Node {
+fn composer(chat: &Chat, channel: &Channel, theme: &Theme) -> Node {
     let mut lines = Vec::new();
     let typing = chat
         .typing_is_live(&channel.name)
@@ -543,18 +494,18 @@ fn composer(chat: &Chat, channel: &Channel, metrics: Metrics) -> Node {
             )
         });
     if let Some(line) = typing {
-        lines.push(label(line, metrics.small(), PUMICE));
+        lines.push(label(line, theme.small(), PUMICE));
     }
     if let Some((_, nick)) = &chat.replying_to {
         lines.push(
             Element::row([
                 label(
                     format!("Replying to {nick}"),
-                    metrics.small(),
+                    theme.small(),
                     nick_color(nick),
                 )
                 .grow(1.0),
-                label("Cancel reply", metrics.small(), PUMICE).on_click(Action::CancelReply),
+                label("Cancel reply", theme.small(), PUMICE).on_click(Action::CancelReply),
             ])
             .align(Align::Center),
         );
@@ -563,11 +514,11 @@ fn composer(chat: &Chat, channel: &Channel, metrics: Metrics) -> Node {
         &chat.draft,
         &format!("Message {}", channel.name),
         !chat.form.visible,
-        &metrics.theme(),
+        theme,
     ));
     Element::column(lines)
-        .gap(metrics.cell_height * 0.25)
-        .padding_xy(metrics.cell_width * 2.0, metrics.cell_height * 0.5)
+        .gap(theme.cell_height() * 0.25)
+        .padding_xy(theme.cell_width() * 2.0, theme.cell_height() * 0.5)
         .width(Length::Fill)
         .layer(COMPOSER_KEY)
 }
@@ -583,10 +534,10 @@ fn typing_line(channel: &Channel, me: &str) -> Option<String> {
     (!names.is_empty()).then(|| format!("{} typing", names.join(", ")))
 }
 
-fn members(server: &Server, channel: &Channel, metrics: Metrics) -> Node {
+fn members(server: &Server, channel: &Channel, theme: &Theme) -> Node {
     let mut rows = vec![label(
         format!("{} here", channel.members.len()),
-        metrics.small(),
+        theme.small(),
         PUMICE,
     )];
     rows.extend(
@@ -596,41 +547,41 @@ fn members(server: &Server, channel: &Channel, metrics: Metrics) -> Node {
             .take(80)
             .map(|(prefix, nick)| {
                 Element::row([
-                    label(prefix, metrics.small(), SULFUR),
-                    label(nick.clone(), metrics.body(), nick_color(&nick)),
+                    label(prefix, theme.small(), SULFUR),
+                    label(nick.clone(), theme.body(), nick_color(&nick)),
                 ])
-                .gap(metrics.cell_width * 0.3)
+                .gap(theme.cell_width() * 0.3)
             }),
     );
     Element::column(rows)
-        .gap(metrics.cell_height * 0.1)
-        .padding(metrics.cell_height * 0.75)
-        .width(metrics.columns(24.0))
+        .gap(theme.cell_height() * 0.1)
+        .padding(theme.cell_height() * 0.75)
+        .width(theme.columns(24.0))
         .height(Length::Fill)
         .background(theme::panel())
         .layer(MEMBERS_KEY)
 }
 
-fn connecting(chat: &Chat, metrics: Metrics) -> Node {
+fn connecting(chat: &Chat, theme: &Theme) -> Node {
     let Some(server) = chat
         .selected_server()
         .and_then(|index| chat.servers.get(index))
     else {
         return Element::spacer();
     };
-    let heading = label(server.status(), metrics.title(), ASH).weight(800);
+    let heading = label(server.status(), theme.title(), ASH).weight(800);
     let mut lines = vec![heading];
     if server.is_connecting() {
-        lines.push(spinner(chat.spinner_step(), metrics));
+        lines.push(spinner(chat.spinner_step(), theme));
         lines.push(label(
             "Some servers take up to 20 seconds to let you in.",
-            metrics.body(),
+            theme.body(),
             PUMICE,
         ));
     }
     Element::column([Element::column(lines)
         .align(Align::Center)
-        .gap(metrics.cell_height)
+        .gap(theme.cell_height())
         .layer(CONNECTING_KEY)])
     .align(Align::Center)
     .justify(Align::Center)
@@ -638,50 +589,43 @@ fn connecting(chat: &Chat, metrics: Metrics) -> Node {
     .height(Length::Fill)
 }
 
-fn spinner(step: usize, metrics: Metrics) -> Node {
-    let side = Length::Px(metrics.cell_height * 0.5);
+fn spinner(step: usize, theme: &Theme) -> Node {
+    let side = Length::Px(theme.cell_height() * 0.5);
     Element::row((0..SPINNER_DOTS).map(|dot| {
         Element::row([])
             .size(side, side)
-            .radius(metrics.cell_height * 0.25)
+            .radius(theme.cell_height() * 0.25)
             .background(Paint::Solid(if dot == step { ASH } else { theme::DIM_DOT }))
     }))
-    .gap(metrics.cell_width)
+    .gap(theme.cell_width())
 }
 
-fn welcome(chat: &Chat, metrics: Metrics) -> Node {
-    centered(form(chat, metrics))
+fn welcome(chat: &Chat, theme: &Theme) -> Node {
+    centered(form(chat, theme))
 }
 
-fn form(chat: &Chat, metrics: Metrics) -> Node {
-    let theme = metrics.theme();
+fn form(chat: &Chat, theme: &Theme) -> Node {
     let field = |kind: Field, name: &str| {
         Element::column([
-            label(name.to_owned(), metrics.small(), PUMICE),
-            text_field(chat.form.field(kind), "", chat.form.focus.is(kind), &theme),
+            label(name.to_owned(), theme.small(), PUMICE),
+            text_field(chat.form.field(kind), "", chat.form.focus.is(kind), theme),
         ])
-        .gap(metrics.cell_height * 0.2)
+        .gap(theme.cell_height() * 0.2)
         .width(Length::Fill)
         .on_click(Action::FocusField(kind))
     };
-    let connect = Element::column([label("Connect", metrics.body(), INK_ON_LIGHT).weight(800)])
-        .align(Align::Center)
-        .padding(metrics.cell_height * 0.5)
-        .radius(metrics.cell_height * 0.6)
-        .background(Paint::Solid(ASH))
-        .width(Length::Fill)
-        .on_click(Action::Connect);
+    let connect = button("Connect", Action::Connect, Emphasis::Primary, theme).width(Length::Fill);
     Element::column([
-        label("Add a server", metrics.title(), ASH).weight(800),
+        label("Add a server", theme.title(), ASH).weight(800),
         field(Field::Host, "Host and port"),
         field(Field::Nick, "Nick"),
         field(Field::Channel, "Channel"),
         connect,
     ])
-    .gap(metrics.cell_height * 0.75)
-    .padding(metrics.cell_height * 1.5)
-    .width(metrics.columns(60.0))
-    .radius(metrics.cell_height)
+    .gap(theme.cell_height() * 0.75)
+    .padding(theme.cell_height() * 1.5)
+    .width(theme.columns(60.0))
+    .radius(theme.cell_height())
     .background(theme::raised())
     .border(1.0, theme::lifted())
     .on_click(Action::FocusField(chat.form.focus.current()))
