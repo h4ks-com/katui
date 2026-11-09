@@ -185,16 +185,25 @@ fn measured_cell() -> Option<CellPixels> {
     })
 }
 
-/// The pixel size of one cell: what the probe answered, else the text
-/// area it answered over the cell count, else what the terminal driver
-/// reports, else a typical cell. A multiplexer leaves all of them
-/// unanswered at times, and a placement's cell span scales whatever we
-/// choose, so the typical cell is a safe guess.
+/// The pixel size of one cell: what the terminal driver reports now,
+/// else what the probe answered, else the probed text area over the cell
+/// count, else a typical cell. The driver comes first because it follows
+/// a font zoom, which changes the cell after the probe. A multiplexer
+/// leaves all of them unanswered at times, and a placement's cell span
+/// scales whatever we choose, so the typical cell is a safe guess.
 #[must_use]
 pub fn cell_size(caps: &Capabilities) -> CellPixels {
-    caps.cell
-        .or_else(|| cell_from_area(caps.text_area?, size().ok()?))
-        .or_else(measured_cell)
+    pick_cell(measured_cell(), caps.cell, caps.text_area.zip(size().ok()))
+}
+
+fn pick_cell(
+    measured: Option<CellPixels>,
+    probed: Option<CellPixels>,
+    area: Option<(CellPixels, katui_scene::CellSize)>,
+) -> CellPixels {
+    measured
+        .or(probed)
+        .or_else(|| area.and_then(|(area, cells)| cell_from_area(area, cells)))
         .unwrap_or(CellPixels {
             width: 10,
             height: 20,
@@ -320,8 +329,8 @@ mod area_tests {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{LocalModes, OpenOptions, TtyTransport, cell_size, tcgetattr};
-    use katui_proto::probe::{Capabilities, CellPixels, ProbeSource};
+    use super::{LocalModes, OpenOptions, TtyTransport, tcgetattr};
+    use katui_proto::probe::CellPixels;
     use std::os::fd::AsFd as _;
 
     /// A pty pair for the terminal tests: the master keeps the device
@@ -415,25 +424,20 @@ mod tests {
         );
     }
 
-    fn caps(kitty: bool, cell: Option<CellPixels>) -> Capabilities {
-        Capabilities {
-            kitty,
-            animation: false,
-            sixel: false,
-            truecolor: false,
-            identity: None,
-            cell,
-            text_area: None,
-            trust: ProbeSource::Sniffed,
-        }
-    }
-
     #[test]
-    fn a_probed_cell_wins() {
-        let probed = CellPixels {
-            width: 8,
-            height: 16,
+    fn the_driver_cell_wins_then_the_probe_then_the_area() {
+        let cell = |width, height| CellPixels { width, height };
+        let cells = katui_scene::CellSize {
+            columns: 10,
+            rows: 10,
         };
-        assert_eq!(cell_size(&caps(true, Some(probed))), probed);
+        let area = Some((cell(90, 180), cells));
+        assert_eq!(
+            super::pick_cell(Some(cell(8, 16)), Some(cell(7, 14)), area),
+            cell(8, 16)
+        );
+        assert_eq!(super::pick_cell(None, Some(cell(7, 14)), area), cell(7, 14));
+        assert_eq!(super::pick_cell(None, None, area), cell(9, 18));
+        assert_eq!(super::pick_cell(None, None, None), cell(10, 20));
     }
 }
