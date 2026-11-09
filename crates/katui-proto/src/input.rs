@@ -125,8 +125,10 @@ pub struct MouseEvent {
 /// One thing the terminal reported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
-    /// A key press.
+    /// A key press or auto-repeat.
     Key(Key, Mods),
+    /// A key release, reported only after the application asks for them.
+    KeyUp(Key, Mods),
     /// A mouse event.
     Mouse(MouseEvent),
     /// Text pasted as one block.
@@ -326,7 +328,7 @@ fn parse_csi(bytes: &[u8], tail: &[u8]) -> Parsed {
     if final_byte == b'y' && parameters.starts_with('?') {
         return parse_mode_report(parameters, length);
     }
-    match final_byte {
+    let parsed = match final_byte {
         b'I' => Parsed::Event(InputEvent::Focus(true), length),
         b'O' => Parsed::Event(InputEvent::Focus(false), length),
         b'~' => parse_tilde(parameters, length),
@@ -335,6 +337,30 @@ fn parse_csi(bytes: &[u8], tail: &[u8]) -> Parsed {
             Some(pressed) => key(pressed, modifiers_at(parameters, 1), length),
             None => Parsed::Skip(length),
         },
+    };
+    if reports_release(parameters) {
+        as_release(parsed)
+    } else {
+        parsed
+    }
+}
+
+/// The kitty keyboard protocol puts the event type after the modifiers,
+/// and type 3 is a release.
+fn reports_release(parameters: &str) -> bool {
+    parameters
+        .split(';')
+        .nth(1)
+        .and_then(|modifiers| modifiers.split(':').nth(1))
+        == Some("3")
+}
+
+fn as_release(parsed: Parsed) -> Parsed {
+    match parsed {
+        Parsed::Event(InputEvent::Key(released, mods), length) => {
+            Parsed::Event(InputEvent::KeyUp(released, mods), length)
+        }
+        other => other,
     }
 }
 
@@ -472,6 +498,20 @@ mod tests {
 
     fn plain(pressed: Key) -> InputEvent {
         InputEvent::Key(pressed, Mods::NONE)
+    }
+
+    #[test]
+    fn key_event_types_separate_releases_from_presses() {
+        let mut parser = InputParser::default();
+        assert_eq!(
+            parser.feed(b"\x1b[97;1:1u\x1b[97;1:2u\x1b[97;1:3u\x1b[1;1:3A"),
+            vec![
+                InputEvent::Key(Key::Char('a'), Mods::NONE),
+                InputEvent::Key(Key::Char('a'), Mods::NONE),
+                InputEvent::KeyUp(Key::Char('a'), Mods::NONE),
+                InputEvent::KeyUp(Key::Up, Mods::NONE),
+            ]
+        );
     }
 
     #[test]

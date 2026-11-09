@@ -682,9 +682,10 @@ impl Chat {
                 self.focused = focused;
                 Control::Wait
             }
-            InputEvent::Mouse(_) | InputEvent::Mode(..) | InputEvent::GraphicsAnswer(_) => {
-                Control::Wait
-            }
+            InputEvent::Mouse(_)
+            | InputEvent::KeyUp(..)
+            | InputEvent::Mode(..)
+            | InputEvent::GraphicsAnswer(_) => Control::Wait,
         }
     }
 

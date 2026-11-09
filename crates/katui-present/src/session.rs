@@ -28,6 +28,13 @@ pub fn disable_input<W: Sink>(out: &mut W) -> io::Result<()> {
     out.write_all(b"\x1b[<u\x1b[?2004l\x1b[?1004l\x1b[?1016l\x1b[?1006l\x1b[?1003l")
 }
 
+/// Also report key repeats and releases, with every key as an escape
+/// code so that plain letters report theirs too. [`disable_input`] undoes
+/// this along with the rest.
+pub fn report_key_releases<W: Sink>(out: &mut W) -> io::Result<()> {
+    out.write_all(b"\x1b[=11;1u")
+}
+
 /// Ask the terminal to answer under `id` once it has consumed everything
 /// written before this.
 pub fn terminal_query<W: Sink>(out: &mut W, id: u32) -> io::Result<()> {
@@ -36,7 +43,16 @@ pub fn terminal_query<W: Sink>(out: &mut W, id: u32) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{disable_input, enable_input, enter, leave};
+    use super::{disable_input, enable_input, enter, leave, report_key_releases};
+
+    #[test]
+    fn disabling_input_undoes_the_key_release_flags() {
+        let (mut flags, mut off) = (Vec::new(), Vec::new());
+        report_key_releases(&mut flags).expect("writing to a Vec cannot fail");
+        disable_input(&mut off).expect("writing to a Vec cannot fail");
+        assert_eq!(flags, b"\x1b[=11;1u");
+        assert!(off.starts_with(b"\x1b[<u"), "popping restores the keyboard");
+    }
 
     #[test]
     fn disabling_input_turns_off_every_mode_enabling_set() {
