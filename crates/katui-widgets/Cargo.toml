@@ -1,0 +1,22 @@
+[package]
+name = "katui-widgets"
+description = "katui widgets: a theme, text fields, focus, lists and controls over katui-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+categories.workspace = true
+keywords.workspace = true
+repository.workspace = true
+
+[dependencies]
+katui-draw.workspace = true
+katui-proto.workspace = true
+katui-ui.workspace = true
+unicode-segmentation.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+
+[lints]
+workspace = true

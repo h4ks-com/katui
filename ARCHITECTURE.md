@@ -56,12 +56,12 @@ katui-rt ───────┤  owns ALL I/O: raw mode, signals, event pump, 
                 │  loops, MCP server, emergency restore
 katui-content ──┤  markdown / tree-sitter / html-subset / charts -> scene
 katui-ui ───────┤  reactive element trees, flexbox over taffy, hit testing -> layers
-katui-widgets ──┤  components, focus, styling -> scene
+katui-widgets ──┤  theme, text field, focus, lists, controls -> ui elements
 katui-layout ───┤  constraint API over taffy (+ kasuari for ratatui parity)
 katui-draw ─────┤  text layout, tiny-skia canvas, sprites, markers
 katui-scene ────┤  planes (cells + RGBA), damage, placements   [THE CONTRACT]
-katui-present ──┤  Presenter::present(diff -> Sink): kitty F/P/A, blocks,
-                │  snapshot, later sixel/iterm2/browser/RGP
+katui-present ──┤  Presenter::present(diff -> Sink): kitty F/P/A, sixel tiles,
+                │  blocks, snapshot, later iterm2/browser/RGP
 katui-proto ────┘  codecs + probes + Capabilities (pure)
 ```
 
