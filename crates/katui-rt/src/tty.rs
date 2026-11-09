@@ -159,7 +159,7 @@ pub fn probe_default() -> Capabilities {
 
 fn probe_terminal() -> Capabilities {
     let env = Env::capture();
-    match TtyTransport::open(Duration::from_millis(300)) {
+    match TtyTransport::open(Duration::from_millis(600)) {
         Ok(mut transport) => {
             let caps = probe(&mut transport, &env);
             // answers racing the budget boundary would otherwise leak

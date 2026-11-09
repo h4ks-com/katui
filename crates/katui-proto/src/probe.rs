@@ -15,6 +15,11 @@ use crate::kitty::{self, IdSpace};
 /// The transport may cut the wait shorter under its own budget.
 const READ_WAIT: Duration = Duration::from_millis(50);
 
+/// How long the probe waits for the first answer. A terminal window that
+/// just opened can take this long to start answering, and every terminal
+/// answers the closing DA1, so only a silent channel pays the full wait.
+const FIRST_ANSWER_WAIT: Duration = Duration::from_millis(500);
+
 /// The channel a probe talks through. The real one is the controlling tty
 /// in raw mode; tests script it with recorded replies.
 pub trait Transport {
@@ -249,7 +254,12 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     let mut replies = parse_replies(&stream);
     let mut silent_reads = 0;
     while still_listening(&replies, silent_reads) {
-        match transport.read_timeout(READ_WAIT) {
+        let wait = if stream.is_empty() {
+            FIRST_ANSWER_WAIT
+        } else {
+            READ_WAIT
+        };
+        match transport.read_timeout(wait) {
             Some(chunk) => {
                 stream.extend_from_slice(&chunk);
                 replies = parse_replies(&stream);
@@ -453,6 +463,7 @@ mod tests {
     struct Scripted {
         chunks: Vec<Vec<u8>>,
         writes: Vec<Vec<u8>>,
+        waits: Vec<Duration>,
     }
 
     impl Scripted {
@@ -460,6 +471,7 @@ mod tests {
             Self {
                 chunks: chunks.iter().map(|c| c.to_vec()).collect(),
                 writes: Vec::new(),
+                waits: Vec::new(),
             }
         }
     }
@@ -470,7 +482,8 @@ mod tests {
             Ok(())
         }
 
-        fn read_timeout(&mut self, _wait: Duration) -> Option<Vec<u8>> {
+        fn read_timeout(&mut self, wait: Duration) -> Option<Vec<u8>> {
+            self.waits.push(wait);
             if self.chunks.is_empty() {
                 None
             } else {
@@ -488,6 +501,18 @@ mod tests {
             tmux: None,
             rmux: None,
         }
+    }
+
+    #[test]
+    fn the_probe_waits_longer_for_the_first_answer_than_between_answers() {
+        let mut transport = Scripted::new(&[b"\x1b_Gi=31;OK\x1b\\", b"\x1b[?62c"]);
+        probe(&mut transport, &env());
+        assert_eq!(
+            transport.waits.first(),
+            Some(&super::FIRST_ANSWER_WAIT),
+            "a window that just opened gets time to answer"
+        );
+        assert_eq!(transport.waits.get(1), Some(&super::READ_WAIT));
     }
 
     #[test]
