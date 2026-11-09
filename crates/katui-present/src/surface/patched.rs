@@ -12,8 +12,7 @@ use katui_proto::kitty::{
 use katui_proto::probe::CellPixels;
 use katui_scene::cell::Position;
 use katui_scene::placement::CellRect;
-use katui_scene::surface::Surface;
-use katui_scene::surface::diff_tiles;
+use katui_scene::surface::{PixelRect, Surface, diff_tiles};
 
 use super::{damage_is_dense, write_whole_image};
 use crate::anchor::Anchor;
@@ -234,7 +233,7 @@ impl PatchedKitty {
         &mut self,
         bytes: &mut Vec<u8>,
         surface: &Surface,
-        rect: katui_scene::surface::PixelRect,
+        rect: PixelRect,
         area: CellRect,
     ) -> io::Result<()> {
         // the tile's cell span comes from the surface-to-area scale, not
@@ -255,8 +254,9 @@ impl PatchedKitty {
         let generation = shown.is_some_and(|generation| !generation);
         let image = self.tile_image(index, generation);
 
-        let pixels = tile_pixels(surface, rect);
-        let mut transmit = Transmit::new(image, Format::Rgba, rect.width, rect.height, &pixels);
+        let padded = with_apron(rect, surface);
+        let pixels = tile_pixels(surface, padded);
+        let mut transmit = Transmit::new(image, Format::Rgba, padded.width, padded.height, &pixels);
         transmit.compressed = true;
         for frame in transmit.encode()? {
             bytes.write_all(&frame)?;
@@ -269,6 +269,12 @@ impl PatchedKitty {
         place.columns = u32::from(columns);
         place.rows = u32::from(rows);
         place.placement = KittyPlacement(2 + index);
+        place.crop = Some(katui_proto::kitty::PixelRect {
+            x: rect.x - padded.x,
+            y: rect.y - padded.y,
+            width: rect.width,
+            height: rect.height,
+        });
         if let Some(anchor) = &self.anchor {
             place.parent = Some(anchor.offset_to(origin));
         } else {
@@ -283,9 +289,26 @@ impl PatchedKitty {
     }
 }
 
+/// `rect` grown by one pixel on every side the surface has room for. A
+/// terminal filters each image on its own, so we send a tile with its
+/// neighbours' edge pixels and crop them away, which blends tile edges the
+/// way one whole image would.
+fn with_apron(rect: PixelRect, surface: &Surface) -> PixelRect {
+    let left = rect.x.saturating_sub(1);
+    let top = rect.y.saturating_sub(1);
+    let right = (rect.x + rect.width + 1).min(surface.width());
+    let bottom = (rect.y + rect.height + 1).min(surface.height());
+    PixelRect {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    }
+}
+
 /// The tile's RGBA rows out of the surface, row-major, tile width per
 /// row: exactly the payload a tile transmit declares.
-pub(super) fn tile_pixels(surface: &Surface, rect: katui_scene::surface::PixelRect) -> Vec<u8> {
+pub(super) fn tile_pixels(surface: &Surface, rect: PixelRect) -> Vec<u8> {
     let row_bytes = (surface.width() * 4) as usize;
     let mut tile = Vec::with_capacity((rect.width * rect.height * 4) as usize);
     for (row_index, row) in surface.pixels().chunks(row_bytes).enumerate() {
@@ -375,8 +398,12 @@ mod tests {
             "the whole surface does not travel again"
         );
         assert!(
-            text.contains("s=8,v=8"),
-            "the damaged tile travels, 8x8 pixels at tile side 8"
+            text.contains("s=10,v=10"),
+            "the damaged 8x8 tile travels with a pixel of apron on each side"
+        );
+        assert!(
+            text.contains("x=1,y=1,w=8,h=8"),
+            "the placement crops the apron away"
         );
         assert!(
             text.contains("a=p,i=41062") && text.contains("c=2,r=2"),
