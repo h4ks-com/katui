@@ -9,6 +9,7 @@
 //! leaves.
 
 use crate::Sink;
+use crate::anchor::Anchor;
 use std::collections::HashSet;
 use std::io::{self, Write as _};
 
@@ -64,8 +65,12 @@ impl<'a> Images<'a> {
 pub struct Kitty {
     sent: HashSet<ImageId>,
     live: HashSet<(ImageId, PlacementId)>,
-    unsynchronized: bool,
+    anchor: Option<Anchor>,
 }
+
+/// The image id of the anchor a multiplexed presenter places its images
+/// on, high enough to stay clear of scene ids.
+const MULTIPLEXER_ANCHOR: u32 = 0x00ff_fff0;
 
 impl Kitty {
     /// A fresh presenter for a fresh terminal session.
@@ -74,12 +79,14 @@ impl Kitty {
         Self::default()
     }
 
-    /// Leave out the synchronized-output wrapper under a multiplexer: we
-    /// send terminal queries between batches there, and a terminal holds
-    /// its answers until a synchronized update ends.
+    /// Place every image relative to a placeholder anchor under a
+    /// multiplexer, which then hides them with their pane. We also leave
+    /// out the synchronized-output wrapper there, because we send terminal
+    /// queries between batches and a terminal holds its answers until a
+    /// synchronized update ends.
     #[must_use]
     pub fn for_multiplexer(mut self, multiplexed: bool) -> Self {
-        self.unsynchronized = multiplexed;
+        self.anchor = multiplexed.then(|| Anchor::new(MULTIPLEXER_ANCHOR));
         self
     }
 
@@ -89,6 +96,9 @@ impl Kitty {
         let mut sent: Vec<ImageId> = self.sent.drain().collect();
         sent.sort_unstable();
         self.live.clear();
+        if let Some(anchor) = self.anchor.as_mut() {
+            anchor.forget();
+        }
         for image in sent {
             out.write_all(&kitty::Delete::Free(KittyImage(image.0)).encode())?;
         }
@@ -116,8 +126,9 @@ impl Kitty {
             return Ok(0);
         }
         let mut bytes = Vec::new();
-        if !self.unsynchronized {
-            bytes.write_all(b"\x1b[?2026h")?;
+        match self.anchor.as_mut() {
+            Some(anchor) => anchor.write(&mut bytes)?,
+            None => bytes.write_all(b"\x1b[?2026h")?,
         }
         let mut transmitted: HashSet<ImageId> = HashSet::new();
         for placement in &delta.added {
@@ -140,13 +151,13 @@ impl Kitty {
                 transmitted.insert(image);
             }
             if self.sent.contains(&image) || transmitted.contains(&image) {
-                place(&mut bytes, placement)?;
+                place(&mut bytes, placement, self.anchor.as_ref())?;
                 self.live.insert((image, placement.id));
             }
         }
         for placement in &delta.moved {
             if self.live.contains(&(placement.image, placement.id)) {
-                place(&mut bytes, placement)?;
+                place(&mut bytes, placement, self.anchor.as_ref())?;
             }
         }
         for removed in &delta.removed {
@@ -172,7 +183,7 @@ impl Kitty {
             self.sent.remove(&image);
         }
         self.sent.extend(transmitted);
-        if !self.unsynchronized {
+        if self.anchor.is_none() {
             bytes.write_all(b"\x1b[?2026l")?;
         }
         let written = bytes.len();
@@ -193,20 +204,21 @@ pub(crate) fn crop_rect(crop: PixelRect) -> kitty::PixelRect {
 }
 
 /// Address the placement origin, then anchor the place frame there.
-fn place(bytes: &mut Vec<u8>, placement: &Placement) -> io::Result<()> {
-    crate::cells::move_cursor(
-        bytes,
-        Position {
-            x: placement.area.x,
-            y: placement.area.y,
-        },
-    )?;
+fn place(bytes: &mut Vec<u8>, placement: &Placement, anchor: Option<&Anchor>) -> io::Result<()> {
+    let origin = Position {
+        x: placement.area.x,
+        y: placement.area.y,
+    };
     let mut command = kitty::Place::new(KittyImage(placement.image.0));
     command.placement = KittyPlacement(placement.id.0);
     command.columns = u32::from(placement.area.columns);
     command.rows = u32::from(placement.area.rows);
     command.crop = placement.crop.map(crop_rect);
     command.z = placement.z;
+    match anchor {
+        Some(anchor) => command.parent = Some(anchor.offset_to(origin)),
+        None => crate::cells::move_cursor(bytes, origin)?,
+    }
     bytes.write_all(&command.encode())
 }
 

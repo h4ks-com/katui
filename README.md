@@ -10,10 +10,10 @@ first.
 Graphics need a terminal that speaks the kitty graphics protocol, such as
 kitty. Other terminals get a quarter-block fallback.
 
-Inside tmux, images show through Unicode placeholders: plain text that
-tmux moves, clears and hides with the rest of the pane, so resizes, splits
-and window switches stay clean. tmux needs passthrough on and true color
-for the outer terminal. A minimal config:
+Inside tmux, every image is anchored to one Unicode placeholder cell: plain
+text that tmux moves, clears and hides with the rest of the pane, so
+resizes, splits and window switches stay clean. tmux needs passthrough on
+and true color for the outer terminal. A minimal config:
 
 ```
 set -s escape-time 0

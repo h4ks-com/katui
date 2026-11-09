@@ -9,7 +9,6 @@ use std::io::{self, Write as _};
 use katui_proto::kitty::{
     Delete, Format, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
 };
-use katui_proto::placeholder::placeholder_row;
 use katui_proto::probe::CellPixels;
 use katui_scene::cell::Position;
 use katui_scene::placement::CellRect;
@@ -17,6 +16,7 @@ use katui_scene::surface::Surface;
 use katui_scene::surface::diff_tiles;
 
 use super::{damage_is_dense, write_whole_image};
+use crate::anchor::Anchor;
 use crate::cells::move_cursor;
 
 /// The patched kitty surface presenter: transmits the whole surface once,
@@ -42,7 +42,7 @@ pub struct PatchedKitty {
     prev: Option<Surface>,
     base_shown: Option<KittyImage>,
     tile_generations: HashMap<u32, bool>,
-    placeholders: bool,
+    anchor: Option<Anchor>,
     repaint: bool,
 }
 
@@ -73,7 +73,7 @@ impl PatchedKitty {
             prev: None,
             base_shown: None,
             tile_generations: HashMap::new(),
-            placeholders: false,
+            anchor: None,
             repaint: false,
         }
     }
@@ -82,6 +82,9 @@ impl PatchedKitty {
     /// may have lost what it was showing.
     pub fn invalidate(&mut self) {
         self.repaint = true;
+        if let Some(anchor) = self.anchor.as_mut() {
+            anchor.forget();
+        }
     }
 
     /// Free every image this presenter sent and repaint on the next frame.
@@ -96,12 +99,12 @@ impl PatchedKitty {
         out.write_all(&bytes)
     }
 
-    /// Send every frame as small tiles shown through Unicode placeholder
-    /// text, for a multiplexer: it drops uploads bigger than it buffers,
-    /// and it clears, clips and hides placeholder text like any other.
+    /// Send every frame as small tiles placed relative to a placeholder
+    /// anchor, for a multiplexer: it drops uploads bigger than it buffers,
+    /// and it hides the anchor, and so every tile, with its pane.
     #[must_use]
     pub fn for_multiplexer(mut self, enabled: bool) -> Self {
-        self.placeholders = enabled;
+        self.anchor = enabled.then(|| Anchor::new(self.base.wrapping_sub(1)));
         self
     }
 
@@ -116,7 +119,7 @@ impl PatchedKitty {
             prev.width() != surface.width() || prev.height() != surface.height()
         });
         let repaint = std::mem::take(&mut self.repaint);
-        if self.placeholders {
+        if self.anchor.is_some() {
             return self.render_tiles(out, surface, area, resized, repaint);
         }
         let fresh_start = resized || repaint;
@@ -168,6 +171,9 @@ impl PatchedKitty {
         }
         if !damage.is_empty() {
             bytes.write_all(b"\x1b[?2026h")?;
+            if let Some(anchor) = self.anchor.as_mut() {
+                anchor.write(&mut bytes)?;
+            }
             for rect in &damage {
                 self.patch(&mut bytes, surface, *rect, area)?;
             }
@@ -262,44 +268,19 @@ impl PatchedKitty {
         let mut place = Place::new(image);
         place.columns = u32::from(columns);
         place.rows = u32::from(rows);
-        if self.placeholders {
-            place.virtual_placement = true;
-            bytes.write_all(&place.encode())?;
-            write_placeholders(bytes, image, origin, columns, rows)?;
+        place.placement = KittyPlacement(2 + index);
+        if let Some(anchor) = &self.anchor {
+            place.parent = Some(anchor.offset_to(origin));
         } else {
-            place.placement = KittyPlacement(2 + index);
             move_cursor(bytes, origin)?;
-            bytes.write_all(&place.encode())?;
         }
+        bytes.write_all(&place.encode())?;
         if let Some(previous) = shown {
             bytes.write_all(&Delete::Free(self.tile_image(index, previous)).encode())?;
         }
         self.tile_generations.insert(index, generation);
         Ok(())
     }
-}
-
-fn write_placeholders(
-    bytes: &mut Vec<u8>,
-    image: KittyImage,
-    origin: Position,
-    columns: u16,
-    rows: u16,
-) -> io::Result<()> {
-    for row in 0..rows {
-        let Some(text) = placeholder_row(image, u32::from(row), u32::from(columns)) else {
-            break;
-        };
-        move_cursor(
-            bytes,
-            Position {
-                x: origin.x,
-                y: origin.y.saturating_add(row),
-            },
-        )?;
-        bytes.write_all(text.as_bytes())?;
-    }
-    Ok(())
 }
 
 /// The tile's RGBA rows out of the surface, row-major, tile width per
@@ -441,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn a_multiplexer_grid_shows_tiles_through_placeholders_and_never_a_whole_image() {
+    fn a_multiplexer_grid_places_tiles_on_the_anchor_and_never_a_whole_image() {
         let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(true);
         let surface = plain_surface(64, 64);
         let mut wire = Vec::new();
@@ -450,11 +431,15 @@ mod tests {
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
         assert!(!text.contains("s=64"), "no whole image travels");
-        assert_eq!(text.matches("U=1").count(), 64, "every tile is placed");
+        assert_eq!(
+            text.matches(",P=89,").count(),
+            64,
+            "every tile sits on the anchor"
+        );
         assert_eq!(
             text.matches('\u{10eeee}').count(),
-            16 * 16,
-            "placeholder text covers every cell"
+            1,
+            "one placeholder cell anchors the grid"
         );
     }
 
@@ -472,7 +457,7 @@ mod tests {
             .render_frame(&mut wire, &surface, area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
-        assert_eq!(text.matches("a=p,").count(), 64, "every tile returns");
+        assert_eq!(text.matches(",P=89,").count(), 64, "every tile returns");
         assert!(!text.contains("d=R"), "old tiles stay until replaced");
         wire.clear();
         presenter

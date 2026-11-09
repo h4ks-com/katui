@@ -2,6 +2,7 @@
 //! only place that produces bytes; it consumes a scene diff and writes to a
 //! [`Sink`], which is stdout, a buffer, a socket or a test harness.
 
+mod anchor;
 pub mod blocks;
 pub mod cells;
 pub mod kitty;

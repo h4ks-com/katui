@@ -217,6 +217,22 @@ pub struct Place {
     pub hold_cursor: bool,
     /// A virtual placement that Unicode placeholder text shows (`U=1`).
     pub virtual_placement: bool,
+    /// The placement this one sits relative to (`P`, `Q`), offset by
+    /// whole cells (`H`, `V`).
+    pub parent: Option<Relative>,
+}
+
+/// Where a placement sits relative to another placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Relative {
+    /// The parent's image.
+    pub image: ImageId,
+    /// The parent's placement.
+    pub placement: PlacementId,
+    /// Cells to the right of the parent's top-left cell.
+    pub columns: i32,
+    /// Cells below the parent's top-left cell.
+    pub rows: i32,
 }
 
 impl Place {
@@ -233,6 +249,7 @@ impl Place {
             quiet: Quiet::Silent,
             hold_cursor: true,
             virtual_placement: false,
+            parent: None,
         }
     }
 
@@ -268,6 +285,13 @@ impl Place {
         }
         if self.virtual_placement {
             command.push_str(",U=1");
+        }
+        if let Some(parent) = self.parent {
+            let _ = write!(
+                command,
+                ",P={},Q={},H={},V={}",
+                parent.image.0, parent.placement.0, parent.columns, parent.rows
+            );
         }
         apc(&command).into_bytes()
     }
@@ -747,6 +771,22 @@ mod tests {
         assert_eq!(
             place.encode(),
             b"\x1b_Ga=p,i=7,p=3,c=4,r=2,z=-1,q=2,C=1\x1b\\".to_vec()
+        );
+    }
+
+    #[test]
+    fn a_relative_placement_names_its_parent_and_offset() {
+        let mut place = Place::new(ImageId(7));
+        place.placement = PlacementId(3);
+        place.parent = Some(super::Relative {
+            image: ImageId(9),
+            placement: PlacementId(1),
+            columns: 4,
+            rows: 2,
+        });
+        assert_eq!(
+            place.encode(),
+            b"\x1b_Ga=p,i=7,p=3,q=2,C=1,P=9,Q=1,H=4,V=2\x1b\\".to_vec()
         );
     }
 
