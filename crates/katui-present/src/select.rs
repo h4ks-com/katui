@@ -56,6 +56,7 @@ mod tests {
             truecolor: true,
             identity: None,
             cell: None,
+            text_area: None,
             trust: ProbeSource::Probed,
         }
     }

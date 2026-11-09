@@ -185,16 +185,26 @@ fn measured_cell() -> Option<CellPixels> {
     })
 }
 
-/// The pixel size of one cell: what the probe answered, else what the
-/// terminal driver reports, else a typical cell. A multiplexer leaves
-/// both unanswered at times, and a placement's cell span scales whatever
-/// we choose, so the typical cell is a safe guess.
+/// The pixel size of one cell: what the probe answered, else the text
+/// area it answered over the cell count, else what the terminal driver
+/// reports, else a typical cell. A multiplexer leaves all of them
+/// unanswered at times, and a placement's cell span scales whatever we
+/// choose, so the typical cell is a safe guess.
 #[must_use]
 pub fn cell_size(caps: &Capabilities) -> CellPixels {
-    caps.cell.or_else(measured_cell).unwrap_or(CellPixels {
-        width: 10,
-        height: 20,
-    })
+    caps.cell
+        .or_else(|| cell_from_area(caps.text_area?, size().ok()?))
+        .or_else(measured_cell)
+        .unwrap_or(CellPixels {
+            width: 10,
+            height: 20,
+        })
+}
+
+fn cell_from_area(area: CellPixels, cells: katui_scene::CellSize) -> Option<CellPixels> {
+    let width = area.width.checked_div(cells.columns)?;
+    let height = area.height.checked_div(cells.rows)?;
+    (width > 0 && height > 0).then_some(CellPixels { width, height })
 }
 
 fn timespec(wait: Duration) -> Timespec {
@@ -273,6 +283,36 @@ impl Transport for TtyTransport {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod area_tests {
+    use katui_proto::probe::CellPixels;
+    use katui_scene::CellSize;
+
+    #[test]
+    fn a_text_area_over_its_cells_gives_the_cell() {
+        let area = CellPixels {
+            width: 560,
+            height: 700,
+        };
+        let cells = CellSize {
+            columns: 80,
+            rows: 50,
+        };
+        assert_eq!(
+            super::cell_from_area(area, cells),
+            Some(CellPixels {
+                width: 7,
+                height: 14
+            })
+        );
+        let empty = CellSize {
+            columns: 0,
+            rows: 0,
+        };
+        assert_eq!(super::cell_from_area(area, empty), None);
     }
 }
 
@@ -383,6 +423,7 @@ mod tests {
             truecolor: false,
             identity: None,
             cell,
+            text_area: None,
             trust: ProbeSource::Sniffed,
         }
     }

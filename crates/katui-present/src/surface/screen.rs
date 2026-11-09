@@ -115,6 +115,7 @@ mod tests {
             truecolor: false,
             identity: None,
             cell: None,
+            text_area: None,
             trust: ProbeSource::Sniffed,
         }
     }

@@ -85,6 +85,7 @@ mod tests {
                 width: 7,
                 height: 14,
             }),
+            text_area: None,
             trust: ProbeSource::Probed,
         };
         assert_eq!(

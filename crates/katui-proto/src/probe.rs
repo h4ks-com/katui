@@ -155,6 +155,9 @@ pub struct Capabilities {
     pub identity: Option<Identity>,
     /// Cell size in pixels, when the `CSI 16 t` answer arrived.
     pub cell: Option<CellPixels>,
+    /// The pixel size of the whole text area, when the `CSI 14 t` answer
+    /// arrived; divided by the cell count it gives the cell size.
+    pub text_area: Option<CellPixels>,
     /// The strongest source behind any value in this report: a barrier
     /// answer proves the terminal listened, whatever each field says.
     pub trust: ProbeSource,
@@ -195,7 +198,7 @@ fn batch(env: &Env) -> Vec<u8> {
          \x1b_Ga=t,i={PROBE_ANIMATION_ID},s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\\
          \x1b_Ga=f,i={PROBE_ANIMATION_ID},s=1,v=1,f=24,t=d;AAAA\x1b\\\
          \x1b_Ga=d,d=I,i={PROBE_ANIMATION_ID},q=2\x1b\\\
-         \x1b[>0q\x1b[16t\x1b[c"
+         \x1b[>0q\x1b[14t\x1b[16t\x1b[c"
     )
     .into_bytes();
     if env.inside_multiplexer() {
@@ -215,6 +218,7 @@ struct Replies {
     kitty_ok: bool,
     identity: Option<Identity>,
     cell: Option<CellPixels>,
+    text_area: Option<CellPixels>,
     sixel: bool,
     barrier: bool,
     animation_answer: Option<bool>,
@@ -255,7 +259,8 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
         || replies.kitty_ok
         || replies.sixel
         || replies.identity.is_some()
-        || replies.cell.is_some();
+        || replies.cell.is_some()
+        || replies.text_area.is_some();
     if answered {
         caps.trust = ProbeSource::Probed;
     }
@@ -267,9 +272,8 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     if let Some(identity) = replies.identity {
         caps.identity = Some(identity);
     }
-    if let Some(cell) = replies.cell {
-        caps.cell = Some(cell);
-    }
+    caps.cell = replies.cell.or(caps.cell);
+    caps.text_area = replies.text_area.or(caps.text_area);
     caps
 }
 
@@ -291,6 +295,7 @@ pub fn sniff(env: &Env) -> Capabilities {
         truecolor: env.has_truecolor(),
         identity: None,
         cell: None,
+        text_area: None,
         trust: ProbeSource::Sniffed,
     }
 }
@@ -351,7 +356,8 @@ fn parse_replies(stream: &[u8]) -> Replies {
                     replies.sixel |= params.strip_prefix('?').is_some_and(has_sixel);
                 }
                 b't' => {
-                    replies.cell = parse_cell(&params).or(replies.cell);
+                    replies.cell = parse_size(&params, "6").or(replies.cell);
+                    replies.text_area = parse_size(&params, "4").or(replies.text_area);
                 }
                 _ => {}
             }
@@ -395,10 +401,11 @@ fn has_sixel(params: &str) -> bool {
     params.split(';').any(|p| p == "4")
 }
 
-/// `6;<height>;<width>` from the cell size answer.
-fn parse_cell(params: &str) -> Option<CellPixels> {
+/// `<kind>;<height>;<width>` from a size answer: kind 6 is one cell,
+/// kind 4 the text area.
+fn parse_size(params: &str, kind: &str) -> Option<CellPixels> {
     let mut fields = params.split(';');
-    if fields.next()? != "6" {
+    if fields.next()? != kind {
         return None;
     }
     let height = fields.next()?.parse().ok()?;
@@ -482,7 +489,7 @@ mod tests {
     #[test]
     fn a_full_kitty_session_reports_everything() {
         let mut transport = Scripted::new(&[
-            b"\x1b_Gi=31;OK\x1b\\\x1b_Gi=30,r=2;OK\x1b\\\x1bP>|kitty(0.29.0)\x1b\\\x1b[6;14;7t\x1b[?62;1;2;6;9;22c",
+            b"\x1b_Gi=31;OK\x1b\\\x1b_Gi=30,r=2;OK\x1b\\\x1bP>|kitty(0.29.0)\x1b\\\x1b[4;700;560t\x1b[6;14;7t\x1b[?62;1;2;6;9;22c",
         ]);
         let caps = probe(&mut transport, &env());
         assert_eq!(
@@ -499,6 +506,10 @@ mod tests {
                 cell: Some(CellPixels {
                     width: 7,
                     height: 14
+                }),
+                text_area: Some(CellPixels {
+                    width: 560,
+                    height: 700
                 }),
                 trust: super::ProbeSource::Probed,
             }
@@ -655,7 +666,7 @@ mod tests {
               \x1b_Ga=t,i=30,s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\\
               \x1b_Ga=f,i=30,s=1,v=1,f=24,t=d;AAAA\x1b\\\
               \x1b_Ga=d,d=I,i=30,q=2\x1b\\\
-              \x1b[>0q\x1b[16t\x1b[c"
+              \x1b[>0q\x1b[14t\x1b[16t\x1b[c"
                 .to_vec()
         );
     }
@@ -666,7 +677,7 @@ mod tests {
         mux.tmux = Some("pane".to_owned());
         let batch = super::batch(&mux);
         assert!(batch.starts_with(b"\x1bPtmux;\x1b\x1b_Gi=31"));
-        assert!(batch.ends_with(b"\x1b[>0q\x1b[16t\x1b[c"));
+        assert!(batch.ends_with(b"\x1b[>0q\x1b[14t\x1b[16t\x1b[c"));
     }
 
     #[test]
