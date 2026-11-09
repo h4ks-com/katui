@@ -15,6 +15,7 @@ use crate::events::{EventPump, Signal, Waker};
 use crate::pacing::{Pacer, Pacing};
 use crate::pane::PaneView;
 use crate::session::{ResizeEvent, ResizeWatch};
+use crate::stop::StopRequest;
 
 /// How often an idle loop checks the terminal size.
 const IDLE_POLL: Duration = Duration::from_millis(100);
@@ -82,6 +83,7 @@ pub fn run_app<A: App, W: io::Write>(
         pump.watch_pane_visibility(&identity.name);
     }
     let size = crate::tty::size()?;
+    let stop = StopRequest::watch()?;
     let terminal = RestoringTerminal { out: &mut out };
     session::enter(terminal.out)?;
     session::enable_input(terminal.out)?;
@@ -96,6 +98,7 @@ pub fn run_app<A: App, W: io::Write>(
         pending: Control::Redraw,
         pane: PaneView::Active,
         wire: Vec::new(),
+        stop,
     };
     let result = event_loop.run(app, terminal.out, &mut pump);
     // we stop mouse reports before leaving raw mode, or the ones already
@@ -137,6 +140,7 @@ struct EventLoop {
     pending: Control,
     pane: PaneView,
     wire: Vec<u8>,
+    stop: StopRequest,
 }
 
 impl EventLoop {
@@ -146,7 +150,7 @@ impl EventLoop {
         out: &mut W,
         pump: &mut EventPump<A::Message>,
     ) -> Result<(), RtError> {
-        while self.pending != Control::Quit {
+        while self.pending != Control::Quit && !self.stop.requested() {
             let first = pump.next(self.wait());
             self.handle_signals(app, first, pump);
             self.handle_resize(app);
@@ -265,6 +269,7 @@ mod tests {
             pending,
             pane: super::PaneView::Active,
             wire: Vec::new(),
+            stop: crate::stop::StopRequest::default(),
         }
     }
 

@@ -15,6 +15,8 @@ pub mod pacing;
 #[cfg(unix)]
 pub mod pane;
 #[cfg(unix)]
+mod stop;
+#[cfg(unix)]
 pub mod tty;
 
 /// Failures of the terminal lifecycle: the crate's one error enum.

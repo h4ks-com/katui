@@ -36,6 +36,7 @@ katui-scene = { path = "crates/katui-scene" }
 katui-ui = { path = "crates/katui-ui" }
 pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = { version = "0.30", default-features = false }
+signal-hook = { version = "0.3", default-features = false }
 rustix = { version = "1", default-features = false, features = ["std", "termios", "event", "pty", "fs"] }
 taffy = "0.15"
 thiserror = "2"
