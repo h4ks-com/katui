@@ -10,14 +10,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use katui_draw::{ColorStop, Paint, Point, Rgba, TextEngine};
+use katui_draw::{ColorStop, Paint, Point, Rgba, TextEngine, bundled_fonts};
 use katui_scene::placement::{ImageId, Placement};
 use katui_scene::surface::Surface;
 use katui_ui::{Align, CellPixels, Element, Length, RenderOutput, Ui, UiOptions};
 
-const TEXT_FONT: &[u8] =
-    include_bytes!("../../katui-draw/assets/AtkinsonHyperlegibleNext[wght].ttf");
-const EMOJI_FONT: &[u8] = include_bytes!("../../katui-draw/assets/NotoColorEmoji-subset.ttf");
 const CELL: CellPixels = CellPixels {
     width: 10,
     height: 20,
@@ -29,8 +26,7 @@ fn ui() -> Ui<u32> {
 }
 
 fn ui_with(options: UiOptions) -> Ui<u32> {
-    let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), EMOJI_FONT.to_vec()])
-        .expect("fixture fonts parse");
+    let engine = TextEngine::new(bundled_fonts()).expect("fixture fonts parse");
     Ui::new(engine, options)
 }
 
@@ -235,6 +231,30 @@ fn hit_testing_finds_the_innermost_and_honors_clips() {
     assert_eq!(outer.on_click, Some(1));
 
     assert_eq!(ui.hit_test(200.0, 150.0), None, "clipped by the scroll box");
+}
+
+#[test]
+fn each_linked_span_of_a_paragraph_takes_its_own_clicks() {
+    let span = |text: &str| katui_draw::TextSpan {
+        text: text.to_owned(),
+        ..katui_draw::TextSpan::default()
+    };
+    let mut ui = ui();
+    let paragraph = Element::rich(vec![span("WWWW"), span("MMMM"), span("WWWW")])
+        .font_size(20.0)
+        .on_click(9)
+        .on_span_click(1, 1)
+        .on_span_click(2, 2);
+    ui.render(&Element::column([paragraph]), SCREEN, CELL);
+    let at = |x: f32| ui.hit_test(x, 10.0).and_then(|hit| hit.on_click);
+    assert_eq!(at(5.0), Some(9), "plain text takes the paragraph's click");
+    let clicks: Vec<Option<u32>> = (0..400_u16).map(|x| at(f32::from(x))).collect();
+    let first = |wanted: u32| clicks.iter().position(|click| *click == Some(wanted));
+    let (one, two) = (
+        first(1).expect("span 1 is clickable"),
+        first(2).expect("span 2 is clickable"),
+    );
+    assert!(one < two, "the spans keep their order along the line");
 }
 
 #[test]

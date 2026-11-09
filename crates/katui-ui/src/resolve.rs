@@ -441,6 +441,40 @@ impl<M: Clone> Walker<'_, '_, M> {
         }
     }
 
+    /// One region per line of each clickable span, above the text's own
+    /// region so a click on the span wins.
+    fn add_span_regions(
+        &mut self,
+        element: &Element<M>,
+        key: &TextKey,
+        origin: Point,
+        scope: Scope,
+    ) {
+        let Some(layout) = self.text.get(key) else {
+            return;
+        };
+        for (span, message) in &element.span_clicks {
+            for glyphs in layout.span_boxes(*span) {
+                let rect = Rect::new(
+                    origin.x + glyphs.x,
+                    origin.y + glyphs.y,
+                    glyphs.width,
+                    glyphs.height,
+                );
+                let visible = intersect(rect, scope.clip);
+                if visible.width > 0.0 && visible.height > 0.0 {
+                    self.regions.push(Region {
+                        rect: visible,
+                        parent: scope.hit_parent,
+                        id: None,
+                        on_click: Some(message.clone()),
+                        on_hover: None,
+                    });
+                }
+            }
+        }
+    }
+
     fn paint_leaf(&mut self, element: &Element<M>, rect: Rect, exact_width: f32, scope: Scope) {
         let style = &element.style;
         let border = style.border.as_ref().map_or(0.0, |(width, _)| *width);
@@ -456,6 +490,12 @@ impl<M: Clone> Walker<'_, '_, M> {
             Kind::Text(text) => {
                 let key = text_key(element, text).wrapped_at(exact_width - pad_x * 2.0);
                 self.text.shape(&key);
+                self.add_span_regions(
+                    element,
+                    &key,
+                    Point::new(rect.x + pad_x, rect.y + pad_y),
+                    scope,
+                );
                 self.push_op(
                     scope.layer,
                     Op::Text {

@@ -86,6 +86,7 @@ pub struct Element<M> {
     pub(crate) scroll: Option<f32>,
     pub(crate) on_click: Option<M>,
     pub(crate) on_hover: Option<M>,
+    pub(crate) span_clicks: Vec<(usize, M)>,
     pub(crate) id: Option<u64>,
 }
 
@@ -99,6 +100,7 @@ impl<M> Element<M> {
             scroll: None,
             on_click: None,
             on_hover: None,
+            span_clicks: Vec::new(),
             id: None,
         }
     }
@@ -167,6 +169,14 @@ impl<M> Element<M> {
     #[must_use]
     pub fn on_click(mut self, message: M) -> Self {
         self.on_click = Some(message);
+        self
+    }
+
+    /// The message [`crate::Hit`] carries for a click on the glyphs of span
+    /// `span` of a rich text, a link inside a paragraph for one.
+    #[must_use]
+    pub fn on_span_click(mut self, span: usize, message: M) -> Self {
+        self.span_clicks.push((span, message));
         self
     }
 

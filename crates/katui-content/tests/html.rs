@@ -81,3 +81,66 @@ fn a_page_renders_with_its_styles_and_its_link_answers_clicks() {
         });
     assert_eq!(link.as_deref(), Some("/widgets"));
 }
+
+const LINKS: &str = r#"<body>
+  <p>Read <a href="a.html">the first link</a> or <a href="b.html">the second</a> today.</p>
+  <a href="c.html" style="display: block">A whole block that links</a>
+  <p><a href="d.html"><img src="logo.png" width="40" height="20"></a></p>
+  <ul><li><p>An item in a paragraph</p></li></ul>
+</body>"#;
+
+struct Pictures;
+
+impl HtmlHost<String> for Pictures {
+    fn link(&self, href: &str) -> String {
+        href.to_owned()
+    }
+
+    fn image(&self, src: &str) -> Option<Arc<Surface>> {
+        (src == "logo.png").then(|| Arc::new(Surface::new(40, 20)))
+    }
+}
+
+#[test]
+fn every_link_answers_its_own_clicks_wherever_it_sits() {
+    let defaults = HtmlDefaults {
+        font_size: 15.0,
+        color: Rgba::solid(230, 230, 230),
+        link: Rgba::solid(120, 160, 255),
+        tint: Rgba::solid(45, 42, 60),
+    };
+    let root = html(LINKS, &defaults, &Pictures);
+    let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
+    let mut ui: Ui<String> = Ui::new(engine, UiOptions::default());
+    let output = ui.render(&root, SIZE, CELL);
+    let surface = output.flatten(CELL, SIZE).expect("whole pixels");
+    let path = format!(
+        "{}/../../target/katui-html-links.png",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    image::save_buffer(
+        path,
+        surface.pixels(),
+        surface.width(),
+        surface.height(),
+        image::ExtendedColorType::Rgba8,
+    )
+    .expect("the target directory is writable");
+    let mut found: Vec<String> = Vec::new();
+    for row in 0..SIZE.1 / 4 {
+        for column in 0..SIZE.0 / 4 {
+            let (x, y) = (f32::from(column as u16) * 4.0, f32::from(row as u16) * 4.0);
+            if let Some(href) = ui.hit_test(x, y).and_then(|hit| hit.on_click)
+                && !found.contains(&href)
+            {
+                found.push(href);
+            }
+        }
+    }
+    assert_eq!(found, ["a.html", "b.html", "c.html", "d.html"]);
+    assert_eq!(
+        ui.hit_test(2.0, 8.0).and_then(|hit| hit.on_click),
+        None,
+        "the text before a link stays plain"
+    );
+}

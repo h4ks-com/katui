@@ -3,8 +3,7 @@
 //! and links. Text renders in pixels with proportional fonts.
 //!
 //! Selectors match through Servo's `selectors` crate, with a specificity
-//! that counts ids, classes and type names. Floats, tables, positioning
-//! and scripts are out of the subset.
+//! that counts ids, classes and type names.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -389,12 +388,13 @@ enum ListMarker {
     Number(usize),
 }
 
-/// Text and its link, gathered across inline elements until a block
-/// interrupts them.
+/// Text gathered across inline elements until a block interrupts it,
+/// each span with the link it sits in.
 #[derive(Default)]
 struct Run {
-    spans: Vec<TextSpan>,
+    spans: Vec<(TextSpan, Option<String>)>,
     link: Option<String>,
+    marker: Option<ListMarker>,
     ends_in_space: bool,
 }
 
@@ -406,8 +406,22 @@ impl Run {
             self.collapse(text)
         };
         if !text.is_empty() {
-            self.spans.push(style.span(text));
+            self.push(style.span(text), style);
         }
+    }
+
+    /// Add `span`, after the list marker still waiting for the item's
+    /// first text.
+    fn push(&mut self, span: TextSpan, style: &Style) {
+        if let Some(marker) = self.marker.take() {
+            let text = match marker {
+                ListMarker::Bullet => "\u{2022} ".to_owned(),
+                ListMarker::Number(number) => format!("{number}. "),
+            };
+            self.spans.push((style.span(text), None));
+            self.ends_in_space = true;
+        }
+        self.spans.push((span, self.link.clone()));
     }
 
     /// Whitespace collapsed the way a browser flows text: runs of it
@@ -416,7 +430,8 @@ impl Run {
         let mut out = String::with_capacity(text.len());
         for character in text.chars() {
             if character.is_whitespace() {
-                if !self.ends_in_space && (!self.spans.is_empty() || !out.is_empty()) {
+                let started = !self.spans.is_empty() || !out.is_empty();
+                if !self.ends_in_space && started {
                     out.push(' ');
                     self.ends_in_space = true;
                 }
@@ -431,21 +446,27 @@ impl Run {
     fn take<M: Clone>(&mut self, style: &Style, host: &dyn HtmlHost<M>) -> Option<Element<M>> {
         let mut spans = std::mem::take(&mut self.spans);
         self.ends_in_space = false;
-        if let Some(last) = spans.last_mut() {
+        if let Some((last, _)) = spans.last_mut() {
             let trimmed = last.text.trim_end().len();
             last.text.truncate(trimmed);
         }
-        spans.retain(|span| !span.text.is_empty());
+        spans.retain(|(span, _)| !span.text.is_empty());
         if spans.is_empty() {
             return None;
         }
+        let (spans, links): (Vec<TextSpan>, Vec<Option<String>>) = spans.into_iter().unzip();
         let text = Element::rich(spans)
             .font_size(style.size)
             .color(style.color);
-        Some(match self.link.take() {
-            Some(href) => text.on_click(host.link(&href)),
-            None => text,
-        })
+        Some(
+            links
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, link)| Some((index, link?)))
+                .fold(text, |text, (index, href)| {
+                    text.on_span_click(index, host.link(&href))
+                }),
+        )
     }
 }
 
@@ -463,7 +484,11 @@ impl<M: Clone> Renderer<'_, M> {
         // we paint an inline element's background behind its glyphs,
         // because it has no box of its own
         if style.display == Display::Inline {
-            style.highlight = style.background.take().or(style.highlight);
+            style.highlight = style
+                .background
+                .take()
+                .or(style.highlight)
+                .or(parent.highlight);
         }
         style
     }
@@ -479,15 +504,10 @@ impl<M: Clone> Renderer<'_, M> {
             return None;
         }
         let mut children = Vec::new();
-        let mut run = Run::default();
-        if let Some(marker) = marker {
-            let text = match marker {
-                ListMarker::Bullet => "\u{2022} ".to_owned(),
-                ListMarker::Number(number) => format!("{number}. "),
-            };
-            run.spans.push(style.span(text));
-            run.ends_in_space = true;
-        }
+        let mut run = Run {
+            marker,
+            ..Run::default()
+        };
         let ordered = element.value().name() == "ol";
         let mut item = 0;
         for child in element.children() {
@@ -511,7 +531,11 @@ impl<M: Clone> Renderer<'_, M> {
             }
         }
         children.extend(run.take(&style, self.host));
-        Some(boxed(children, &style))
+        let boxed = boxed(children, &style);
+        Some(match href(element) {
+            Some(href) => boxed.on_click(self.host.link(href)),
+            None => boxed,
+        })
     }
 
     fn child(
@@ -525,42 +549,75 @@ impl<M: Clone> Renderer<'_, M> {
         let child_style = self.style(child, style);
         match (child.value().name(), child_style.display) {
             (_, Display::Hidden) => {}
-            ("br", _) => run.spans.push(child_style.span("\n".to_owned())),
+            ("br", _) => run.push(child_style.span("\n".to_owned()), &child_style),
             ("img", _) => {
                 children.extend(run.take(style, self.host));
-                children.extend(self.image(child, &child_style));
+                children.extend(self.image(child, &child_style, run.link.as_deref()));
             }
-            (_, Display::Inline) => self.inline(child, &child_style, run),
+            (_, Display::Inline) => self.inline(child, &child_style, run, style, children),
             _ => {
                 children.extend(run.take(style, self.host));
+                let marker = marker.or(run.marker.take());
                 children.extend(self.block(child, style, marker));
             }
         }
     }
 
-    fn inline(&self, element: ElementRef<'_>, style: &Style, run: &mut Run) {
-        if element.value().name() == "a" && run.link.is_none() {
-            run.link = element.value().attr("href").map(str::to_owned);
-        }
+    /// Add an inline element's text to `run`. An image inside it breaks
+    /// the run, because a picture sits between lines of text in a block of
+    /// `block` style.
+    fn inline(
+        &self,
+        element: ElementRef<'_>,
+        style: &Style,
+        run: &mut Run,
+        block: &Style,
+        children: &mut Vec<Element<M>>,
+    ) {
+        let outer = match href(element) {
+            Some(href) => run.link.replace(href.to_owned()),
+            None => run.link.clone(),
+        };
         for child in element.children() {
             match child.value() {
                 Node::Text(text) => run.push_text(text, style),
                 Node::Element(_) => {
                     if let Some(child) = ElementRef::wrap(child) {
-                        let child_style = self.style(child, style);
-                        if child.value().name() == "br" {
-                            run.spans.push(child_style.span("\n".to_owned()));
-                        } else if child_style.display != Display::Hidden {
-                            self.inline(child, &child_style, run);
-                        }
+                        self.inline_child(child, style, run, block, children);
                     }
                 }
                 _ => {}
             }
         }
+        run.link = outer;
     }
 
-    fn image(&self, element: ElementRef<'_>, style: &Style) -> Option<Element<M>> {
+    fn inline_child(
+        &self,
+        child: ElementRef<'_>,
+        style: &Style,
+        run: &mut Run,
+        block: &Style,
+        children: &mut Vec<Element<M>>,
+    ) {
+        let child_style = self.style(child, style);
+        match (child.value().name(), child_style.display) {
+            (_, Display::Hidden) => {}
+            ("br", _) => run.push(child_style.span("\n".to_owned()), &child_style),
+            ("img", _) => {
+                children.extend(run.take(block, self.host));
+                children.extend(self.image(child, &child_style, run.link.as_deref()));
+            }
+            _ => self.inline(child, &child_style, run, block, children),
+        }
+    }
+
+    fn image(
+        &self,
+        element: ElementRef<'_>,
+        style: &Style,
+        link: Option<&str>,
+    ) -> Option<Element<M>> {
         let surface = self.host.image(element.value().attr("src")?)?;
         let attribute = |name: &str| {
             element
@@ -577,8 +634,18 @@ impl<M: Clone> Renderer<'_, M> {
         if let Some(height) = height {
             image = image.height(Length::Px(height));
         }
-        Some(image)
+        Some(match link {
+            Some(href) => image.on_click(self.host.link(href)),
+            None => image,
+        })
     }
+}
+
+/// The target of `element` when it is a link.
+fn href(element: ElementRef<'_>) -> Option<&str> {
+    (element.value().name() == "a")
+        .then(|| element.value().attr("href"))
+        .flatten()
 }
 
 fn boxed<M>(children: Vec<Element<M>>, style: &Style) -> Element<M> {

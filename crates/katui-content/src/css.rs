@@ -23,7 +23,10 @@ pub(crate) fn rules(sheet: &str) -> Vec<Rule> {
     let mut rules = Vec::new();
     let mut rest = sheet.as_str();
     while let Some(open) = rest.find('{') {
-        let selectors = rest.get(..open).unwrap_or_default().trim();
+        let before = rest.get(..open).unwrap_or_default();
+        // a statement at-rule like @import ends in a semicolon before the
+        // next selector, so we start the selector after it
+        let selectors = before.rsplit(';').next().unwrap_or(before).trim();
         let after = rest.get(open + 1..).unwrap_or_default();
         let close = block_end(after);
         if !selectors.starts_with('@') && !selectors.is_empty() {
@@ -232,7 +235,7 @@ mod tests {
 
     #[test]
     fn a_stylesheet_splits_into_rules_without_comments_or_at_rules() {
-        let sheet = "/* intro */ h1, .big { color: Red; font-size: 2em !important }\n@media print { p { color: black } }\n#main{padding:4px}";
+        let sheet = "@charset \"utf-8\";\n/* intro */ h1, .big { color: Red; font-size: 2em !important }\n@media print { p { color: black } }\n#main{padding:4px}";
         let parsed = rules(sheet);
         let names: Vec<&str> = parsed.iter().map(|rule| rule.selectors.as_str()).collect();
         assert!(names.contains(&"h1, .big"));

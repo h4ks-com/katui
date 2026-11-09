@@ -127,6 +127,7 @@ impl TextEngine {
             glyphs: Vec::new(),
             backgrounds: Vec::new(),
             lines: Vec::new(),
+            span_boxes: Vec::new(),
             size: (0.0, 0.0),
             line_count: 0,
         };
@@ -139,6 +140,7 @@ impl TextEngine {
                 if let Some(span) = span {
                     layout.add_marks(span, glyph.x, glyph.w, &run);
                 }
+                layout.add_span_box(glyph.metadata, glyph.x, glyph.w, &run);
                 let physical = glyph.physical((0.0, run.line_y), 1.0);
                 if let Some(image) = self.rasterize(physical.cache_key) {
                     layout.glyphs.push(PlacedGlyph {
@@ -199,6 +201,7 @@ pub struct TextLayout {
     glyphs: Vec<PlacedGlyph>,
     backgrounds: Vec<(Rect, Rgba)>,
     lines: Vec<(Rect, Option<Rgba>)>,
+    span_boxes: Vec<(usize, usize, Rect)>,
     size: (f32, f32),
     line_count: usize,
 }
@@ -221,6 +224,33 @@ impl TextLayout {
             let line = Rect::new(left, run.line_y - run.line_height * 0.28, width, thickness);
             self.lines.push((line, span.color));
         }
+    }
+
+    /// Grow the box of `span` on this line by one glyph, or start one.
+    fn add_span_box(&mut self, span: usize, x: f32, width: f32, run: &LayoutRun<'_>) {
+        let line = self.line_count;
+        if let Some((last, last_line, rect)) = self.span_boxes.last_mut()
+            && *last == span
+            && *last_line == line
+        {
+            let right = (rect.x + rect.width).max(x + width);
+            rect.x = rect.x.min(x);
+            rect.width = right - rect.x;
+            return;
+        }
+        self.span_boxes.push((
+            span,
+            line,
+            Rect::new(x, run.line_top, width, run.line_height),
+        ));
+    }
+
+    /// The boxes the glyphs of span `span` cover, one per line it spans.
+    pub fn span_boxes(&self, span: usize) -> impl Iterator<Item = Rect> + '_ {
+        self.span_boxes
+            .iter()
+            .filter(move |(index, _, _)| *index == span)
+            .map(|(_, _, rect)| *rect)
     }
 
     pub(crate) fn backgrounds(&self) -> &[(Rect, Rgba)] {
@@ -277,6 +307,31 @@ mod span_tests {
             .flat_map(|y| (0..surface.width()).map(move |x| PixelPos::new(x, y)))
             .filter(|at| surface.get(*at) == Some(wanted))
             .count()
+    }
+
+    #[test]
+    fn each_span_reports_one_box_per_line_it_covers() {
+        let spans = [
+            span("left "),
+            span("middle words that wrap"),
+            span(" right"),
+        ];
+        let layout = engine().layout_spans(&spans, &TextStyle::new(16.0), Some(120.0));
+        let first: Vec<_> = layout.span_boxes(0).collect();
+        let middle: Vec<_> = layout.span_boxes(1).collect();
+        let last: Vec<_> = layout.span_boxes(2).collect();
+        assert_eq!(first.len(), 1);
+        assert!(middle.len() > 1, "the wrapping span covers two lines");
+        assert!(
+            middle
+                .first()
+                .is_some_and(|rect| rect.x >= first[0].x + first[0].width - 1.0),
+            "the middle span starts after the first"
+        );
+        assert!(
+            last.iter().all(|rect| rect.y >= middle[0].y),
+            "the last span sits on a later line"
+        );
     }
 
     #[test]
