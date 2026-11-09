@@ -41,6 +41,8 @@ rustix = { version = "1", default-features = false, features = ["std", "termios"
 taffy = "0.15"
 thiserror = "2"
 tiny-skia = "0.12"
+unicode-segmentation = "1"
+unicode-width = { version = "0.2", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

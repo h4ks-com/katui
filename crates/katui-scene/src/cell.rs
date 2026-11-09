@@ -1,7 +1,10 @@
 //! The cell plane: a grid of styled symbols plus the diff presenters
-//! translate into terminal bytes. The plane stores one symbol per cell and
-//! diffs by value; grapheme shaping and wide-glyph layout are the text
-//! layer's concern, never the plane's.
+//! translate into terminal bytes. A cell holds one grapheme; a wide
+//! grapheme fills its cell and leaves the cells it covers empty, the way
+//! ratatui's buffer does.
+
+use unicode_segmentation::UnicodeSegmentation as _;
+use unicode_width::UnicodeWidthStr as _;
 
 use crate::CellSize;
 
@@ -133,9 +136,10 @@ impl Buffer {
         }
     }
 
-    /// Write `text` left to right from `at`, one character per cell,
-    /// clipped at the right edge. Graphemes wider than one cell land with
-    /// the text layer. Returns the number of cells written.
+    /// Write `text` left to right from `at`, one grapheme per cell, a
+    /// wide grapheme taking two cells, clipped at the right edge: a wide
+    /// grapheme that does not fit stops the write. Zero-width graphemes
+    /// are dropped. Returns the number of cells written.
     pub fn set_string(
         &mut self,
         at: Position,
@@ -144,21 +148,32 @@ impl Buffer {
         bg: Color,
         attrs: Attrs,
     ) -> usize {
-        let mut written = 0;
-        for (step, symbol) in text.chars().enumerate() {
-            let x = at.x.saturating_add(u16::try_from(step).unwrap_or(u16::MAX));
-            let cell = Cell {
-                symbol: symbol.to_string(),
-                fg,
-                bg,
-                attrs,
-            };
-            if !self.set(Position { x, y: at.y }, cell) {
+        let mut x = usize::from(at.x);
+        let end = usize::from(self.size.columns);
+        let styled = |symbol: &str| Cell {
+            symbol: symbol.to_owned(),
+            fg,
+            bg,
+            attrs,
+        };
+        for grapheme in text.graphemes(true) {
+            let width = grapheme.width();
+            if width == 0 {
+                continue;
+            }
+            if x + width > end {
                 break;
             }
-            written += 1;
+            for (offset, symbol) in std::iter::once(grapheme)
+                .chain(std::iter::repeat_n("", width - 1))
+                .enumerate()
+            {
+                let column = u16::try_from(x + offset).unwrap_or(u16::MAX);
+                self.set(Position { x: column, y: at.y }, styled(symbol));
+            }
+            x += width;
         }
-        written
+        x - usize::from(at.x)
     }
 }
 
@@ -170,13 +185,16 @@ pub fn diff<'a>(prev: &Buffer, next: &'a Buffer) -> Vec<(Position, &'a Cell)> {
         return all_cells(next);
     }
     let mut changed = Vec::new();
+    // we skip the cells a wide grapheme covers, and we redraw the cells a
+    // wide grapheme used to cover, because the terminal blanked them
+    let (mut covered, mut uncovered) = (0_usize, 0_usize);
     for (index, (old, new)) in prev.cells.iter().zip(&next.cells).enumerate() {
-        if old != new {
-            let position = position_of(next.size(), index);
-            if let Some(cell) = next.cells.get(index) {
-                changed.push((position, cell));
-            }
+        if covered == 0 && (old != new || uncovered > 0) {
+            changed.push((position_of(next.size(), index), new));
         }
+        let (new_width, old_width) = (new.symbol.width(), old.symbol.width());
+        covered = new_width.saturating_sub(1);
+        uncovered = new_width.max(old_width).max(uncovered).saturating_sub(1);
     }
     changed
 }
@@ -294,6 +312,58 @@ mod tests {
         assert_eq!(buffer.get(Position { x: 2, y: 0 }), Some(&text_cell("h")));
         assert_eq!(buffer.get(Position { x: 3, y: 0 }), Some(&text_cell("e")));
         assert_eq!(buffer.get(Position { x: 0, y: 1 }), Some(&Cell::default()));
+    }
+
+    fn written(text: &str) -> Buffer {
+        let mut buffer = Buffer::blank(size());
+        buffer.set_string(
+            Position { x: 0, y: 0 },
+            text,
+            Color::Reset,
+            Color::Reset,
+            Attrs::EMPTY,
+        );
+        buffer
+    }
+
+    #[test]
+    fn a_wide_grapheme_fills_two_cells_and_keeps_its_variation_selector() {
+        let buffer = written("界\u{2764}\u{fe0f}");
+        let symbols: Vec<&str> = (0..4)
+            .filter_map(|x| buffer.get(Position { x, y: 0 }))
+            .map(|cell| cell.symbol.as_str())
+            .collect();
+        assert_eq!(symbols, ["界", "", "\u{2764}\u{fe0f}", ""]);
+        assert_eq!(
+            written("a界界").get(Position { x: 3, y: 0 }),
+            Some(&text_cell(" ")),
+            "a wide grapheme past the edge stops the write"
+        );
+        assert_eq!(
+            written("e\u{301}x").get(Position { x: 0, y: 0 }),
+            Some(&text_cell("e\u{301}")),
+            "combining marks stay in their cell"
+        );
+    }
+
+    #[test]
+    fn the_diff_skips_covered_cells_and_redraws_uncovered_ones() {
+        let blank = Buffer::blank(size());
+        let wide = written("界a");
+        let positions = |changes: Vec<(Position, &Cell)>| -> Vec<u16> {
+            changes.iter().map(|(at, _)| at.x).collect()
+        };
+        assert_eq!(
+            positions(diff(&blank, &wide)),
+            [0, 2],
+            "the covered cell stays out"
+        );
+        let narrow = written("xya");
+        assert_eq!(
+            positions(diff(&wide, &narrow)),
+            [0, 1],
+            "the uncovered cell comes back"
+        );
     }
 
     #[test]

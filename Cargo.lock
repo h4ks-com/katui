@@ -473,6 +473,10 @@ dependencies = [
 [[package]]
 name = "katui-scene"
 version = "0.1.0"
+dependencies = [
+ "unicode-segmentation",
+ "unicode-width",
+]
 
 [[package]]
 name = "katui-ui"
