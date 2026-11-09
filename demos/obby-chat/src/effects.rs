@@ -1,52 +1,49 @@
-//! Small animations that play on one message: a flame front that runs
-//! along it when it lands, sparks when someone reacts. Each runs in its
-//! own low-resolution image with transparency around it.
+//! Small animations that play on one message: it pops into existence when
+//! it lands, and throws sparks when someone reacts. Each runs in its own
+//! low-resolution image with transparency around it.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
 use katui_scene::placement::{CellRect, ImageId, Placement, PlacementId};
+use katui_scene::surface::{PixelPos, Surface};
+use katui_ui::CellPixels;
 
 use crate::theme::{Tint, hue_tint};
 
-const FIRE_SECONDS: f32 = 1.5;
+const POP_SECONDS: f32 = 0.55;
 const SPARK_SECONDS: f32 = 0.85;
 const SPARK_COUNT: usize = 70;
 const MAX_COLUMNS: u16 = 120;
-const FIRE_PIXELS_PER_COLUMN: u32 = 3;
-const FIRE_PIXELS_PER_ROW: u32 = 6;
 const SPARK_PIXELS_PER_COLUMN: u32 = 3;
 const SPARK_PIXELS_PER_ROW: u32 = 6;
-const FLAME_ROWS_ABOVE: u16 = 2;
+const SPARK_GRAVITY: f32 = 95.0;
+const SPARK_ROWS_ABOVE: u16 = 2;
 const FIRST_IMAGE: u32 = 3_000_000;
 const EFFECT_Z: i32 = 30_000;
-/// The part of a fire's life its front spends crossing the message.
-const FUSE_SHARE: f32 = 0.55;
-/// Where the flames sit behind the front and how wide they spread, in
-/// fractions of the run.
-const FLAME_LAG: f32 = 0.1;
-const FLAME_SPREAD: f32 = 0.17;
-const SPARK_GRAVITY: f32 = 95.0;
+/// We render pop frames at this fraction of a cell's pixels because the
+/// motion hides the lower resolution.
+const POP_RESOLUTION_DIVISOR: u32 = 2;
+const POP_MARGIN_COLUMNS: u16 = 5;
+const POP_MARGIN_ROWS: u16 = 1;
+/// Where the message scales from, in cells: about its avatar.
+const POP_PIVOT_COLUMN: f32 = 5.0;
+/// The share of the pop spent materializing from speckles.
+const MATERIALIZE_SHARE: f32 = 0.55;
+/// How much of the noise range glows at the materializing edge.
+const EDGE_BAND: f32 = 0.16;
 
-/// Which animation to play.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    Fire,
+    Pop,
     Sparks,
 }
 
 impl Kind {
     fn seconds(self) -> f32 {
         match self {
-            Self::Fire => FIRE_SECONDS,
+            Self::Pop => POP_SECONDS,
             Self::Sparks => SPARK_SECONDS,
-        }
-    }
-
-    fn pixels_per_cell(self) -> (u32, u32) {
-        match self {
-            Self::Fire => (FIRE_PIXELS_PER_COLUMN, FIRE_PIXELS_PER_ROW),
-            Self::Sparks => (SPARK_PIXELS_PER_COLUMN, SPARK_PIXELS_PER_ROW),
         }
     }
 }
@@ -70,6 +67,7 @@ struct Effect {
     height: u32,
     sparks: Vec<Spark>,
     random: u32,
+    source: Option<Surface>,
 }
 
 /// One finished animation frame, ready to place.
@@ -78,6 +76,8 @@ pub struct Drawn {
     pub pixels: Vec<u8>,
     pub width: u32,
     pub height: u32,
+    /// The cells of the message this frame stands in for while it plays.
+    pub hides: Option<CellRect>,
 }
 
 /// The animations currently playing.
@@ -97,7 +97,7 @@ impl Effects {
         self.active.push(Effect {
             key,
             kind,
-            tint: hue_tint(hue, 0.95, 0.6),
+            tint: hue_tint(hue, 0.95, 0.65),
             columns,
             born: now,
             last_step: now,
@@ -105,6 +105,7 @@ impl Effects {
             height: 0,
             sparks: Vec::new(),
             random: (key as u32).wrapping_mul(0x9e37_79b9) | 1,
+            source: None,
         });
     }
 
@@ -112,9 +113,20 @@ impl Effects {
         !self.active.is_empty()
     }
 
+    pub fn clear(&mut self) {
+        self.active.clear();
+    }
+
     /// Advance everything to `now` and draw each effect whose message is
-    /// on screen. `areas` says where each layer sits.
-    pub fn frames(&mut self, areas: &HashMap<u64, CellRect>, now: Instant) -> Vec<Drawn> {
+    /// on screen. `areas` says where each layer sits and `layer` returns
+    /// its pixels.
+    pub fn frames(
+        &mut self,
+        areas: &HashMap<u64, CellRect>,
+        layer: impl Fn(u64) -> Option<Surface>,
+        cell: CellPixels,
+        now: Instant,
+    ) -> Vec<Drawn> {
         self.active
             .retain(|effect| now.duration_since(effect.born).as_secs_f32() < effect.kind.seconds());
         let mut drawn = Vec::with_capacity(self.active.len());
@@ -122,9 +134,12 @@ impl Effects {
             let Some(area) = areas.get(&effect.key).copied() else {
                 continue;
             };
-            let region = effect_region(area, effect.columns);
-            effect.fit(region);
-            let pixels = effect.step(now);
+            if effect.kind == Kind::Pop && effect.source.is_none() {
+                effect.source = layer(effect.key);
+            }
+            let region = effect.region(area);
+            effect.fit(region, cell);
+            let pixels = effect.step(now, area, region, cell);
             self.frames_drawn = self.frames_drawn.wrapping_add(1);
             drawn.push(Drawn {
                 placement: Placement {
@@ -137,26 +152,46 @@ impl Effects {
                 pixels,
                 width: effect.width,
                 height: effect.height,
+                hides: (effect.kind == Kind::Pop).then_some(area),
             });
         }
         drawn
     }
 }
 
-/// The cells an effect covers: the message's text and headroom for flames.
-fn effect_region(area: CellRect, columns: u16) -> CellRect {
-    let above = FLAME_ROWS_ABOVE.min(area.y);
-    CellRect {
-        x: area.x,
-        y: area.y - above,
-        columns: area.columns.min(columns).clamp(1, MAX_COLUMNS),
-        rows: (area.rows + above).max(1),
-    }
-}
-
 impl Effect {
-    fn fit(&mut self, region: CellRect) {
-        let (per_column, per_row) = self.kind.pixels_per_cell();
+    fn region(&self, area: CellRect) -> CellRect {
+        let columns = area.columns.min(self.columns).clamp(1, MAX_COLUMNS);
+        match self.kind {
+            Kind::Pop => {
+                let above = POP_MARGIN_ROWS.min(area.y);
+                CellRect {
+                    x: area.x,
+                    y: area.y - above,
+                    columns: columns.saturating_add(POP_MARGIN_COLUMNS),
+                    rows: area.rows + above + POP_MARGIN_ROWS,
+                }
+            }
+            Kind::Sparks => {
+                let above = SPARK_ROWS_ABOVE.min(area.y);
+                CellRect {
+                    x: area.x,
+                    y: area.y - above,
+                    columns,
+                    rows: (area.rows + above).max(1),
+                }
+            }
+        }
+    }
+
+    fn fit(&mut self, region: CellRect, cell: CellPixels) {
+        let (per_column, per_row) = match self.kind {
+            Kind::Pop => (
+                (u32::from(cell.width) / POP_RESOLUTION_DIVISOR).max(1),
+                (u32::from(cell.height) / POP_RESOLUTION_DIVISOR).max(1),
+            ),
+            Kind::Sparks => (SPARK_PIXELS_PER_COLUMN, SPARK_PIXELS_PER_ROW),
+        };
         let width = u32::from(region.columns) * per_column;
         let height = u32::from(region.rows) * per_row;
         if (width, height) == (self.width, self.height) {
@@ -194,12 +229,18 @@ impl Effect {
         }
     }
 
-    fn step(&mut self, now: Instant) -> Vec<u8> {
+    fn step(
+        &mut self,
+        now: Instant,
+        area: CellRect,
+        region: CellRect,
+        cell: CellPixels,
+    ) -> Vec<u8> {
         let age = now.duration_since(self.born).as_secs_f32();
         let delta = now.duration_since(self.last_step).as_secs_f32();
         self.last_step = now;
         match self.kind {
-            Kind::Fire => self.fire_pixels(age),
+            Kind::Pop => self.pop_pixels(age / POP_SECONDS, area, region, cell),
             Kind::Sparks => {
                 self.move_sparks(delta);
                 self.spark_pixels(age / SPARK_SECONDS)
@@ -207,18 +248,39 @@ impl Effect {
         }
     }
 
-    fn fire_pixels(&self, age: f32) -> Vec<u8> {
-        let life = age / FIRE_SECONDS;
-        let front = (life / FUSE_SHARE).min(1.3);
-        let fade = ((1.0 - life) * 3.0).min(1.0);
-        let mut pixels = Vec::with_capacity((self.width * self.height * 4) as usize);
-        for row in 0..self.height {
-            let rise = 1.0 - row as f32 / self.height as f32;
-            for column in 0..self.width {
-                let along = column as f32 / self.width as f32;
-                let heat = flame_heat(along, rise, front, age, self.width as f32);
-                pixels.extend_from_slice(&flame_color(heat, self.tint, fade));
-            }
+    fn pop_pixels(&self, life: f32, area: CellRect, region: CellRect, cell: CellPixels) -> Vec<u8> {
+        let mut pixels = vec![0; (self.width * self.height * 4) as usize];
+        let Some(source) = &self.source else {
+            return pixels;
+        };
+        let (cell_width, cell_height) = (f32::from(cell.width), f32::from(cell.height));
+        let to_screen = (
+            f32::from(region.columns) * cell_width / self.width as f32,
+            f32::from(region.rows) * cell_height / self.height as f32,
+        );
+        let top_offset = f32::from(area.y - region.y) * cell_height;
+        let pivot = (
+            POP_PIVOT_COLUMN * cell_width,
+            f32::from(area.rows) * cell_height * 0.5,
+        );
+        let scale = spring(life);
+        let progress = (life / MATERIALIZE_SHARE).min(1.0);
+        let flash = (-life * 5.5).exp();
+        for (index, pixel) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let column = index as u32 % self.width;
+            let row = index as u32 / self.width;
+            let screen_x = column as f32 * to_screen.0;
+            let screen_y = row as f32 * to_screen.1 - top_offset;
+            let layer_x = (screen_x - pivot.0) / scale + pivot.0;
+            let layer_y = (screen_y - pivot.1) / scale + pivot.1;
+            let speckle = lattice((column / 2) as f32, (row / 2) as f32);
+            *pixel = pop_color(
+                sample(source, layer_x, layer_y),
+                speckle,
+                progress,
+                flash,
+                self.tint,
+            );
         }
         pixels
     }
@@ -269,45 +331,49 @@ impl Effect {
             return;
         }
         let at = (y as usize * self.width as usize + x as usize) * 4;
-        let color = flame_color(glow, self.tint, 1.0);
+        let color = spark_color(glow, self.tint);
         if color[3] >= pixels[at + 3] {
             pixels[at..at + 4].copy_from_slice(&color);
         }
     }
 }
 
-/// The flame's intensity at a point: `along` runs across the message and
-/// `rise` up from its base, both from 0 to 1. Burning sits just behind the
-/// `front`, shaped by noise that scrolls upward.
-fn flame_heat(along: f32, rise: f32, front: f32, age: f32, width: f32) -> f32 {
-    let distance = (along - (front - FLAME_LAG)) / FLAME_SPREAD;
-    let burning = (-distance * distance).exp();
-    if burning < 0.03 {
-        return 0.0;
-    }
-    let scale = width / 14.0;
-    let tongue = noise(along * scale, age * 3.2);
-    let height = burning * (0.22 + tongue * tongue * 1.5);
-    let body = 1.0 - rise / height.max(0.001);
-    if body <= 0.0 {
-        return 0.0;
-    }
-    let grain = noise(along * scale * 2.5, rise * 8.0 - age * 11.0);
-    (body * (0.55 + grain * 0.75)).min(1.0)
+/// The message's size through its life: it starts small, overshoots past
+/// full size and settles.
+fn spring(life: f32) -> f32 {
+    1.0 - 0.34 * (-life * 6.5).exp() * (life * 13.0).cos()
 }
 
-/// Smooth value noise in about 0 to 1.
-fn noise(x: f32, y: f32) -> f32 {
-    let (cell_x, cell_y) = (x.floor(), y.floor());
-    let (fraction_x, fraction_y) = (smooth(x - cell_x), smooth(y - cell_y));
-    let corner = |offset_x: f32, offset_y: f32| lattice(cell_x + offset_x, cell_y + offset_y);
-    let top = mix(corner(0.0, 0.0), corner(1.0, 0.0), fraction_x);
-    let bottom = mix(corner(0.0, 1.0), corner(1.0, 1.0), fraction_x);
-    mix(top, bottom, fraction_y)
+/// The layer's color at (`x`, `y`), transparent outside it.
+fn sample(source: &Surface, x: f32, y: f32) -> [f32; 4] {
+    if x < 0.0 || y < 0.0 {
+        return [0.0; 4];
+    }
+    source
+        .get(PixelPos::new(x as u32, y as u32))
+        .map_or([0.0; 4], |color| {
+            [
+                f32::from(color.r),
+                f32::from(color.g),
+                f32::from(color.b),
+                f32::from(color.a),
+            ]
+        })
 }
 
-fn smooth(value: f32) -> f32 {
-    value * value * (3.0 - 2.0 * value)
+fn pop_color(sampled: [f32; 4], speckle: f32, progress: f32, flash: f32, tint: Tint) -> [u8; 4] {
+    let [red, green, blue, alpha] = sampled;
+    if alpha <= 0.0 || speckle > progress {
+        return [0, 0, 0, 0];
+    }
+    let edge = (1.0 - (progress - speckle) / EDGE_BAND).max(0.0);
+    let glow = (edge + flash * 0.65).min(1.0);
+    [
+        mix(red, tint.red.max(220.0), glow) as u8,
+        mix(green, tint.green.max(190.0), glow) as u8,
+        mix(blue, tint.blue.max(170.0), glow) as u8,
+        alpha as u8,
+    ]
 }
 
 fn mix(from: f32, to: f32, amount: f32) -> f32 {
@@ -322,26 +388,24 @@ fn lattice(x: f32, y: f32) -> f32 {
     ((scrambled ^ (scrambled >> 13)) % 1000) as f32 / 1000.0
 }
 
-/// Transparent where cool, then the sender's color at the tips, then fire,
-/// then white at the hottest.
-fn flame_color(heat: f32, tint: Tint, fade: f32) -> [u8; 4] {
-    if heat < 0.05 {
+fn spark_color(glow: f32, tint: Tint) -> [u8; 4] {
+    if glow < 0.05 {
         return [0, 0, 0, 0];
     }
-    let (red, green, blue) = if heat < 0.4 {
+    let (red, green, blue) = if glow < 0.4 {
         (tint.red, tint.green, tint.blue)
-    } else if heat < 0.72 {
-        let amount = (heat - 0.4) / 0.32;
+    } else if glow < 0.72 {
+        let amount = (glow - 0.4) / 0.32;
         (
             mix(tint.red, 255.0, amount),
             mix(tint.green, 140.0, amount),
             mix(tint.blue, 35.0, amount),
         )
     } else {
-        let amount = (heat - 0.72) / 0.28;
+        let amount = (glow - 0.72) / 0.28;
         (255.0, mix(140.0, 245.0, amount), mix(35.0, 215.0, amount))
     };
-    let alpha = (heat / 0.5).min(1.0).powf(1.3) * 245.0 * fade;
+    let alpha = (glow / 0.5).min(1.0).powf(1.3) * 245.0;
     [red as u8, green as u8, blue as u8, alpha as u8]
 }
 
@@ -351,10 +415,16 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use katui_scene::placement::CellRect;
+    use katui_scene::surface::Surface;
+    use katui_ui::CellPixels;
 
-    use super::{Effects, Kind, flame_heat};
+    use super::{Effects, Kind, spring};
 
     const MESSAGE: u64 = 42;
+    const CELL: CellPixels = CellPixels {
+        width: 10,
+        height: 20,
+    };
 
     fn areas() -> HashMap<u64, CellRect> {
         let mut map = HashMap::new();
@@ -370,6 +440,10 @@ mod tests {
         map
     }
 
+    fn layer(_: u64) -> Option<Surface> {
+        Surface::from_rgba(1000, 80, [200, 200, 200, 255].repeat(80_000))
+    }
+
     fn lit_pixels(pixels: &[u8]) -> usize {
         pixels
             .as_chunks::<4>()
@@ -380,47 +454,52 @@ mod tests {
     }
 
     #[test]
-    fn an_effect_covers_only_the_text_and_a_little_headroom() {
+    fn the_spring_starts_small_overshoots_and_settles() {
+        assert!(spring(0.0) < 0.7);
+        assert!(
+            (0..100).any(|step| spring(step as f32 / 100.0) > 1.02),
+            "it overshoots"
+        );
+        assert!((spring(1.0) - 1.0).abs() < 0.01, "it settles");
+    }
+
+    #[test]
+    fn a_pop_covers_only_its_message_and_stands_in_for_it() {
         let mut effects = Effects::default();
-        effects.spawn(MESSAGE, Kind::Fire, 0.3, 40);
-        let drawn = effects.frames(&areas(), Instant::now());
+        effects.spawn(MESSAGE, Kind::Pop, 0.3, 40);
+        let drawn = effects.frames(&areas(), layer, CELL, Instant::now());
         assert_eq!(
             drawn[0].placement.area,
             CellRect {
                 x: 10,
-                y: 18,
-                columns: 40,
+                y: 19,
+                columns: 45,
                 rows: 6
             }
         );
+        assert_eq!(drawn[0].hides, areas().get(&MESSAGE).copied());
     }
 
     #[test]
-    fn nothing_burns_ahead_of_the_front() {
-        assert_eq!(flame_heat(0.9, 0.05, 0.3, 0.5, 200.0), 0.0);
-    }
-
-    #[test]
-    fn flames_thin_out_toward_the_top() {
-        let low: f32 = (0..40)
-            .map(|x| flame_heat(x as f32 / 100.0, 0.05, 0.45, 0.5, 200.0))
-            .sum();
-        let high: f32 = (0..40)
-            .map(|x| flame_heat(x as f32 / 100.0, 0.8, 0.45, 0.5, 200.0))
-            .sum();
-        assert!(low > high * 2.0, "{low} near the base, {high} at the top");
-    }
-
-    #[test]
-    fn the_fire_spreads_as_the_front_advances() {
+    fn a_pop_materializes_over_time() {
         let mut effects = Effects::default();
-        effects.spawn(MESSAGE, Kind::Fire, 0.3, 80);
-        let start = Instant::now() + Duration::from_millis(40);
-        let early = effects.frames(&areas(), start).remove(0);
-        let later = effects
-            .frames(&areas(), start + Duration::from_millis(350))
+        effects.spawn(MESSAGE, Kind::Pop, 0.3, 40);
+        let start = Instant::now();
+        let early = effects
+            .frames(&areas(), layer, CELL, start + Duration::from_millis(30))
             .remove(0);
-        assert!(lit_pixels(&later.pixels) > lit_pixels(&early.pixels));
+        let later = effects
+            .frames(&areas(), layer, CELL, start + Duration::from_millis(300))
+            .remove(0);
+        assert!(lit_pixels(&later.pixels) > lit_pixels(&early.pixels) * 2);
+    }
+
+    #[test]
+    fn sparks_never_hide_the_message() {
+        let mut effects = Effects::default();
+        effects.spawn(MESSAGE, Kind::Sparks, 0.1, 40);
+        let drawn = effects.frames(&areas(), layer, CELL, Instant::now());
+        assert_eq!(drawn[0].hides, None);
     }
 
     #[test]
@@ -428,9 +507,9 @@ mod tests {
         let mut effects = Effects::default();
         effects.spawn(MESSAGE, Kind::Sparks, 0.1, 40);
         let now = Instant::now();
-        assert!(effects.frames(&HashMap::new(), now).is_empty());
+        assert!(effects.frames(&HashMap::new(), layer, CELL, now).is_empty());
         assert!(effects.is_animating(), "it keeps its clock while hidden");
-        let _ = effects.frames(&areas(), now + Duration::from_secs(5));
+        let _ = effects.frames(&areas(), layer, CELL, now + Duration::from_secs(5));
         assert!(!effects.is_animating());
     }
 }

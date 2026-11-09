@@ -3,6 +3,7 @@
 mod backdrop;
 mod chat;
 mod effects;
+mod irc_text;
 mod net;
 mod previews;
 mod theme;
@@ -17,6 +18,7 @@ use katui_proto::input::InputEvent;
 use katui_proto::probe::Capabilities;
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
+use katui_rt::pane::PaneView;
 use katui_scene::CellSize;
 use katui_scene::placement::{self, CellRect, ImageId, Placement, PlacementId};
 use katui_ui::{CellPixels, Ui, UiOptions};
@@ -29,6 +31,7 @@ const TEXT_FONT: &[u8] =
     include_bytes!("../../../crates/katui-draw/assets/AtkinsonHyperlegibleNext[wght].ttf");
 const SMALL_EMOJI_FONT: &[u8] =
     include_bytes!("../../../crates/katui-draw/assets/NotoColorEmoji-subset.ttf");
+const SYSTEM_FALLBACK_FONT: &str = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf";
 const SYSTEM_EMOJI_FONTS: [&str; 2] = [
     "/System/Library/Fonts/Apple Color Emoji.ttc",
     "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
@@ -45,7 +48,9 @@ fn fonts() -> Vec<Vec<u8>> {
         .iter()
         .find_map(|path| std::fs::read(path).ok())
         .unwrap_or_else(|| SMALL_EMOJI_FONT.to_vec());
-    vec![TEXT_FONT.to_vec(), emoji]
+    let mut fonts = vec![TEXT_FONT.to_vec(), emoji];
+    fonts.extend(std::fs::read(SYSTEM_FALLBACK_FONT));
+    fonts
 }
 
 struct ChatApp {
@@ -54,6 +59,8 @@ struct ChatApp {
     ui: Ui<Action>,
     kitty: Kitty,
     multiplexed: bool,
+    start_fresh: bool,
+    paused: bool,
     cell: CellPixels,
     placements: Vec<Placement>,
     backdrop_image: u32,
@@ -109,6 +116,21 @@ impl App for ChatApp {
             AppEvent::Message(message) => self.chat.receive(message),
             AppEvent::Resized(_) => {
                 self.cell = cell_pixels(&self.caps);
+                self.start_fresh = true;
+                self.chat.hovered = None;
+                self.chat.effects.clear();
+                Control::Redraw
+            }
+            AppEvent::Pane(change) => {
+                self.paused = change.view != PaneView::Active;
+                self.start_fresh |= change.view == PaneView::Active;
+                if change.view == PaneView::Hidden
+                    && let Some(mut client) = change.open_client()
+                {
+                    let _ = self.kitty.reset(&mut client);
+                    self.placements.clear();
+                }
+                self.chat.effects.clear();
                 Control::Redraw
             }
             AppEvent::Settled => {
@@ -119,6 +141,14 @@ impl App for ChatApp {
     }
 
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control> {
+        if self.paused {
+            return Ok(Control::Wait);
+        }
+        if std::mem::take(&mut self.start_fresh) {
+            self.kitty.reset(out)?;
+            self.placements.clear();
+            self.chat.backdrop.mark_unsent();
+        }
         let (cell_width, cell_height) = (u32::from(self.cell.width), u32::from(self.cell.height));
         let metrics = Metrics {
             cell_width: f32::from(self.cell.width),
@@ -143,11 +173,21 @@ impl App for ChatApp {
             self.backdrop_image = (self.backdrop_image + 1) % BACKDROP_IMAGE_COUNT;
         }
         let mut next = vec![self.backdrop_placement(size)];
-        next.extend(output.placements.iter().copied());
-        let effects = self
-            .chat
-            .effects
-            .frames(&output.layer_areas, Instant::now());
+        let ui = &self.ui;
+        let effects = self.chat.effects.frames(
+            &output.layer_areas,
+            |key| ui.layer_surface(key),
+            self.cell,
+            Instant::now(),
+        );
+        let hidden: Vec<CellRect> = effects.iter().filter_map(|effect| effect.hides).collect();
+        next.extend(
+            output
+                .placements
+                .iter()
+                .filter(|placed| !hidden.iter().any(|area| contains(*area, placed.area)))
+                .copied(),
+        );
         next.extend(effects.iter().map(|effect| effect.placement));
 
         let mut images = Images::default();
@@ -177,6 +217,13 @@ impl App for ChatApp {
     }
 }
 
+fn contains(outer: CellRect, inner: CellRect) -> bool {
+    inner.x >= outer.x
+        && inner.y >= outer.y
+        && inner.x + inner.columns <= outer.x + outer.columns
+        && inner.y + inner.rows <= outer.y + outer.rows
+}
+
 fn cell_pixels(caps: &Capabilities) -> CellPixels {
     caps.cell
         .or_else(katui_rt::tty::measured_cell)
@@ -193,7 +240,8 @@ fn default_nick() -> String {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let caps = katui_rt::tty::probe_default();
     if !caps.kitty {
-        return Err("this demo needs a terminal with the kitty graphics protocol".into());
+        eprintln!("{}", katui_rt::info::no_graphics_advice(&caps));
+        std::process::exit(1);
     }
     let multiplexed = caps.multiplexed();
     let options = UiOptions {
@@ -206,6 +254,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui: Ui::new(TextEngine::new(fonts())?, options),
         kitty: Kitty::new().for_multiplexer(multiplexed),
         multiplexed,
+        start_fresh: false,
+        paused: false,
         cell: cell_pixels(&caps),
         placements: Vec::new(),
         backdrop_image: 0,
@@ -249,16 +299,17 @@ mod tests {
         "@msgid=m2;time=2026-11-08T20:01:00.000Z :operator!u@h PRIVMSG #bots :text this sharp in a terminal still feels illegal, and it keeps wrapping properly once a line gets long enough to reach the far edge of the pane",
         "@msgid=m3;time=2026-11-08T20:02:00.000Z :guest!u@h PRIVMSG #bots :can it scroll",
         "@+draft/react=\u{1F525};+draft/reply=m2 :reviewer!u@h TAGMSG #bots",
+        "@msgid=m5;time=2026-11-08T20:03:30.000Z :operator!u@h PRIVMSG #bots :\u{3}4red \u{3}8,1yellow on black\u{f} \u{2}bold\u{2} \u{1d}italic\u{1d} \u{1f}underlined\u{1f} \u{1e}struck\u{1e} plain",
         "@msgid=m4;+draft/reply=m3;time=2026-11-08T20:03:00.000Z :acme!u@h PRIVMSG #bots :it moves placements, no pixels",
     ];
 
     fn composed(chat: &Chat) -> Surface {
-        composed_with(chat, None)
+        composed_with(chat, None, 0)
     }
 
     /// Compose the screen, playing `effect` on the newest message for a
     /// moment first.
-    fn composed_with(chat: &Chat, effect: Option<Kind>) -> Surface {
+    fn composed_with(chat: &Chat, effect: Option<Kind>, steps: u64) -> Surface {
         let metrics = Metrics {
             cell_width: 9.0,
             cell_height: 19.0,
@@ -280,7 +331,34 @@ mod tests {
                 0.0,
             );
         }
+        let frames = effect.map_or_else(Vec::new, |kind| {
+            let (_, channel) = chat.active().expect("a conversation is open");
+            let newest = channel.log.last().expect("the script sent messages");
+            let key = crate::view::message_key(newest);
+            let mut effects = Effects::default();
+            effects.spawn(key, kind, 0.42, 42);
+            let source = ui.layer_surface(key);
+            let start = Instant::now();
+            (0..steps)
+                .map(|step| {
+                    effects.frames(
+                        &output.layer_areas,
+                        |_| source.clone(),
+                        CELL,
+                        start + Duration::from_millis(step * 16),
+                    )
+                })
+                .last()
+                .expect("the range is not empty")
+        });
+        let hidden: Vec<_> = frames.iter().filter_map(|frame| frame.hides).collect();
         for placed in &output.placements {
+            if hidden
+                .iter()
+                .any(|area| super::contains(*area, placed.area))
+            {
+                continue;
+            }
             let layer = output
                 .images
                 .iter()
@@ -296,33 +374,17 @@ mod tests {
             );
             canvas.draw_surface(&surface, rect, 0.0);
         }
-        if let Some(kind) = effect {
-            let (_, channel) = chat.active().expect("a conversation is open");
-            let newest = channel.log.last().expect("the script sent messages");
-            let mut effects = Effects::default();
-            effects.spawn(crate::view::message_key(newest), kind, 0.42, 42);
-            let start = Instant::now();
-            let frames = (0..12)
-                .map(|step| {
-                    effects.frames(
-                        &output.layer_areas,
-                        start + Duration::from_millis(step * 45),
-                    )
-                })
-                .last()
-                .expect("the range is not empty");
-            for frame in frames {
-                let surface =
-                    Surface::from_rgba(frame.width, frame.height, frame.pixels).expect("exact");
-                let area = frame.placement.area;
-                let rect = Rect::new(
-                    f32::from(area.x) * 9.0,
-                    f32::from(area.y) * 19.0,
-                    f32::from(area.columns) * 9.0,
-                    f32::from(area.rows) * 19.0,
-                );
-                canvas.draw_surface(&surface, rect, 0.0);
-            }
+        for frame in frames {
+            let surface =
+                Surface::from_rgba(frame.width, frame.height, frame.pixels).expect("exact");
+            let area = frame.placement.area;
+            let rect = Rect::new(
+                f32::from(area.x) * 9.0,
+                f32::from(area.y) * 19.0,
+                f32::from(area.columns) * 9.0,
+                f32::from(area.rows) * 19.0,
+            );
+            canvas.draw_surface(&surface, rect, 0.0);
         }
         canvas.to_surface().expect("surface")
     }
@@ -353,8 +415,101 @@ mod tests {
             "the op ranks first"
         );
         save("conversation.png", &composed(&chat));
-        save("fire.png", &composed_with(&chat, Some(Kind::Fire)));
-        save("sparks.png", &composed_with(&chat, Some(Kind::Sparks)));
+        chat.draft = "/".to_owned();
+        save("menu.png", &composed(&chat));
+        chat.draft.clear();
+        chat.form.visible = true;
+        save("overlay.png", &composed(&chat));
+        chat.form.visible = false;
+        save("pop_early.png", &composed_with(&chat, Some(Kind::Pop), 5));
+        save("pop_peak.png", &composed_with(&chat, Some(Kind::Pop), 12));
+        save("sparks.png", &composed_with(&chat, Some(Kind::Sparks), 34));
+    }
+
+    #[test]
+    fn joining_a_channel_asks_for_its_recent_history() {
+        let script = [
+            ":irc CAP * LS :draft/chathistory batch",
+            ":irc CAP * ACK :draft/chathistory batch",
+            ":irc 001 acme :Welcome",
+            ":acme!u@h JOIN #bots",
+        ];
+        let mut chat = Chat::new("acme".to_owned());
+        let sent = chat.add_scripted_server("acme", &script, "#bots");
+        let wire: Vec<u8> = sent.try_iter().flatten().collect();
+        let text = String::from_utf8_lossy(&wire);
+        assert!(text.contains("CHATHISTORY LATEST #bots * 100"), "{text}");
+        assert!(
+            !chat.typing_is_live("#bots"),
+            "typing replayed by history stays hidden right after a join"
+        );
+    }
+
+    #[test]
+    fn a_long_history_never_pushes_the_composer_off_screen() {
+        let mut script: Vec<String> = [":irc 001 acme :Welcome", ":acme!u@h JOIN #bots"]
+            .map(str::to_owned)
+            .to_vec();
+        script.extend((0..90).map(|n| format!(":guest!u@h PRIVMSG #bots :line {n}")));
+        let lines: Vec<&str> = script.iter().map(String::as_str).collect();
+        let mut chat = Chat::new("acme".to_owned());
+        chat.add_scripted_server("acme", &lines, "#bots");
+        let metrics = Metrics {
+            cell_width: 9.0,
+            cell_height: 19.0,
+        };
+        let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), SMALL_EMOJI_FONT.to_vec()])
+            .expect("the bundled fonts parse");
+        let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
+        let rows = 46;
+        let output = ui.render(&view(&chat, metrics), (9 * 170, 19 * rows), CELL);
+        let composer = output.layer_areas[&crate::view::COMPOSER_KEY];
+        assert!(
+            u32::from(composer.y + composer.rows) <= rows,
+            "the composer ends at row {} of {rows}",
+            composer.y + composer.rows
+        );
+    }
+
+    #[test]
+    fn hovering_a_message_redraws_only_that_message() {
+        let mut chat = Chat::new("acme".to_owned());
+        chat.add_scripted_server("acme", SCRIPT, "#bots");
+        let metrics = Metrics {
+            cell_width: 9.0,
+            cell_height: 19.0,
+        };
+        let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), SMALL_EMOJI_FONT.to_vec()])
+            .expect("the bundled fonts parse");
+        let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
+        let screen = (9 * 170, 19 * 46);
+        let before = ui.render(&view(&chat, metrics), screen, CELL);
+        let (_, channel) = chat.active().expect("the script joins #bots");
+        let key = crate::view::message_key(channel.log.first().expect("the script sent messages"));
+        chat.hovered = Some(key);
+        let after = ui.render(&view(&chat, metrics), screen, CELL);
+        assert_eq!(after.new_images.len(), 1, "one message changed");
+        assert_eq!(before.layer_areas, after.layer_areas, "nothing moved");
+    }
+
+    #[test]
+    fn version_queries_get_a_notice_and_actions_show_in_the_log() {
+        let script = [
+            ":irc 001 acme :Welcome",
+            ":acme!u@h JOIN #bots",
+            ":guest!u@h PRIVMSG #bots :\u{1}VERSION\u{1}",
+            ":guest!u@h PRIVMSG #bots :\u{1}ACTION waves\u{1}",
+        ];
+        let mut chat = Chat::new("acme".to_owned());
+        let sent = chat.add_scripted_server("acme", &script, "#bots");
+        let wire: Vec<u8> = sent.try_iter().flatten().collect();
+        let text = String::from_utf8_lossy(&wire);
+        assert!(
+            text.contains("NOTICE guest :\u{1}VERSION katui"),
+            "the query is answered: {text}"
+        );
+        let (_, channel) = chat.active().expect("the script joins #bots");
+        assert!(channel.log.iter().any(|message| message.text == "waves"));
     }
 
     #[test]

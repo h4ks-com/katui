@@ -8,7 +8,9 @@ use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent}
 use katui_rt::app::Control;
 use katui_rt::events::Waker;
 use katui_scene::surface::Surface;
-use obby_client::{Change, Channel, Client, Config, Event, Now, Phase, Typing};
+use obby_client::{
+    Change, Channel, Client, Config, Event, MessageKey, MessageKind, Now, Phase, Typing,
+};
 
 use crate::backdrop::Backdrop;
 use crate::effects::{Effects, Kind};
@@ -22,6 +24,15 @@ const AVATAR_COLUMNS: u16 = 10;
 const SPARK_COLUMNS: u16 = 60;
 const MAX_FETCHES: usize = 3;
 const MAX_PREVIEWS: usize = 200;
+/// How long after a join we hide typing: chat history replays old typing
+/// notices as if they were live, and they take this long to expire.
+const HISTORY_TYPING_QUIET: std::time::Duration = std::time::Duration::from_secs(8);
+const DRIFT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(83);
+const CTCP_REPLY_INTERVAL_MS: u64 = 1_000;
+/// The numerics a server answers a failed `JOIN` with.
+const JOIN_FAILURES: [&str; 8] = ["403", "405", "471", "473", "474", "475", "477", "489"];
+const HISTORY_CAPABILITY: &str = "draft/chathistory";
+const HISTORY_ON_JOIN: u16 = 100;
 const WHEEL_MESSAGES: usize = 3;
 const PAGE_MESSAGES: usize = 12;
 
@@ -29,6 +40,7 @@ const PAGE_MESSAGES: usize = 12;
 pub enum Message {
     Net(usize, NetEvent),
     Tick,
+    Drift,
     Preview(String, Option<Arc<Surface>>),
 }
 
@@ -43,6 +55,7 @@ pub enum Action {
     React(String, String, String),
     Reply(String, String),
     CancelReply,
+    Complete(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +85,9 @@ pub struct Server {
     pub client: Client,
     connection: Connection,
     join_after_register: Option<String>,
+    joining: bool,
+    pending_join: Option<String>,
+    join_error: Option<String>,
     closed: Option<String>,
 }
 
@@ -81,8 +97,12 @@ impl Server {
         if let Some(reason) = &self.closed {
             return format!("Disconnected: {reason}");
         }
+        if let Some(problem) = &self.join_error {
+            return format!("Could not join: {problem}");
+        }
         match self.client.phase() {
-            Phase::Registered => format!("Joining as {}", self.client.nick()),
+            Phase::Registered if self.joining => format!("Joining as {}", self.client.nick()),
+            Phase::Registered => format!("Connected as {}", self.client.nick()),
             Phase::Disconnected => format!("Connecting to {}", self.endpoint.host),
             _ => format!("Signing in to {}", self.endpoint.host),
         }
@@ -90,7 +110,7 @@ impl Server {
 
     /// Whether the connection is still on its way to a joined channel.
     pub fn is_connecting(&self) -> bool {
-        self.closed.is_none()
+        self.closed.is_none() && (self.client.phase() != Phase::Registered || self.joining)
     }
 
     /// The channels we are in, by name.
@@ -155,13 +175,65 @@ pub struct Chat {
     started: Instant,
     last_typing_ms: u64,
     connect_when_attached: bool,
+    menu_index: usize,
+    joined_at: HashMap<(usize, String), Instant>,
+    focused: bool,
+    last_ctcp_reply_ms: u64,
 }
+
+pub struct Command {
+    pub name: &'static str,
+    pub usage: &'static str,
+}
+
+const COMMANDS: [Command; 6] = [
+    Command {
+        name: "join",
+        usage: "#channel",
+    },
+    Command {
+        name: "part",
+        usage: "reason",
+    },
+    Command {
+        name: "me",
+        usage: "action",
+    },
+    Command {
+        name: "nick",
+        usage: "new nick",
+    },
+    Command {
+        name: "topic",
+        usage: "new topic",
+    },
+    Command {
+        name: "msg",
+        usage: "nick message",
+    },
+];
 
 /// How wide a message's text runs, avatar included, in cells.
 fn effect_columns(text: &str) -> u16 {
     u16::try_from(text.chars().count())
         .unwrap_or(u16::MAX)
         .saturating_add(AVATAR_COLUMNS)
+}
+
+/// What we answer to a CTCP query, framed in its `\x01` markers.
+fn ctcp_reply(command: &str, parameters: &str) -> Option<String> {
+    let body = match command {
+        "VERSION" => "VERSION katui obby-chat demo".to_owned(),
+        "PING" => format!("PING {parameters}"),
+        "CLIENTINFO" => "CLIENTINFO ACTION CLIENTINFO PING VERSION".to_owned(),
+        _ => return None,
+    };
+    Some(format!("\u{1}{body}\u{1}"))
+}
+
+fn client_join(server: &mut Server, channel: &str) {
+    server.client.join(channel.to_owned(), None);
+    server.pending_join = Some(channel.to_owned());
 }
 
 fn unix_ms() -> u64 {
@@ -194,6 +266,10 @@ impl Chat {
             started: Instant::now(),
             last_typing_ms: 0,
             connect_when_attached: false,
+            menu_index: 0,
+            joined_at: HashMap::new(),
+            focused: true,
+            last_ctcp_reply_ms: 0,
         }
     }
 
@@ -204,10 +280,26 @@ impl Chat {
                 std::thread::sleep(TICK);
             }
         });
+        let drifter = waker.clone();
+        std::thread::spawn(move || {
+            while drifter.send(Message::Drift) {
+                std::thread::sleep(DRIFT_INTERVAL);
+            }
+        });
         self.waker = Some(waker);
         if self.connect_when_attached {
             self.connect();
         }
+    }
+
+    /// Whether typing notices in `channel` can be trusted to be live.
+    pub fn typing_is_live(&self, channel: &str) -> bool {
+        let Some(server) = self.selected_server() else {
+            return false;
+        };
+        self.joined_at
+            .get(&(server, channel.to_owned()))
+            .is_none_or(|joined| joined.elapsed() >= HISTORY_TYPING_QUIET)
     }
 
     /// Which dot of the connecting spinner is lit.
@@ -270,6 +362,9 @@ impl Chat {
             client: Client::new(Config::new(self.form.nick.clone())),
             connection,
             join_after_register: Some(self.form.channel.clone()).filter(|name| !name.is_empty()),
+            joining: false,
+            pending_join: None,
+            join_error: None,
             closed: None,
         });
         self.selection = Some((index, None));
@@ -280,6 +375,11 @@ impl Chat {
         match message {
             Message::Net(index, event) => self.net_event(index, event),
             Message::Tick => self.tick(),
+            Message::Drift if self.focused => {
+                self.backdrop.advance(self.started.elapsed().as_secs_f32());
+                Control::Redraw
+            }
+            Message::Drift => Control::Wait,
             Message::Preview(url, surface) => {
                 self.previews
                     .insert(url, surface.map_or(Preview::Failed, Preview::Ready));
@@ -329,10 +429,17 @@ impl Chat {
                 Event::Registered { .. } => {
                     let server = &mut self.servers[index];
                     if let Some(channel) = server.join_after_register.take() {
+                        server.joining = true;
                         server.client.join(channel, None);
                     }
                 }
                 Event::ModelChanged { change } => self.apply_change(index, change),
+                Event::RawLine { message } if JOIN_FAILURES.contains(&message.command.as_str()) => {
+                    let server = &mut self.servers[index];
+                    server.joining = false;
+                    server.pending_join = None;
+                    server.join_error = message.params.last().cloned();
+                }
                 _ => {}
             }
         }
@@ -343,10 +450,25 @@ impl Chat {
     fn apply_change(&mut self, index: usize, change: Change) {
         match change {
             Change::ChannelJoined { channel } => {
-                if self.selection == Some((index, None)) {
-                    self.selection = Some((index, Some(channel)));
+                self.joined_at
+                    .insert((index, channel.clone()), Instant::now());
+                let server = &mut self.servers[index];
+                server.joining = false;
+                server.join_error = None;
+                let requested = server
+                    .pending_join
+                    .take_if(|name| name.eq_ignore_ascii_case(&channel))
+                    .is_some();
+                if server.client.capabilities().has(HISTORY_CAPABILITY) {
+                    server
+                        .client
+                        .fetch_history(channel.clone(), None, HISTORY_ON_JOIN);
+                }
+                if requested || self.selection == Some((index, None)) {
+                    self.open_channel(index, Some(channel));
                 }
             }
+            Change::MessageAdded { key, .. } if self.answer_ctcp(index, &key) => {}
             Change::MessageAdded { target, key } => self.message_landed(index, &target, &key),
             Change::MessageReacted { target, msgid } => {
                 self.message_reacted(index, &target, &msgid)
@@ -377,8 +499,42 @@ impl Chat {
             self.request_preview(url);
         }
         if !historical && self.is_selected(index, target) {
-            self.effects.spawn(layer, Kind::Fire, hue, columns);
+            self.effects.spawn(layer, Kind::Pop, hue, columns);
         }
+    }
+
+    /// Answer a CTCP query addressed to us; `true` when `key` was a CTCP
+    /// other than an action, which never shows in the log.
+    fn answer_ctcp(&mut self, index: usize, key: &MessageKey) -> bool {
+        let model = self.servers[index].client.model();
+        let found = model
+            .channels()
+            .map(|(_, channel)| &channel.log)
+            .chain(
+                model
+                    .conversations()
+                    .map(|(_, conversation)| &conversation.log),
+            )
+            .find_map(|log| log.get_by_key(key));
+        let Some(message) = found else {
+            return false;
+        };
+        let MessageKind::Ctcp { command } = &message.kind else {
+            return false;
+        };
+        if command == "ACTION" {
+            return false;
+        }
+        let reply = ctcp_reply(command, &message.text);
+        let (sender, stale) = (message.sender.clone(), message.historical || message.own);
+        let now = unix_ms();
+        if let Some(reply) = reply.filter(|_| {
+            !stale && now.saturating_sub(self.last_ctcp_reply_ms) >= CTCP_REPLY_INTERVAL_MS
+        }) {
+            self.last_ctcp_reply_ms = now;
+            self.servers[index].client.send_notice(sender, reply);
+        }
+        true
     }
 
     fn message_reacted(&mut self, index: usize, target: &str, msgid: &str) {
@@ -439,6 +595,7 @@ impl Chat {
             Action::React(channel, msgid, emoji) => self.toggle_reaction(&channel, msgid, emoji),
             Action::Reply(msgid, nick) => self.replying_to = Some((msgid, nick)),
             Action::CancelReply => self.replying_to = None,
+            Action::Complete(name) => self.draft = format!("/{name} "),
         }
         Control::Redraw
     }
@@ -521,10 +678,13 @@ impl Chat {
                 self.pixel_mouse = on;
                 Control::Wait
             }
-            InputEvent::Mouse(_)
-            | InputEvent::Focus(_)
-            | InputEvent::Mode(..)
-            | InputEvent::GraphicsAnswer(_) => Control::Wait,
+            InputEvent::Focus(focused) => {
+                self.focused = focused;
+                Control::Wait
+            }
+            InputEvent::Mouse(_) | InputEvent::Mode(..) | InputEvent::GraphicsAnswer(_) => {
+                Control::Wait
+            }
         }
     }
 
@@ -561,15 +721,29 @@ impl Chat {
 
     fn composer_key(&mut self, key: Key, mods: Mods) -> Control {
         match key {
+            Key::Tab | Key::Enter if self.completion().is_some() => {
+                if let Some(name) = self.completion() {
+                    self.draft = format!("/{name} ");
+                }
+            }
             Key::Enter => self.send_draft(),
+            Key::Escape if self.draft.starts_with('/') => self.draft.clear(),
             Key::Escape => self.replying_to = None,
+            Key::Up | Key::Down if !self.command_matches().is_empty() => {
+                let count = self.command_matches().len();
+                let step = if key == Key::Up { count - 1 } else { 1 };
+                self.menu_index = (self.menu_index + step) % count;
+            }
             Key::Backspace => {
                 self.draft.pop();
             }
             Key::Char('u') if mods.ctrl => self.draft.clear(),
             Key::Char(character) if !mods.ctrl && !mods.alt => {
                 self.draft.push(character);
-                self.announce_typing();
+                self.menu_index = 0;
+                if !self.draft.starts_with('/') {
+                    self.announce_typing();
+                }
             }
             Key::Up => return self.scroll_by(WHEEL_MESSAGES as isize),
             Key::Down => return self.scroll_by(-(WHEEL_MESSAGES as isize)),
@@ -594,6 +768,90 @@ impl Chat {
         }
     }
 
+    /// The commands the draft could still become, while it is one word.
+    pub fn command_matches(&self) -> Vec<&'static Command> {
+        let Some(typed) = self
+            .draft
+            .strip_prefix('/')
+            .filter(|typed| !typed.contains(' '))
+        else {
+            return Vec::new();
+        };
+        COMMANDS
+            .iter()
+            .filter(|command| command.name.starts_with(typed))
+            .collect()
+    }
+
+    pub fn menu_selection(&self) -> usize {
+        self.menu_index
+            .min(self.command_matches().len().saturating_sub(1))
+    }
+
+    fn completion(&self) -> Option<&'static str> {
+        self.command_matches()
+            .get(self.menu_selection())
+            .map(|command| command.name)
+    }
+
+    /// Run a slash command; `false` when it is unknown or incomplete.
+    fn run_command(&mut self, index: usize, line: &str) -> bool {
+        let (name, argument) = line
+            .trim_start_matches('/')
+            .split_once(' ')
+            .unwrap_or((line.trim_start_matches('/'), ""));
+        let argument = argument.trim();
+        let target = self.active_target().map(|(_, target)| target);
+        match (name, target) {
+            ("join", _) if !argument.is_empty() => {
+                let already_in = self.servers[index]
+                    .channels()
+                    .iter()
+                    .find(|channel| channel.name.eq_ignore_ascii_case(argument))
+                    .map(|channel| channel.name.clone());
+                match already_in {
+                    Some(name) => self.open_channel(index, Some(name)),
+                    None => {
+                        client_join(&mut self.servers[index], argument);
+                    }
+                }
+            }
+            ("part", Some(target)) => {
+                let reason = Some(argument.to_owned()).filter(|reason| !reason.is_empty());
+                self.servers[index].client.part(target.clone(), reason);
+                let next = self.servers[index]
+                    .channels()
+                    .iter()
+                    .map(|channel| channel.name.clone())
+                    .find(|name| *name != target);
+                self.open_channel(index, next);
+            }
+            ("me", Some(target)) if !argument.is_empty() => self.servers[index]
+                .client
+                .send_action(target, argument.to_owned()),
+            ("nick", _) if !argument.is_empty() => {
+                self.servers[index].client.set_nick(argument.to_owned())
+            }
+            ("topic", Some(target)) if !argument.is_empty() => self.servers[index]
+                .client
+                .set_topic(target, Some(argument.to_owned())),
+            ("msg", _) => match argument.split_once(' ') {
+                Some((nick, text)) => self.servers[index]
+                    .client
+                    .send_message(nick.to_owned(), text.to_owned()),
+                None => return false,
+            },
+            _ => return false,
+        }
+        true
+    }
+
+    fn open_channel(&mut self, server: usize, channel: Option<String>) {
+        self.selection = Some((server, channel));
+        self.scroll = 0;
+        self.replying_to = None;
+    }
+
     fn stop_typing(&mut self, index: usize) {
         if let Some((_, target)) = self.active_target() {
             self.servers[index].client.set_typing(target, Typing::Done);
@@ -608,16 +866,13 @@ impl Chat {
             return;
         };
         self.stop_typing(index);
-        if let Some(channel) = trimmed.strip_prefix("/join ") {
-            self.selection = Some((index, None));
-            self.servers[index]
-                .client
-                .join(channel.trim().to_owned(), None);
-        } else if trimmed.starts_with('/') {
+        if trimmed.starts_with('/') {
             // we keep an unknown command in the composer, because posting
             // it could put something like a password in the channel
-            self.draft = text;
-            return;
+            if !self.run_command(index, &trimmed) {
+                self.draft = text;
+                return;
+            }
         } else if let Some((_, target)) = self.active_target() {
             match self.replying_to.take() {
                 Some((msgid, _)) => self.servers[index]
@@ -634,8 +889,13 @@ impl Chat {
 
     /// Feed scripted server lines to a new server with no socket.
     #[cfg(test)]
-    pub fn add_scripted_server(&mut self, nick: &str, script: &[&str], channel: &str) {
-        let (sender, _) = std::sync::mpsc::channel();
+    pub fn add_scripted_server(
+        &mut self,
+        nick: &str,
+        script: &[&str],
+        channel: &str,
+    ) -> std::sync::mpsc::Receiver<Vec<u8>> {
+        let (sender, sent) = std::sync::mpsc::channel();
         let connection = net::scripted(sender);
         let mut client = Client::new(Config::new(nick.to_owned()));
         client.handle_connected();
@@ -651,9 +911,14 @@ impl Chat {
             client,
             connection,
             join_after_register: None,
+            joining: false,
+            pending_join: None,
+            join_error: None,
             closed: None,
         });
+        self.drain_events(self.servers.len() - 1);
         self.selection = Some((self.servers.len() - 1, Some(channel.to_owned())));
         self.form.visible = false;
+        sent
     }
 }

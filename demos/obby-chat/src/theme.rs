@@ -6,6 +6,16 @@ pub const ASH: Rgba = Rgba::solid(207, 200, 217);
 pub const PUMICE: Rgba = Rgba::solid(139, 131, 152);
 pub const SULFUR: Rgba = Rgba::solid(242, 212, 92);
 pub const INK_ON_LIGHT: Rgba = Rgba::solid(27, 24, 38);
+pub const AVATAR: Rgba = Rgba::solid(12, 10, 16);
+pub const ONLINE: Rgba = Rgba::solid(67, 181, 129);
+pub const QUOTE: Rgba = Rgba {
+    r: 18,
+    g: 16,
+    b: 26,
+    a: 190,
+};
+pub const WHITE: Rgba = Rgba::solid(255, 255, 255);
+pub const MENU: Rgba = Rgba::solid(52, 45, 68);
 pub const DIM_DOT: Rgba = Rgba::solid(74, 66, 92);
 
 const fn glass(alpha: u8) -> Rgba {
@@ -27,6 +37,15 @@ pub fn rail() -> Paint {
         g: 24,
         b: 38,
         a: 232,
+    })
+}
+
+pub fn scrim() -> Paint {
+    Paint::Solid(Rgba {
+        r: 12,
+        g: 10,
+        b: 18,
+        a: 150,
     })
 }
 
