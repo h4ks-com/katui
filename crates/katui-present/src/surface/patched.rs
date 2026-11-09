@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::io::{self, Write as _};
 
 use katui_proto::kitty::{
-    Delete, Format, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
+    Delete, Format, IdSpace, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
 };
 use katui_proto::probe::CellPixels;
 use katui_scene::cell::Position;
@@ -101,7 +101,11 @@ impl PatchedKitty {
     /// and it hides the anchor, and so every tile, with its pane.
     #[must_use]
     pub fn for_multiplexer(mut self, enabled: bool) -> Self {
-        self.anchor = enabled.then(Anchor::new);
+        if enabled {
+            let space = IdSpace::of_process();
+            self.base = space.image(self.base).0;
+            self.anchor = Some(Anchor::new(space));
+        }
         self
     }
 
@@ -444,6 +448,11 @@ mod tests {
         assert!(placed < freed, "the new base appears before the tiles go");
     }
 
+    fn anchored() -> String {
+        let anchor = katui_proto::kitty::IdSpace::of_process().image(0x00ff_fff0);
+        format!(",P={},", anchor.0)
+    }
+
     #[test]
     fn a_multiplexer_grid_places_tiles_on_the_anchor_and_never_a_whole_image() {
         let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(true);
@@ -455,7 +464,7 @@ mod tests {
         let text = String::from_utf8_lossy(&wire);
         assert!(!text.contains("s=64"), "no whole image travels");
         assert_eq!(
-            text.matches(",P=16777200,").count(),
+            text.matches(&anchored()).count(),
             64,
             "every tile sits on the anchor"
         );
@@ -480,11 +489,7 @@ mod tests {
             .render_frame(&mut wire, &surface, area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
-        assert_eq!(
-            text.matches(",P=16777200,").count(),
-            64,
-            "every tile returns"
-        );
+        assert_eq!(text.matches(&anchored()).count(), 64, "every tile returns");
         assert_eq!(
             text.matches("a=t,").count(),
             64,

@@ -5,7 +5,7 @@ use std::io;
 use std::time::Duration;
 
 use katui_present::session;
-use katui_proto::kitty;
+use katui_proto::kitty::{self, IdSpace};
 use katui_proto::probe::Capabilities;
 use katui_scene::CellSize;
 
@@ -25,6 +25,7 @@ const BATCH_BYTES_PER_CELL: usize = 4;
 /// id, because a second client attached to a multiplexer answers too and
 /// its answer must not stand in for the one being waited on.
 const QUERY_IDS_FROM: u32 = 1_000_000;
+const QUERY_IDS_UNTIL: u32 = 0x00f0_0000;
 
 /// How long a run waits for one answer before it stops asking.
 const ANSWER_WAIT: Duration = Duration::from_millis(500);
@@ -61,6 +62,7 @@ pub(crate) struct Pacer {
     multiplexed: bool,
     pacing: Pacing,
     next_query: u32,
+    space: Option<IdSpace>,
 }
 
 impl Pacer {
@@ -70,6 +72,7 @@ impl Pacer {
             multiplexed,
             pacing,
             next_query: QUERY_IDS_FROM,
+            space: multiplexed.then(IdSpace::of_process),
         }
     }
 
@@ -80,9 +83,13 @@ impl Pacer {
     }
 
     fn take_query_id(&mut self) -> u32 {
-        let query = self.next_query;
-        self.next_query = self.next_query.wrapping_add(1).max(QUERY_IDS_FROM);
-        query
+        let local = self.next_query;
+        self.next_query = if local + 1 < QUERY_IDS_UNTIL {
+            local + 1
+        } else {
+            QUERY_IDS_FROM
+        };
+        self.space.map_or(local, |space| space.image(local).0)
     }
 
     /// Write `frame`; `false` when this frame lost the terminal's answers.
@@ -154,6 +161,17 @@ mod tests {
             ..kitty
         };
         assert_eq!(Pacing::for_terminal(&muxed), Pacing::Batches);
+    }
+
+    #[test]
+    fn a_multiplexed_pacer_asks_with_ids_of_its_own_space() {
+        let mut pacer = super::Pacer::new(Pacing::Batches, true);
+        let first = pacer.take_query_id();
+        assert_eq!(
+            first >> 24,
+            katui_proto::kitty::IdSpace::of_process().image(0).0 >> 24
+        );
+        assert_ne!(pacer.take_query_id(), first);
     }
 
     #[test]

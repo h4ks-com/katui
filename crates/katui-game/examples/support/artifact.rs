@@ -1,6 +1,6 @@
 use katui_game::Light;
 
-pub fn save_frame(light: &Light, name: &str) {
+pub(crate) fn save_frame(light: &Light, name: &str) {
     let surface = light.to_surface();
     let path = format!(
         "{}/../../target/katui-{name}-frame.png",

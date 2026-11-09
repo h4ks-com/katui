@@ -7,15 +7,16 @@
 use std::io::{self, Write as _};
 
 use katui_proto::kitty::{
-    Format, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Relative, Transmit,
+    Format, IdSpace, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Relative,
+    Transmit,
 };
 use katui_proto::placeholder::placeholder_row;
 use katui_scene::cell::Position;
 
 use crate::cells::move_cursor;
 
-/// One anchor per terminal pane, so every presenter shares its image id,
-/// chosen high enough to stay clear of scene and surface ids.
+/// One anchor per program, so every presenter shares its image id,
+/// chosen high in the local ids to stay clear of scene and surface ids.
 const ANCHOR_IMAGE: u32 = 0x00ff_fff0;
 const ANCHOR_PLACEMENT: KittyPlacement = KittyPlacement(1);
 const TRANSPARENT_PIXEL: [u8; 4] = [0; 4];
@@ -27,9 +28,9 @@ pub(crate) struct Anchor {
 }
 
 impl Anchor {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(space: IdSpace) -> Self {
         Self {
-            image: KittyImage(ANCHOR_IMAGE),
+            image: space.image(ANCHOR_IMAGE),
             established: false,
         }
     }
@@ -83,7 +84,7 @@ mod tests {
 
     #[test]
     fn the_anchor_image_goes_out_once_and_its_cell_every_frame() {
-        let mut anchor = Anchor::new();
+        let mut anchor = Anchor::new(katui_proto::kitty::IdSpace::of_process());
         let (mut first, mut second) = (Vec::new(), Vec::new());
         anchor
             .write(&mut first)

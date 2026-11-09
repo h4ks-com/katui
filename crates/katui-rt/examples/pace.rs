@@ -121,8 +121,13 @@ fn run(
     }
     let elapsed = started.elapsed().as_secs_f32();
     let _ = transport.write(&Delete::AllVisible.encode());
-    let _ = transport
-        .write(&Delete::FreeRange(ImageId(BASE_IMAGE), ImageId(BASE_IMAGE + 200_000)).encode());
+    let space = katui_proto::kitty::IdSpace::of_process();
+    for (first, last) in [
+        (ImageId(BASE_IMAGE), ImageId(BASE_IMAGE + 200_000)),
+        (space.image(BASE_IMAGE), space.image(BASE_IMAGE + 200_000)),
+    ] {
+        let _ = transport.write(&Delete::FreeRange(first, last).encode());
+    }
     waits.sort_unstable();
     format!(
         "{name:<10}{damage_percent:>7}%{:>8.1}{:>9.1}{:>9.1}{:>11.1}",

@@ -23,6 +23,27 @@ pub const CHUNK: usize = 4096;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImageId(pub u32);
 
+/// The image ids one program owns on a terminal it shares with others:
+/// its own high byte over 24-bit local ids. The high byte fits the
+/// placeholder diacritic, so anchored ids keep working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IdSpace(u8);
+
+impl IdSpace {
+    /// The space of the running process, from its process id.
+    // Two processes whose ids match modulo 255 share a space, a rare clash we accept.
+    #[must_use]
+    pub fn of_process() -> Self {
+        Self(u8::try_from(std::process::id() % 255).unwrap_or(0) + 1)
+    }
+
+    /// The id `local` takes inside this space.
+    #[must_use]
+    pub fn image(self, local: u32) -> ImageId {
+        ImageId(u32::from(self.0) << 24 | (local & 0x00ff_ffff))
+    }
+}
+
 /// A placement id, unique per image. Zero omits the key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlacementId(pub u32);
@@ -757,6 +778,15 @@ mod tests {
         assert_eq!(parts.concat(), wire);
         assert_eq!(parts.len(), 2, "the upload, then the placement");
         assert_eq!(parts[0], frames.concat().as_slice());
+    }
+
+    #[test]
+    fn an_id_space_puts_its_byte_above_the_local_id() {
+        let space = super::IdSpace::of_process();
+        let image = space.image(0x0100_0007);
+        assert_eq!(image.0 & 0x00ff_ffff, 7, "local ids keep 24 bits");
+        assert_ne!(image.0 >> 24, 0, "every process space is nonzero");
+        assert_eq!(space.image(7), image);
     }
 
     #[test]

@@ -13,7 +13,7 @@ use crate::anchor::Anchor;
 use std::collections::HashSet;
 use std::io::{self, Write as _};
 
-use katui_proto::kitty::{self, ImageId as KittyImage, PlacementId as KittyPlacement};
+use katui_proto::kitty::{self, IdSpace, ImageId as KittyImage, PlacementId as KittyPlacement};
 use katui_proto::probe::Capabilities;
 use katui_scene::cell::Position;
 use katui_scene::placement::{ImageId, Placement, PlacementDelta, PlacementId, diff};
@@ -71,6 +71,7 @@ pub struct Kitty {
     sent: HashSet<ImageId>,
     live: HashSet<(ImageId, PlacementId)>,
     anchor: Option<Anchor>,
+    space: Option<IdSpace>,
 }
 
 impl Kitty {
@@ -87,8 +88,19 @@ impl Kitty {
     /// synchronized update ends.
     #[must_use]
     pub fn for_multiplexer(mut self, multiplexed: bool) -> Self {
-        self.anchor = multiplexed.then(Anchor::new);
+        if multiplexed {
+            let space = IdSpace::of_process();
+            self.space = Some(space);
+            self.anchor = Some(Anchor::new(space));
+        }
         self
+    }
+
+    /// The wire id of a scene image, inside our id space when we share
+    /// the terminal.
+    fn wire(&self, image: ImageId) -> KittyImage {
+        self.space
+            .map_or(KittyImage(image.0), |space| space.image(image.0))
     }
 
     /// Free every image this presenter sent and forget them all, as for a
@@ -101,7 +113,7 @@ impl Kitty {
             anchor.forget();
         }
         for image in sent {
-            out.write_all(&kitty::Delete::Free(KittyImage(image.0)).encode())?;
+            out.write_all(&kitty::Delete::Free(self.wire(image)).encode())?;
         }
         Ok(())
     }
@@ -144,7 +156,7 @@ impl Kitty {
                     usize::MAX
                 };
                 for frame in kitty::banded_upload(
-                    KittyImage(image.0),
+                    self.wire(image),
                     payload.width,
                     payload.height,
                     payload.pixels,
@@ -155,24 +167,31 @@ impl Kitty {
                 transmitted.insert(image);
             }
             if self.sent.contains(&image) || transmitted.contains(&image) {
-                place(&mut bytes, placement, self.anchor.as_ref())?;
+                place(
+                    &mut bytes,
+                    self.wire(placement.image),
+                    placement,
+                    self.anchor.as_ref(),
+                )?;
                 self.live.insert((image, placement.id));
             }
         }
         for placement in &delta.moved {
             if self.live.contains(&(placement.image, placement.id)) {
-                place(&mut bytes, placement, self.anchor.as_ref())?;
+                place(
+                    &mut bytes,
+                    self.wire(placement.image),
+                    placement,
+                    self.anchor.as_ref(),
+                )?;
             }
         }
         for removed in &delta.removed {
             let pair = (removed.image, removed.id);
             self.live.remove(&pair);
             bytes.write_all(
-                &kitty::Delete::Placement(
-                    KittyImage(removed.image.0),
-                    KittyPlacement(removed.id.0),
-                )
-                .encode(),
+                &kitty::Delete::Placement(self.wire(removed.image), KittyPlacement(removed.id.0))
+                    .encode(),
             )?;
         }
         let mut emptied: Vec<ImageId> = self
@@ -183,7 +202,7 @@ impl Kitty {
             .collect();
         emptied.sort_unstable();
         for image in emptied {
-            bytes.write_all(&kitty::Delete::Free(KittyImage(image.0)).encode())?;
+            bytes.write_all(&kitty::Delete::Free(self.wire(image)).encode())?;
             self.sent.remove(&image);
         }
         self.sent.extend(transmitted);
@@ -260,12 +279,17 @@ pub(crate) fn crop_rect(crop: PixelRect) -> kitty::PixelRect {
 }
 
 /// Address the placement origin, then anchor the place frame there.
-fn place(bytes: &mut Vec<u8>, placement: &Placement, anchor: Option<&Anchor>) -> io::Result<()> {
+fn place(
+    bytes: &mut Vec<u8>,
+    image: KittyImage,
+    placement: &Placement,
+    anchor: Option<&Anchor>,
+) -> io::Result<()> {
     let origin = Position {
         x: placement.area.x,
         y: placement.area.y,
     };
-    let mut command = kitty::Place::new(KittyImage(placement.image.0));
+    let mut command = kitty::Place::new(image);
     command.placement = KittyPlacement(placement.id.0);
     command.columns = u32::from(placement.area.columns);
     command.rows = u32::from(placement.area.rows);
