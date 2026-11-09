@@ -92,13 +92,16 @@ impl Env {
     /// A dumb or unknown terminal swallows or mangles queries, so probing
     /// stops before it starts there. A multiplexer is worth probing:
     /// tmux 3.8 answers the kitty query itself, older tmux stays silent
-    /// and the sniff decides. GNU screen and kin stay excluded.
+    /// and the sniff decides. GNU screen and kin stay excluded, but tmux
+    /// panes often carry a `screen` TERM too, so we let tmux's own
+    /// variables decide there.
     pub fn probing_allowed(&self) -> bool {
         let blocked = ["dumb", "unknown", "", "linux"];
         let Some(term) = self.term.as_deref() else {
             return false;
         };
-        !(blocked.contains(&term) || term.starts_with("screen"))
+        let screen = term.starts_with("screen") && !self.inside_multiplexer();
+        !(blocked.contains(&term) || screen)
     }
 }
 
@@ -817,6 +820,15 @@ mod tests {
         assert!(
             tmux.probing_allowed(),
             "tmux answers the probe itself, so probing runs"
+        );
+        let tmux_with_screen_term = Env {
+            term: Some("screen-256color".to_owned()),
+            tmux: Some("/tmp/tmux-501/default,1,0".to_owned()),
+            ..Env::default()
+        };
+        assert!(
+            tmux_with_screen_term.probing_allowed(),
+            "a tmux pane with a screen TERM still probes"
         );
         assert!(
             !Env::default().probing_allowed(),
