@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use katui_draw::{TextEngine, TextLayout, TextStyle};
+use katui_draw::{TextEngine, TextLayout, TextSpan, TextStyle};
 use taffy::prelude::*;
 use taffy::{Overflow, Point as TaffyPoint};
 
@@ -26,6 +26,7 @@ pub(crate) struct TextKey {
     size_bits: u32,
     weight: u16,
     wrap: Option<u32>,
+    spans: Option<Arc<[TextSpan]>>,
 }
 
 impl TextKey {
@@ -98,7 +99,10 @@ impl TextCache {
                 ..TextStyle::new(f32::from_bits(key.size_bits))
             };
             CachedText {
-                layout: engine.layout(&key.text, &style, key.wrap.map(to_f32)),
+                layout: match &key.spans {
+                    Some(spans) => engine.layout_spans(spans, &style, key.wrap.map(to_f32)),
+                    None => engine.layout(&key.text, &style, key.wrap.map(to_f32)),
+                },
                 generation: *generation,
             }
         });
@@ -304,6 +308,7 @@ pub(crate) fn text_key<M>(element: &Element<M>, text: &Arc<str>) -> TextKey {
         size_bits: element.style.font_size.to_bits(),
         weight: element.style.weight,
         wrap: None,
+        spans: element.style.spans.clone(),
     }
 }
 
@@ -380,6 +385,11 @@ fn style_of<M>(element: &Element<M>, parent: Parent, scrolled: bool) -> Style {
                 y: Overflow::Hidden,
             }
         };
+    }
+    if is_stack {
+        // we use one flexible track so overlapping children share the whole box
+        style.grid_template_columns = vec![fr(1.0)];
+        style.grid_template_rows = vec![fr(1.0)];
     }
     apply_fill(&mut style, element, parent);
     style

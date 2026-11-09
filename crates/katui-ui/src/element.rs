@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use katui_draw::{Paint, Rgba};
+use katui_draw::{Paint, Rgba, TextSpan};
 use katui_scene::surface::Surface;
 
 /// How an element sizes along one axis.
@@ -44,6 +44,7 @@ pub(crate) struct Style {
     pub(crate) color: Rgba,
     pub(crate) font_size: f32,
     pub(crate) weight: u16,
+    pub(crate) spans: Option<Arc<[TextSpan]>>,
 }
 
 impl Default for Style {
@@ -62,6 +63,7 @@ impl Default for Style {
             color: Rgba::solid(255, 255, 255),
             font_size: 16.0,
             weight: 400,
+            spans: None,
         }
     }
 }
@@ -119,6 +121,14 @@ impl<M> Element<M> {
     /// Text wrapped to the width its parent offers.
     pub fn text(text: impl Into<Arc<str>>) -> Self {
         Self::new(Kind::Text(text.into()), Vec::new())
+    }
+
+    /// Text with its own look per stretch, wrapping as one run.
+    pub fn rich(spans: Vec<TextSpan>) -> Self {
+        let text: String = spans.iter().map(|span| span.text.as_str()).collect();
+        let mut element = Self::new(Kind::Text(text.into()), Vec::new());
+        element.style.spans = Some(spans.into());
+        element
     }
 
     /// An image, at its natural size unless a width or height is set.

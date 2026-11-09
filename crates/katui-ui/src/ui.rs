@@ -153,6 +153,26 @@ impl<M: Clone> Ui<M> {
         hit_test(&self.regions, x, y)
     }
 
+    /// The whole pixels of the layer `key` as last rendered, its tiles
+    /// joined back together.
+    pub fn layer_surface(&self, key: u64) -> Option<Surface> {
+        let tiles = &self.layers.get(&Some(key))?.tiles;
+        let first = tiles.first()?;
+        let cell_width = first.image.width() / first.columns.max(1);
+        let cell_height = first.image.height() / first.rows.max(1);
+        let columns = tiles.iter().map(|tile| tile.column + tile.columns).max()?;
+        let rows = tiles.iter().map(|tile| tile.row + tile.rows).max()?;
+        let mut whole = Surface::new(columns * cell_width, rows * cell_height);
+        for tile in tiles {
+            whole.blit(
+                &tile.image.surface,
+                tile.column * cell_width,
+                tile.row * cell_height,
+            );
+        }
+        Some(whole)
+    }
+
     fn present(&mut self, drafts: &[Draft], cell: (u32, u32)) -> RenderOutput {
         let mut output = RenderOutput::default();
         for (index, draft) in drafts.iter().enumerate() {

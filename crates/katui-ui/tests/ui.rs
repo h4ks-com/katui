@@ -542,3 +542,38 @@ fn writes_a_composed_chat_png() {
     )
     .expect("the surface pixels match its dimensions and the target directory is writable");
 }
+
+#[test]
+fn stack_children_share_the_whole_box() {
+    let mut view = ui();
+    let tree: Element<u32> = Element::stack([
+        Element::row([cell_layer(1, 2, "under")]).size(Length::Fill, Length::Fill),
+        Element::column([cell_layer(2, 2, "over")])
+            .justify(Align::End)
+            .size(Length::Fill, Length::Fill),
+    ]);
+    let output = view.render(&tree, SCREEN, CELL);
+    let under = output.layer_areas[&1];
+    let over = output.layer_areas[&2];
+    assert_eq!(under.columns, 40, "the first child spans the width");
+    assert_eq!(over.y + over.rows, 12, "the second reaches the bottom");
+    assert_eq!(under.y, 0, "and they overlap from the top of the box");
+}
+
+#[test]
+fn a_split_layer_joins_back_into_its_whole_surface() {
+    let mut view = ui_with(UiOptions {
+        max_layer_cells: Some((10, 1)),
+        ..UiOptions::default()
+    });
+    let output = view.render(&three_layers("joined"), SCREEN, CELL);
+    assert!(output.placements.len() > 3, "the layers really were split");
+    let whole = view.layer_surface(1).expect("layer 1 was rendered");
+    let area = output.layer_areas[&1];
+    assert_eq!(whole.width(), u32::from(area.columns) * 10);
+    assert_eq!(whole.height(), u32::from(area.rows) * 20);
+    assert!(
+        view.layer_surface(99).is_none(),
+        "an unknown key has no pixels"
+    );
+}
