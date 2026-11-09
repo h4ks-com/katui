@@ -39,8 +39,6 @@ const SYSTEM_EMOJI_FONTS: [&str; 2] = [
 const FIRST_LAYER_IMAGE: u32 = 20_000;
 const BACKDROP_IMAGES_FROM: u32 = 100;
 const BACKDROP_IMAGE_COUNT: u32 = 19_000;
-/// A size that keeps every upload inside what a multiplexer can carry.
-const MULTIPLEXER_LAYER_CELLS: (u16, u16) = (40, 16);
 
 fn fonts() -> Vec<Vec<u8>> {
     let emoji = SYSTEM_EMOJI_FONTS
@@ -60,15 +58,12 @@ struct ChatApp {
     cell: CellPixels,
     backdrop_image: u32,
     pointer: Pointer,
-    grid: CellSize,
 }
 
 impl ChatApp {
     fn handle_input(&mut self, event: InputEvent) -> Control {
         if let InputEvent::Mouse(mouse) = event {
-            let (x, y) =
-                self.pointer
-                    .locate(&mouse, self.cell, self.grid.columns, self.grid.rows);
+            let (x, y) = self.pointer.locate(&mouse, self.cell);
             let hit = self.ui.hit_test(x, y).map(|hit| (hit.id, hit.on_click));
             return self.chat.mouse(mouse, hit);
         }
@@ -114,7 +109,7 @@ impl App for ChatApp {
     }
 
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control> {
-        self.grid = size;
+        self.pointer.resize(size.columns, size.rows);
         if self.screen.sends_everything() {
             self.chat.backdrop.mark_unsent();
         }
@@ -201,11 +196,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("{}", katui_rt::info::no_graphics_advice(&caps));
         std::process::exit(1);
     }
-    let multiplexed = caps.multiplexed();
-    let options = UiOptions {
-        first_image_id: FIRST_LAYER_IMAGE,
-        max_layer_cells: multiplexed.then_some(MULTIPLEXER_LAYER_CELLS),
-    };
+    let options = UiOptions::for_terminal(FIRST_LAYER_IMAGE, caps.multiplexed());
     let mut app = ChatApp {
         caps: caps.clone(),
         chat: Chat::new(default_nick()),
@@ -214,10 +205,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cell: katui_rt::tty::cell_size(&caps),
         backdrop_image: 0,
         pointer: Pointer::new(caps.cell),
-        grid: CellSize {
-            columns: 0,
-            rows: 0,
-        },
     };
     if std::env::args().any(|argument| argument == "--connect") {
         app.chat.connect_on_start();
@@ -230,11 +217,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use katui_draw::{Canvas, Rect, Rgba, TextEngine};
+    use katui_draw::{Canvas, Rect, Rgba, TextEngine, bundled_fonts};
     use katui_scene::surface::Surface;
     use katui_ui::{CellPixels, Ui, UiOptions};
 
-    use super::{SMALL_EMOJI_FONT, TEXT_FONT};
     use crate::chat::{Action, Chat};
     use crate::effects::{Effects, Kind};
     use crate::view::view;
@@ -270,7 +256,7 @@ mod tests {
     /// moment first.
     fn composed_with(chat: &Chat, effect: Option<Kind>, steps: u64) -> Surface {
         let metrics = crate::theme::widgets(CELL);
-        let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), SMALL_EMOJI_FONT.to_vec()])
+        let engine = TextEngine::new(bundled_fonts())
             .expect("fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let (width, height) = (9 * 170, 19 * 46);
@@ -411,7 +397,7 @@ mod tests {
         let mut chat = Chat::new("acme".to_owned());
         chat.add_scripted_server("acme", &lines, "#bots");
         let metrics = crate::theme::widgets(CELL);
-        let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), SMALL_EMOJI_FONT.to_vec()])
+        let engine = TextEngine::new(bundled_fonts())
             .expect("the bundled fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let rows = 46;
@@ -429,7 +415,7 @@ mod tests {
         let mut chat = Chat::new("acme".to_owned());
         chat.add_scripted_server("acme", SCRIPT, "#bots");
         let metrics = crate::theme::widgets(CELL);
-        let engine = TextEngine::new(vec![TEXT_FONT.to_vec(), SMALL_EMOJI_FONT.to_vec()])
+        let engine = TextEngine::new(bundled_fonts())
             .expect("the bundled fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let screen = (9 * 170, 19 * 46);

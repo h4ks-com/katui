@@ -167,6 +167,8 @@ const PIXEL_MOUSE_MODE: u32 = 1016;
 pub struct Pointer {
     pixels: bool,
     reported_cell: Option<CellPixels>,
+    columns: u16,
+    rows: u16,
 }
 
 impl Pointer {
@@ -176,8 +178,8 @@ impl Pointer {
     #[must_use]
     pub fn new(reported_cell: Option<CellPixels>) -> Self {
         Self {
-            pixels: false,
             reported_cell,
+            ..Self::default()
         }
     }
 
@@ -188,19 +190,20 @@ impl Pointer {
         }
     }
 
-    /// The surface pixel `mouse` points at, on a grid of `columns` by
-    /// `rows` cells of `cell` pixels. Some terminals send pixels while
-    /// reporting the pixel mode as unsupported, so we switch to pixels
-    /// once a report lands beyond a known grid.
-    pub fn locate(
-        &mut self,
-        mouse: &MouseEvent,
-        cell: CellPixels,
-        columns: u16,
-        rows: u16,
-    ) -> (f32, f32) {
-        let known = columns > 0 && rows > 0;
-        if known && (mouse.x >= u32::from(columns) || mouse.y >= u32::from(rows)) {
+    /// Track the screen grid the reports point into.
+    pub fn resize(&mut self, columns: u16, rows: u16) {
+        self.columns = columns;
+        self.rows = rows;
+    }
+
+    /// The surface pixel `mouse` points at, with cells of `cell` pixels.
+    /// Some terminals send pixels while reporting the pixel mode as
+    /// unsupported, so we switch to pixels once a report lands at twice
+    /// the grid, which a cell report from a grid that just grew never
+    /// reaches.
+    pub fn locate(&mut self, mouse: &MouseEvent, cell: CellPixels) -> (f32, f32) {
+        let beyond = |value: u32, cells: u16| cells > 0 && value >= u32::from(cells) * 2;
+        if beyond(mouse.x, self.columns) || beyond(mouse.y, self.rows) {
             self.pixels = true;
         }
         let coordinate = |value: u32| f32::from(u16::try_from(value).unwrap_or(u16::MAX));
@@ -583,27 +586,31 @@ mod tests {
             mods: Mods::NONE,
         };
         let mut pointer = Pointer::default();
+        pointer.resize(80, 25);
         pointer.observe(&InputEvent::Mode(1016, false));
-        assert_eq!(pointer.locate(&click(2, 1), cell, 80, 25), (17.5, 25.5));
+        assert_eq!(pointer.locate(&click(2, 1), cell), (17.5, 25.5));
         assert_eq!(
-            pointer.locate(&click(210, 159), cell, 80, 25),
-            (210.0, 159.0)
+            pointer.locate(&click(85, 26), cell),
+            (598.5, 450.5),
+            "a cell report just past a grid that grew stays in cells"
         );
+        assert_eq!(pointer.locate(&click(210, 159), cell), (210.0, 159.0));
         assert_eq!(
-            pointer.locate(&click(2, 1), cell, 80, 25),
+            pointer.locate(&click(2, 1), cell),
             (2.0, 1.0),
             "later reports stay in pixels"
         );
         let mut honored = Pointer::default();
         honored.observe(&InputEvent::Mode(1016, true));
-        assert_eq!(honored.locate(&click(2, 1), cell, 80, 25), (2.0, 1.0));
+        assert_eq!(honored.locate(&click(2, 1), cell), (2.0, 1.0));
         let retina = CellPixels {
             width: 14,
             height: 34,
         };
         let mut scaled = Pointer::new(Some(cell));
+        scaled.resize(80, 25);
         assert_eq!(
-            scaled.locate(&click(211, 92), retina, 80, 25),
+            scaled.locate(&click(211, 92), retina),
             (422.0, 184.0),
             "reports in points land on the double density surface"
         );

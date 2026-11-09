@@ -7,7 +7,7 @@ use std::io;
 
 use katui_draw::{TextEngine, bundled_fonts};
 use katui_present::kitty::{Images, KittyScreen, RgbaImage};
-use katui_present::surface::{PatchedKitty, PixelScreen};
+use katui_present::surface::PixelScreen;
 use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent, Pointer};
 use katui_proto::probe::Capabilities;
 use katui_rt::RtError;
@@ -21,8 +21,6 @@ pub use katui_rt::events::Waker;
 
 const FRAMES_PER_SECOND: u32 = 30;
 const FIRST_IMAGE: u32 = 1_000;
-/// A size that keeps every upload inside what a multiplexer carries.
-const MULTIPLEXER_LAYER_CELLS: (u16, u16) = (40, 16);
 
 /// A pixel UI program: state that shows itself as an element tree and
 /// changes on messages.
@@ -70,11 +68,7 @@ impl Screen {
         if caps.kitty {
             Self::Kitty(KittyScreen::new(caps))
         } else {
-            Self::Picture(PixelScreen::new(
-                caps,
-                cell,
-                PatchedKitty::new(FIRST_IMAGE, cell),
-            ))
+            Self::Picture(PixelScreen::picture(caps, cell))
         }
     }
 
@@ -82,6 +76,13 @@ impl Screen {
         match self {
             Self::Kitty(screen) => screen.repaint(),
             Self::Picture(screen) => screen.repaint(),
+        }
+    }
+
+    fn rows_shown(&self, rows: u16) -> u16 {
+        match self {
+            Self::Kitty(_) => rows,
+            Self::Picture(screen) => screen.rows_shown(rows),
         }
     }
 }
@@ -94,16 +95,12 @@ struct Runner<A: UiApp> {
     ui: Ui<A::Message>,
     screen: Screen,
     pointer: Pointer,
-    grid: CellSize,
 }
 
 impl<A: UiApp> Runner<A> {
     fn new(app: A, caps: &Capabilities, cell: CellPixels) -> Result<Self, RtError> {
         let engine = TextEngine::new(bundled_fonts()).map_err(io::Error::other)?;
-        let options = UiOptions {
-            first_image_id: FIRST_IMAGE,
-            max_layer_cells: caps.multiplexed().then_some(MULTIPLEXER_LAYER_CELLS),
-        };
+        let options = UiOptions::for_terminal(FIRST_IMAGE, caps.multiplexed());
         Ok(Self {
             theme: app.theme(cell),
             app,
@@ -112,17 +109,11 @@ impl<A: UiApp> Runner<A> {
             ui: Ui::new(engine, options),
             screen: Screen::for_terminal(caps, cell),
             pointer: Pointer::new(caps.cell),
-            grid: CellSize {
-                columns: 0,
-                rows: 0,
-            },
         })
     }
 
     fn mouse(&mut self, mouse: MouseEvent) -> Control {
-        let (x, y) = self
-            .pointer
-            .locate(&mouse, self.cell, self.grid.columns, self.grid.rows);
+        let (x, y) = self.pointer.locate(&mouse, self.cell);
         let Some(hit) = self.ui.hit_test(x, y) else {
             return Control::Wait;
         };
@@ -172,10 +163,11 @@ impl<A: UiApp> App for Runner<A> {
     }
 
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control> {
-        self.grid = size;
+        self.pointer.resize(size.columns, size.rows);
+        let rows = self.screen.rows_shown(size.rows);
         let pixels = (
             u32::from(size.columns) * u32::from(self.cell.width),
-            u32::from(size.rows) * u32::from(self.cell.height),
+            u32::from(rows) * u32::from(self.cell.height),
         );
         let root = self.app.view(&self.theme);
         let output = self.ui.render(&root, pixels, self.cell);

@@ -59,6 +59,28 @@ impl PixelScreen {
         }
     }
 
+    /// The screen for a terminal without kitty graphics: sixel tiles when
+    /// it speaks sixel, quarter blocks otherwise.
+    #[must_use]
+    pub fn picture(caps: &Capabilities, cell: CellPixels) -> Self {
+        let graphics =
+            (select(caps) == Backend::Sixel).then(|| PixelStrategy::Sixel(SixelSurface::new(cell)));
+        Self {
+            graphics,
+            blocks: BlocksSurface::new(),
+        }
+    }
+
+    /// How many of `rows` screen rows a frame covers. Sixel leaves the
+    /// bottom row free, because a sixel touching it scrolls the screen.
+    #[must_use]
+    pub fn rows_shown(&self, rows: u16) -> u16 {
+        match self.graphics {
+            Some(PixelStrategy::Sixel(_)) => rows.saturating_sub(1),
+            _ => rows,
+        }
+    }
+
     /// The same screen driven by a terminal-side animation when the
     /// terminal stores animation frames outside a multiplexer, which
     /// swallows frames, and by [`Self::new`] with `fallback` otherwise.
@@ -172,6 +194,16 @@ mod tests {
             }
         }
         surface
+    }
+
+    #[test]
+    fn a_sixel_picture_covers_every_row_but_the_last_and_blocks_cover_all() {
+        let sixel = Capabilities {
+            sixel: true,
+            ..caps(false)
+        };
+        assert_eq!(PixelScreen::picture(&sixel, CELL).rows_shown(24), 23);
+        assert_eq!(PixelScreen::picture(&caps(false), CELL).rows_shown(24), 24);
     }
 
     #[test]
