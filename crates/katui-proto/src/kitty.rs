@@ -649,10 +649,13 @@ pub fn split_at_commands(frame: &[u8], limit: usize) -> Vec<&[u8]> {
 }
 
 /// Whether more chunks of this command's upload follow it. The encoder
-/// always writes `m` last among the control keys.
+/// always writes `m` last among the control keys. Text before the command
+/// may hold `;` of its own, so we read the keys from the command start.
 fn upload_continues(command: &[u8]) -> bool {
-    command
-        .split(|byte| *byte == b';')
+    let keys = find(command, PASSTHROUGH_COMMAND_START)
+        .and_then(|start| command.get(start + PASSTHROUGH_COMMAND_START.len()..))
+        .unwrap_or_default();
+    keys.split(|byte| *byte == b';')
         .next()
         .is_some_and(|keys| keys.ends_with(b"m=1"))
 }
@@ -773,12 +776,14 @@ mod tests {
         let frames = Transmit::new(ImageId(9), Format::Rgb, 10, 20, &payload)
             .encode()
             .expect("encoding cannot fail");
-        let mut wire = frames.concat();
+        let mut upload = b"\x1b[3;5H\x1b[38;2;1;2;3m".to_vec();
+        upload.extend(frames.concat());
+        let mut wire = upload.clone();
         wire.extend_from_slice(b"\x1b_Ga=p,i=9\x1b\\");
         let parts = super::split_at_commands(&wire, 16);
         assert_eq!(parts.concat(), wire);
         assert_eq!(parts.len(), 2, "the upload, then the placement");
-        assert_eq!(parts[0], frames.concat().as_slice());
+        assert_eq!(parts[0], upload.as_slice());
     }
 
     #[test]
