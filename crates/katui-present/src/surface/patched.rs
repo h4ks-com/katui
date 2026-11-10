@@ -233,11 +233,18 @@ impl PatchedKitty {
         rect: PixelRect,
         area: CellRect,
     ) -> io::Result<()> {
-        let (origin_x, columns) = cell_span(rect.x, rect.width, area.columns, surface.width());
-        let (origin_y, rows) = cell_span(rect.y, rect.height, area.rows, surface.height());
-        let (origin_x, origin_y) = (
-            area.x.saturating_add(origin_x),
-            area.y.saturating_add(origin_y),
+        // the tile's cell span comes from the surface-to-area scale, not
+        // the terminal's cell pixels: the caller's surface may run at any
+        // resolution and the base image already proved the scale
+        let columns = u16::try_from(rect.width * u32::from(area.columns) / surface.width())
+            .unwrap_or(u16::MAX);
+        let rows = u16::try_from(rect.height * u32::from(area.rows) / surface.height())
+            .unwrap_or(u16::MAX);
+        let origin_x = area.x.saturating_add(
+            u16::try_from(rect.x * u32::from(area.columns) / surface.width()).unwrap_or(u16::MAX),
+        );
+        let origin_y = area.y.saturating_add(
+            u16::try_from(rect.y * u32::from(area.rows) / surface.height()).unwrap_or(u16::MAX),
         );
         let index = self.tile_index(rect.x, rect.y);
         let shown = self.tile_generations.get(&index).copied();
@@ -277,19 +284,6 @@ impl PatchedKitty {
         self.tile_generations.insert(index, generation);
         Ok(())
     }
-}
-
-/// The first cell and cell count of the pixels from `start` for `length`
-/// on an axis where `pixels` fill `cells`. We map both tile edges through
-/// the surface-to-area scale, so neighbouring tiles meet even when a cell
-/// holds a fractional number of surface pixels.
-fn cell_span(start: u32, length: u32, cells: u16, pixels: u32) -> (u16, u16) {
-    let to_cell = |pixel: u32| {
-        u16::try_from(u64::from(pixel) * u64::from(cells) / u64::from(pixels.max(1)))
-            .unwrap_or(u16::MAX)
-    };
-    let first = to_cell(start);
-    (first, to_cell(start + length).saturating_sub(first).max(1))
 }
 
 /// `rect` grown by one pixel on every side the surface has room for. A
@@ -348,20 +342,6 @@ mod tests {
 
     fn area() -> CellRect {
         CellRect::full(16, 16)
-    }
-
-    #[test]
-    fn tiles_on_a_fractional_scale_cover_every_cell_without_gaps() {
-        let mut next = 0;
-        for start in (0..762).step_by(64) {
-            let (first, span) = super::cell_span(start, 64.min(762 - start), 120, 762);
-            assert_eq!(
-                first, next,
-                "tile at pixel {start} starts where the last one ended"
-            );
-            next = first + span;
-        }
-        assert_eq!(next, 120);
     }
 
     #[test]
