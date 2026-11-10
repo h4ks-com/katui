@@ -30,6 +30,7 @@ const MOST_PIXELS: (u32, u32) = (960, 540);
 /// A multiplexer carries graphics far more slowly than a terminal does.
 const MULTIPLEXED_SHRINK: u32 = 2;
 const BASE_IMAGE: u32 = 900;
+const TILE_PIXELS: u32 = 48;
 const OVERLAY_SECONDS: f32 = 2.0;
 const TEST_SECONDS: f32 = 60.0;
 
@@ -119,19 +120,28 @@ fn fit_filter(width: u32, height: u32) -> String {
     )
 }
 
-/// The surface size for a screen of `area` pixels: the same shape, shrunk
-/// to stay within what the terminal can take thirty times a second.
-fn frame_size(area: (u32, u32), multiplexed: bool) -> (u32, u32) {
+/// The pixels across and down each cell gets: the most that stay within
+/// what the terminal takes thirty times a second, in whole numbers so
+/// every tile a multiplexer gets covers whole cells.
+fn density(columns: u16, rows: u16, cell: CellPixels, multiplexed: bool) -> (u32, u32) {
     let shrink = if multiplexed { MULTIPLEXED_SHRINK } else { 1 };
-    let (most_across, most_down) = (MOST_PIXELS.0 / shrink, MOST_PIXELS.1 / shrink);
-    let (across, down) = (area.0.max(1) as f32, area.1.max(1) as f32);
-    let scale = (most_across as f32 / across)
-        .min(most_down as f32 / down)
-        .min(1.0);
-    (
-        ((across * scale) as u32).max(2) & !1,
-        ((down * scale) as u32).max(2) & !1,
-    )
+    let (cell_width, cell_height) = (u32::from(cell.width).max(1), u32::from(cell.height).max(1));
+    let down_for = |across: u32| ((across * cell_height + cell_width / 2) / cell_width).max(1);
+    let fits = |across: &u32| {
+        u32::from(columns) * across <= MOST_PIXELS.0 / shrink
+            && u32::from(rows) * down_for(*across) <= MOST_PIXELS.1 / shrink
+    };
+    let across = (1..=cell_width).rev().find(fits).unwrap_or(1);
+    (across, down_for(across))
+}
+
+/// A tile side that spans whole cells both ways and is at least `TILE_PIXELS`.
+fn tile_side((across, down): (u32, u32)) -> u32 {
+    let mut both = across.max(down);
+    while both % across != 0 || both % down != 0 {
+        both += across.max(down);
+    }
+    both * TILE_PIXELS.div_ceil(both)
 }
 
 struct Killed(Child);
@@ -292,17 +302,15 @@ impl Player {
             return Ok(());
         }
         let cell = katui_rt::tty::cell_size(&self.caps);
+        let rows = PixelScreen::picture(&self.caps, cell).rows_shown(size.rows);
+        let (across, down) = density(size.columns, rows, cell, self.caps.multiplexed());
         self.screen.free(out)?;
         self.screen = PixelScreen::new(
             &self.caps,
             cell,
-            PatchedKitty::with_tiles(BASE_IMAGE, cell, 64, 0),
+            PatchedKitty::with_tiles(BASE_IMAGE, cell, tile_side((across, down)), 0),
         );
-        let rows = self.screen.rows_shown(size.rows);
-        self.size = frame_size(
-            screen_pixels(size.columns, rows, cell),
-            self.caps.multiplexed(),
-        );
+        self.size = (u32::from(size.columns) * across, u32::from(rows) * down);
         self.picture = vec![0; self.size.0 as usize * self.size.1 as usize * 4];
         self.fitted = Some(size);
         let at = self.position();
@@ -339,13 +347,6 @@ impl Player {
             self.overlay_until = Instant::now() + Duration::from_secs(3600);
         }
     }
-}
-
-fn screen_pixels(columns: u16, rows: u16, cell: CellPixels) -> (u32, u32) {
-    (
-        u32::from(columns) * u32::from(cell.width),
-        u32::from(rows) * u32::from(cell.height),
-    )
 }
 
 /// The progress bar along the bottom and, when paused, two bars in the middle.
@@ -429,15 +430,29 @@ impl App for Player {
 
 #[cfg(test)]
 mod tests {
-    use super::{Clip, draw_overlay, fit_filter, frame_size};
+    use katui_proto::probe::CellPixels;
+
+    use super::{Clip, density, draw_overlay, fit_filter, tile_side};
+
+    const CELL: CellPixels = CellPixels {
+        width: 8,
+        height: 17,
+    };
 
     #[test]
-    fn frames_keep_the_screen_shape_and_shrink_under_a_multiplexer() {
-        assert_eq!(frame_size((800, 400), false), (800, 400));
-        assert_eq!(frame_size((1920, 1080), false), (960, 540));
-        assert_eq!(frame_size((1920, 1080), true), (480, 270));
-        let (width, height) = frame_size((3000, 600), false);
-        assert!(width <= 960 && height <= 540 && width % 2 == 0 && height % 2 == 0);
+    fn cells_get_whole_pixels_within_the_budget_and_fewer_under_a_multiplexer() {
+        assert_eq!(density(120, 30, CELL, false), (8, 17));
+        assert_eq!(density(120, 40, CELL, false), (6, 13));
+        assert_eq!(density(120, 40, CELL, true), (3, 6));
+        assert_eq!(density(2000, 900, CELL, false), (1, 2));
+    }
+
+    #[test]
+    fn tiles_span_whole_cells_both_ways() {
+        for density in [(8, 17), (6, 13), (3, 6), (1, 2)] {
+            let side = tile_side(density);
+            assert!(side >= 48 && side % density.0 == 0 && side % density.1 == 0);
+        }
     }
 
     #[test]
