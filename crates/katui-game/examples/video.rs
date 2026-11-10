@@ -30,7 +30,7 @@ const MOST_PIXELS: (u32, u32) = (960, 540);
 /// A multiplexer carries graphics far more slowly than a terminal does.
 const MULTIPLEXED_SHRINK: u32 = 2;
 const BASE_IMAGE: u32 = 900;
-const TILE_PIXELS: u32 = 48;
+const TILE_PIXELS: u32 = 64;
 const OVERLAY_SECONDS: f32 = 2.0;
 const TEST_SECONDS: f32 = 60.0;
 
@@ -451,7 +451,7 @@ mod tests {
     fn tiles_span_whole_cells_both_ways() {
         for density in [(8, 17), (6, 13), (3, 6), (1, 2)] {
             let side = tile_side(density);
-            assert!(side >= 48 && side % density.0 == 0 && side % density.1 == 0);
+            assert!(side >= 64 && side % density.0 == 0 && side % density.1 == 0);
         }
     }
 
