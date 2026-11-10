@@ -44,9 +44,7 @@ impl PixelScreen {
     #[must_use]
     pub fn new(caps: &Capabilities, cell: CellPixels, patched: PatchedKitty) -> Self {
         let patched = if caps.multiplexed() {
-            patched
-                .for_multiplexer(caps.id_space)
-                .storing_frames(caps.animation)
+            patched.for_multiplexer(caps.id_space)
         } else {
             patched
         };

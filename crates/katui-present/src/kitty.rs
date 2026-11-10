@@ -21,7 +21,7 @@ use katui_scene::surface::PixelRect;
 
 /// The raw pixel bytes of one upload command under a multiplexer, small
 /// enough that one compressed band fits a paced batch.
-pub(crate) const MULTIPLEXER_BAND_BYTES: usize = 12 * 1024;
+const MULTIPLEXER_BAND_BYTES: usize = 12 * 1024;
 
 /// One image's RGBA payload, ready to transmit. `pixels` holds exactly
 /// `4 * width * height` bytes.
