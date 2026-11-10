@@ -22,7 +22,7 @@ crates/katui-widgets/   L5: theme, text field, focus, list and control views (pu
 crates/katui-app/       run(app): pixel UI programs on the terminal in one call,
                         the to-do and page viewer demos
 crates/katui-game/      pixel apps: a light buffer, held keys and a fixed-step runner,
-                        the demos (lumenshaft, shardrift, cube, dvd, snake, plasma,
+                        the demos (lumenshaft, shardrift, cube, dvd, snake, plasma, video,
                         life)
 demos/obby-chat/        an IRC client on the full engine, GPL, outside the workspace
 scripts/                repo tooling (the commit-message gate)

@@ -90,6 +90,10 @@ demo-lumenshaft:
 demo-shardrift:
     cargo run --release -p katui-game --example shardrift
 
+# the video demo: a file or stream url through ffmpeg, a test pattern without one
+demo-video clip="":
+    cargo run --release -p katui-game --example video -- {{clip}}
+
 # the pacing instrument: fps, latency and bytes per frame for each pixel strategy
 pace:
     cargo run --release -p katui-rt --example pace
