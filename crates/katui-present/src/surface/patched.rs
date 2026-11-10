@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::io::{self, Write as _};
 
 use katui_proto::kitty::{
-    Delete, Format, IdSpace, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
+    self, Delete, Format, IdSpace, ImageId as KittyImage, Place, PlacementId as KittyPlacement,
+    Transmit,
 };
 use katui_proto::probe::CellPixels;
 use katui_scene::cell::Position;
@@ -17,7 +18,7 @@ use katui_scene::surface::{PixelRect, Surface, diff_tiles};
 use super::{damage_is_dense, write_whole_image};
 use crate::anchor::Anchor;
 use crate::cells::move_cursor;
-use crate::kitty::crop_rect;
+use crate::kitty::{MULTIPLEXER_BAND_BYTES, crop_rect};
 
 /// The patched kitty surface presenter: transmits the whole surface once,
 /// then per frame retransmits only the tiles whose pixels changed, each
@@ -43,6 +44,7 @@ pub struct PatchedKitty {
     base_shown: Option<KittyImage>,
     tile_generations: HashMap<u32, bool>,
     anchor: Option<Anchor>,
+    stores_frames: bool,
     repaint: bool,
 }
 
@@ -74,6 +76,7 @@ impl PatchedKitty {
             base_shown: None,
             tile_generations: HashMap::new(),
             anchor: None,
+            stores_frames: false,
             repaint: false,
         }
     }
@@ -103,6 +106,17 @@ impl PatchedKitty {
     pub fn for_multiplexer(mut self, space: IdSpace) -> Self {
         self.base = space.image(self.base).0;
         self.anchor = Some(Anchor::new(space));
+        self
+    }
+
+    /// Send a frame with more damaged tiles than the budget as one hidden
+    /// upload in bands of rows and show it with a single placement, for a
+    /// multiplexer in front of a terminal that stores frames: the bands
+    /// are frame edits, and tiles of one frame would arrive over several
+    /// paced batches and show half a frame between them.
+    #[must_use]
+    pub fn storing_frames(mut self, stores_frames: bool) -> Self {
+        self.stores_frames = stores_frames;
         self
     }
 
@@ -167,6 +181,12 @@ impl PatchedKitty {
         if resized {
             self.free_tiles(&mut bytes)?;
         }
+        if self.stores_frames && damage.len() > self.budget {
+            self.anchored_frame(&mut bytes, surface, area)?;
+            self.prev = Some(surface.clone());
+            out.write_all(&bytes)?;
+            return Ok(bytes.len());
+        }
         if !damage.is_empty()
             && let Some(anchor) = self.anchor.as_mut()
         {
@@ -199,11 +219,7 @@ impl PatchedKitty {
         surface: &Surface,
         area: CellRect,
     ) -> io::Result<()> {
-        let image = if self.base_shown == Some(KittyImage(self.base)) {
-            KittyImage(self.base + 1)
-        } else {
-            KittyImage(self.base)
-        };
+        let image = self.hidden_base();
         bytes.write_all(b"\x1b[?2026h")?;
         write_whole_image(bytes, image, surface, area)?;
         // old tiles sit above the base and would hide the new pixels
@@ -213,6 +229,52 @@ impl PatchedKitty {
         }
         bytes.write_all(b"\x1b[?2026l")?;
         Ok(())
+    }
+
+    /// The whole surface uploaded under the hidden base id, then placed
+    /// over the old one in one command, which frees what it covers.
+    fn anchored_frame(
+        &mut self,
+        bytes: &mut Vec<u8>,
+        surface: &Surface,
+        area: CellRect,
+    ) -> io::Result<()> {
+        let image = self.hidden_base();
+        for frame in kitty::banded_upload(
+            image,
+            surface.width(),
+            surface.height(),
+            surface.pixels(),
+            MULTIPLEXER_BAND_BYTES,
+        )? {
+            bytes.write_all(&frame)?;
+        }
+        let Some(anchor) = self.anchor.as_mut() else {
+            return Ok(());
+        };
+        anchor.write(bytes)?;
+        let mut place = Place::new(image);
+        place.placement = KittyPlacement(1);
+        place.columns = u32::from(area.columns);
+        place.rows = u32::from(area.rows);
+        place.parent = Some(anchor.offset_to(Position {
+            x: area.x,
+            y: area.y,
+        }));
+        bytes.write_all(&place.encode())?;
+        self.free_tiles(bytes)?;
+        if let Some(shown) = self.base_shown.replace(image) {
+            bytes.write_all(&Delete::Free(shown).encode())?;
+        }
+        Ok(())
+    }
+
+    fn hidden_base(&self) -> KittyImage {
+        if self.base_shown == Some(KittyImage(self.base)) {
+            KittyImage(self.base + 1)
+        } else {
+            KittyImage(self.base)
+        }
     }
 
     fn tile_index(&self, x: u32, y: u32) -> u32 {
@@ -330,6 +392,10 @@ pub(super) fn tile_pixels(surface: &Surface, rect: PixelRect) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::PatchedKitty;
+
+    fn plain_surface_of(width: u32, height: u32, red: u8) -> Surface {
+        crate::surface::test_support::solid(width, height, Rgba::solid(red, 10, 30))
+    }
 
     fn plain_surface(width: u32, height: u32) -> Surface {
         crate::surface::test_support::solid(width, height, Rgba::solid(10, 10, 30))
@@ -493,6 +559,43 @@ mod tests {
             text.matches('\u{10eeee}').count(),
             1,
             "one placeholder cell anchors the grid"
+        );
+    }
+
+    #[test]
+    fn a_multiplexer_frame_past_the_budget_swaps_in_one_banded_image() {
+        let mut presenter = PatchedKitty::with_tiles(90, cell(), 8, 0)
+            .for_multiplexer(space())
+            .storing_frames(true);
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(&mut wire, &plain_surface(128, 64), area())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&wire);
+        assert!(text.contains("a=f"), "the frame travels in bands of rows");
+        assert_eq!(
+            text.matches("a=p").count(),
+            2,
+            "the anchor and one frame placement"
+        );
+        assert_eq!(
+            text.matches(&anchored()).count(),
+            1,
+            "the frame sits on the anchor"
+        );
+        let first = space().image(90).0;
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(&mut wire, &plain_surface_of(128, 64, 200), area())
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&wire);
+        assert!(
+            text.contains(&format!("i={}", first + 1)),
+            "the next frame takes the hidden id"
+        );
+        assert!(
+            text.contains(&format!("a=d,d=I,i={first}")),
+            "and frees the shown one after placing"
         );
     }
 
