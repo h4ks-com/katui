@@ -9,10 +9,8 @@
 )]
 
 use std::error::Error;
-use std::io::{self, Read};
+use std::io;
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{Receiver, TryRecvError, sync_channel};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use katui_game::Key;
@@ -21,6 +19,7 @@ use katui_proto::input::InputEvent;
 use katui_proto::probe::{Capabilities, CellPixels};
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
+use katui_rt::media::VideoStream;
 use katui_scene::CellSize;
 use katui_scene::surface::Surface;
 
@@ -111,14 +110,6 @@ fn strings(parts: &[&str]) -> Vec<String> {
     parts.iter().map(ToString::to_string).collect()
 }
 
-/// The ffmpeg filter that fits the clip inside `width` x `height` square
-/// pixels, letterboxed, at our frame rate.
-fn fit_filter(width: u32, height: u32) -> String {
-    format!(
-        "fps={FRAMES_PER_SECOND},scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:-1:-1:black"
-    )
-}
-
 /// The surface size for a screen of `area` pixels: the same shape, shrunk
 /// to stay within what the terminal can take thirty times a second.
 fn frame_size(area: (u32, u32), multiplexed: bool) -> (u32, u32) {
@@ -143,43 +134,6 @@ impl Drop for Killed {
     }
 }
 
-struct Decoder {
-    frames: Receiver<Vec<u8>>,
-    _process: Killed,
-}
-
-impl Decoder {
-    fn spawn(clip: &Clip, at: f32, (width, height): (u32, u32)) -> io::Result<Self> {
-        let mut child = Command::new("ffmpeg")
-            .args(["-hide_banner", "-loglevel", "error", "-nostdin"])
-            .args(clip.video_input(at))
-            .args(["-an", "-vf", &fit_filter(width, height)])
-            .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| io::Error::other("ffmpeg gave no output pipe"))?;
-        let (send, frames) = sync_channel(FRAMES_PER_SECOND as usize / 4);
-        let frame_bytes = width as usize * height as usize * 4;
-        thread::spawn(move || {
-            loop {
-                let mut frame = vec![0; frame_bytes];
-                if stdout.read_exact(&mut frame).is_err() || send.send(frame).is_err() {
-                    break;
-                }
-            }
-        });
-        Ok(Self {
-            frames,
-            _process: Killed(child),
-        })
-    }
-}
-
 fn spawn_audio(clip: &Clip, at: f32) -> io::Result<Killed> {
     Command::new("ffplay")
         .args(["-nodisp", "-autoexit", "-loglevel", "quiet"])
@@ -198,13 +152,12 @@ struct Player {
     screen: PixelScreen,
     fitted: Option<CellSize>,
     size: (u32, u32),
-    decoder: Option<Decoder>,
+    decoder: Option<VideoStream>,
     audio: Option<Killed>,
     muted: bool,
     started: Instant,
     offset: f32,
     paused: Option<f32>,
-    shown: u32,
     picture: Vec<u8>,
     overlay_until: Instant,
 }
@@ -224,7 +177,6 @@ impl Player {
             started: Instant::now(),
             offset: 0.0,
             paused: None,
-            shown: 0,
             picture: vec![0; 16],
             overlay_until: Instant::now(),
         }
@@ -239,7 +191,11 @@ impl Player {
         let at = self.duration.map_or(at, |end| at.min(end)).max(0.0);
         self.decoder = None;
         self.audio = None;
-        self.decoder = Some(Decoder::spawn(&self.clip, at, self.size)?);
+        self.decoder = Some(VideoStream::ffmpeg(
+            &self.clip.video_input(at),
+            self.size,
+            FRAMES_PER_SECOND,
+        )?);
         self.audio = if self.muted {
             None
         } else {
@@ -248,7 +204,6 @@ impl Player {
         self.started = Instant::now();
         self.offset = at;
         self.paused = None;
-        self.shown = 0;
         Ok(())
     }
 
@@ -312,29 +267,15 @@ impl Player {
         }
     }
 
-    /// We take every frame the clock has passed and keep the newest, so a
-    /// slow terminal drops frames and the picture stays in step with the sound.
     fn catch_up(&mut self) {
-        let Some(decoder) = &self.decoder else {
+        let Some(decoder) = &mut self.decoder else {
             return;
         };
-        let due = (self.started.elapsed().as_secs_f32() * FRAMES_PER_SECOND as f32) as u32 + 1;
-        let mut ended = false;
-        while self.shown < due {
-            match decoder.frames.try_recv() {
-                Ok(frame) => {
-                    self.picture = frame;
-                    self.shown += 1;
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    ended = true;
-                    break;
-                }
-            }
+        if let Some(frame) = decoder.latest() {
+            self.picture = frame;
         }
-        if ended {
-            let end = self.offset + self.shown as f32 / FRAMES_PER_SECOND as f32;
+        if decoder.ended() {
+            let end = self.offset + decoder.shown() as f32 / FRAMES_PER_SECOND as f32;
             self.pause_at(end);
             self.overlay_until = Instant::now() + Duration::from_secs(3600);
         }
@@ -429,7 +370,7 @@ impl App for Player {
 
 #[cfg(test)]
 mod tests {
-    use super::{Clip, draw_overlay, fit_filter, frame_size};
+    use super::{Clip, draw_overlay, frame_size};
 
     #[test]
     fn frames_keep_the_screen_shape_and_shrink_under_a_multiplexer() {
@@ -438,14 +379,6 @@ mod tests {
         assert_eq!(frame_size((1920, 1080), true), (480, 270));
         let (width, height) = frame_size((3000, 600), false);
         assert!(width <= 960 && height <= 540 && width % 2 == 0 && height % 2 == 0);
-    }
-
-    #[test]
-    fn the_filter_letterboxes_to_the_frame_at_the_frame_rate() {
-        assert_eq!(
-            fit_filter(640, 360),
-            "fps=30,scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:-1:-1:black"
-        );
     }
 
     #[test]

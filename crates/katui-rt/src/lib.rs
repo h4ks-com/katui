@@ -4,6 +4,7 @@
 
 pub mod clock;
 pub mod info;
+pub mod media;
 pub mod session;
 
 #[cfg(unix)]
