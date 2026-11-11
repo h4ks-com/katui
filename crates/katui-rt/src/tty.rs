@@ -159,9 +159,30 @@ pub fn probe_default() -> Capabilities {
 
 fn probe_terminal() -> Capabilities {
     let env = Env::capture();
-    match TtyTransport::open(Duration::from_millis(600)) {
+    let caps = probe_once(&env, Duration::from_millis(600));
+    if worth_retrying(&env, &caps) {
+        let retried = probe_once(&env, Duration::from_millis(1200));
+        if retried.kitty {
+            return retried;
+        }
+    }
+    caps
+}
+
+/// A multiplexer inside kitty sometimes relays kitty's answer too late for
+/// the first budget, and losing it drops a kitty terminal to blocks, so we
+/// ask once more with a longer one.
+fn worth_retrying(env: &Env, caps: &Capabilities) -> bool {
+    env.inside_multiplexer()
+        && env.launched_from_kitty()
+        && env.forced_graphics().is_none()
+        && !caps.kitty
+}
+
+fn probe_once(env: &Env, budget: Duration) -> Capabilities {
+    match TtyTransport::open(budget) {
         Ok(mut transport) => {
-            let caps = probe(&mut transport, &env);
+            let caps = probe(&mut transport, env);
             // answers racing the budget boundary would otherwise leak
             // into the parent shell as typed junk; spend a quiet window
             // draining whatever still arrives, and drop's input flush
@@ -172,7 +193,7 @@ fn probe_terminal() -> Capabilities {
             }
             caps
         }
-        Err(_) => sniff(&env),
+        Err(_) => sniff(env),
     }
 }
 
@@ -450,5 +471,33 @@ mod tests {
         assert_eq!(super::pick_cell(None, Some(cell(7, 14)), area), cell(7, 14));
         assert_eq!(super::pick_cell(None, None, area), cell(9, 18));
         assert_eq!(super::pick_cell(None, None, None), cell(10, 20));
+    }
+
+    #[test]
+    fn only_a_kitty_launched_multiplexer_without_graphics_retries() {
+        use katui_proto::probe::{Capabilities, Env};
+
+        let tmux_in_kitty = Env {
+            tmux: Some("pane".to_owned()),
+            kitty_window_id: Some("1".to_owned()),
+            ..Env::default()
+        };
+        let lost = Capabilities::default();
+        assert!(super::worth_retrying(&tmux_in_kitty, &lost));
+        let found = Capabilities {
+            kitty: true,
+            ..Capabilities::default()
+        };
+        assert!(!super::worth_retrying(&tmux_in_kitty, &found));
+        let forced = Env {
+            graphics: Some("blocks".to_owned()),
+            ..tmux_in_kitty.clone()
+        };
+        assert!(!super::worth_retrying(&forced, &lost));
+        let bare_kitty = Env {
+            tmux: None,
+            ..tmux_in_kitty
+        };
+        assert!(!super::worth_retrying(&bare_kitty, &lost));
     }
 }

@@ -23,6 +23,9 @@ set -g mouse on
 set -as terminal-features ',xterm*:RGB,xterm*:sync'
 ```
 
+Set `KATUI_GRAPHICS` to `kitty`, `sixel` or `blocks` to override the
+backend katui detects. `just info` prints what it detected.
+
 To try the demos without touching your own sessions, save that as
 `katui.conf` and start a separate tmux server with only that config:
 

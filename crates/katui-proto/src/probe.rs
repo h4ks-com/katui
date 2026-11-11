@@ -48,6 +48,9 @@ pub struct Env {
     pub tmux: Option<String>,
     /// `RMUX`, set by the Rust rewrite alongside the tmux variables.
     pub rmux: Option<String>,
+    /// `KATUI_GRAPHICS`: `kitty`, `sixel` or `blocks` overrides whatever
+    /// the probe finds.
+    pub graphics: Option<String>,
 }
 
 impl Env {
@@ -61,6 +64,7 @@ impl Env {
             kitty_window_id: var("KITTY_WINDOW_ID"),
             tmux: var("TMUX"),
             rmux: var("RMUX"),
+            graphics: var("KATUI_GRAPHICS"),
         }
     }
 
@@ -78,10 +82,31 @@ impl Env {
     /// rmux the inherited markers count.
     pub fn supports_kitty(&self) -> bool {
         let multiplexer_forwards = self.rmux.is_some() || self.tmux.is_none();
-        multiplexer_forwards
-            && (self.kitty_window_id.is_some()
-                || self.term.as_deref() == Some("xterm-kitty")
-                || self.term_program.as_deref() == Some("kitty"))
+        multiplexer_forwards && self.launched_from_kitty()
+    }
+
+    /// Whether kitty markers are present, inherited through a multiplexer
+    /// or not.
+    pub fn launched_from_kitty(&self) -> bool {
+        self.kitty_window_id.is_some()
+            || self.term.as_deref() == Some("xterm-kitty")
+            || self.term_program.as_deref() == Some("kitty")
+    }
+
+    /// The graphics backend `KATUI_GRAPHICS` names, if it names one.
+    pub fn forced_graphics(&self) -> Option<ForcedGraphics> {
+        match self
+            .graphics
+            .as_deref()?
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "kitty" => Some(ForcedGraphics::Kitty),
+            "sixel" => Some(ForcedGraphics::Sixel),
+            "blocks" => Some(ForcedGraphics::Blocks),
+            _ => None,
+        }
     }
 
     /// Whether we run in a tmux or rmux pane.
@@ -102,6 +127,24 @@ impl Env {
         };
         let screen = term.starts_with("screen") && !self.inside_multiplexer();
         !(blocked.contains(&term) || screen)
+    }
+}
+
+/// A graphics backend chosen by the user through `KATUI_GRAPHICS`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForcedGraphics {
+    /// The kitty graphics protocol.
+    Kitty,
+    /// Sixel images.
+    Sixel,
+    /// Quarter blocks, no images.
+    Blocks,
+}
+
+impl ForcedGraphics {
+    fn apply(self, caps: &mut Capabilities) {
+        caps.kitty = self == Self::Kitty;
+        caps.sixel = self == Self::Sixel;
     }
 }
 
@@ -290,6 +333,9 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     }
     caps.cell = replies.cell.or(caps.cell);
     caps.text_area = replies.text_area.or(caps.text_area);
+    if let Some(forced) = env.forced_graphics() {
+        forced.apply(&mut caps);
+    }
     caps
 }
 
@@ -304,7 +350,7 @@ fn still_listening(replies: &Replies, silent_reads: u32) -> bool {
 
 /// Seed capabilities from environment markers alone.
 pub fn sniff(env: &Env) -> Capabilities {
-    Capabilities {
+    let mut caps = Capabilities {
         kitty: env.supports_kitty(),
         animation: false,
         sixel: false,
@@ -314,7 +360,11 @@ pub fn sniff(env: &Env) -> Capabilities {
         text_area: None,
         id_space: IdSpace::default(),
         trust: ProbeSource::Sniffed,
+    };
+    if let Some(forced) = env.forced_graphics() {
+        forced.apply(&mut caps);
     }
+    caps
 }
 
 impl Replies {
@@ -503,6 +553,7 @@ mod tests {
             kitty_window_id: None,
             tmux: None,
             rmux: None,
+            graphics: None,
         }
     }
 
@@ -860,5 +911,20 @@ mod tests {
             })
         );
         assert_eq!(super::parse_identity(b">|(379)"), None);
+    }
+
+    #[test]
+    fn katui_graphics_overrides_what_the_probe_found() {
+        let mut forced = env();
+        forced.graphics = Some("Blocks".to_owned());
+        let mut transport = Scripted::new(&[b"\x1b_Gi=31;OK\x1b\\\x1b[?62;4c"]);
+        let caps = probe(&mut transport, &forced);
+        assert!(!caps.kitty && !caps.sixel, "blocks wins over the answers");
+        let mut mux = env();
+        mux.tmux = Some("pane".to_owned());
+        mux.graphics = Some("kitty".to_owned());
+        assert!(sniff(&mux).kitty, "kitty wins over a silent tmux");
+        mux.graphics = Some("nonsense".to_owned());
+        assert!(!sniff(&mux).kitty, "an unknown name changes nothing");
     }
 }
