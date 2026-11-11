@@ -1,0 +1,40 @@
+[package]
+name = "katui"
+description = "Graphics-first terminal UI engine: cell and pixel planes over the kitty graphics protocol"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+categories.workspace = true
+keywords.workspace = true
+repository.workspace = true
+
+[features]
+default = ["widgets", "layout"]
+draw = ["dep:katui-draw"]
+layout = ["dep:katui-layout"]
+ui = ["dep:katui-ui", "draw"]
+widgets = ["dep:katui-widgets", "ui"]
+app = ["dep:katui-app", "widgets"]
+game = ["dep:katui-game"]
+content = ["dep:katui-content"]
+html = ["content", "katui-content/html"]
+ratatui = ["dep:katui-ratatui"]
+
+[dependencies]
+katui-present.workspace = true
+katui-proto.workspace = true
+katui-rt.workspace = true
+katui-scene.workspace = true
+katui-app = { workspace = true, optional = true }
+katui-content = { workspace = true, optional = true }
+katui-draw = { workspace = true, optional = true }
+katui-game = { workspace = true, optional = true }
+katui-layout = { workspace = true, optional = true }
+katui-ratatui = { workspace = true, optional = true }
+katui-ui = { workspace = true, optional = true }
+katui-widgets = { workspace = true, optional = true }
+
+[lints]
+workspace = true

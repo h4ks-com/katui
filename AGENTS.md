@@ -8,6 +8,7 @@ writing code; it is the contract this guide enforces.
 ## Layout
 
 ```
+crates/katui/           every crate below under one name, the optional ones behind features
 crates/katui-proto/     L0: protocol codecs (kitty, rgp), capability probes (pure, no I/O)
 crates/katui-scene/     L2: cell plane, placements, RGBA surfaces with tile damage (pure state)
 crates/katui-present/   L1: presenters: cells, blocks, kitty placements, full-frame surfaces (pure)
