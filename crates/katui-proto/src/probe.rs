@@ -165,7 +165,7 @@ pub enum ProbeSource {
 /// `name version` shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identity {
-    /// Lowercase terminal name, for example `kitty`.
+    /// The terminal name as the terminal reports it, for example `kitty` or `iTerm2`.
     pub name: String,
     /// Version, when the terminal reported one.
     pub version: Option<String>,
@@ -911,6 +911,46 @@ mod tests {
             })
         );
         assert_eq!(super::parse_identity(b">|(379)"), None);
+    }
+
+    /// Probe answers recorded from real terminals, macOS, one window each.
+    fn recorded(replies: &[u8]) -> Capabilities {
+        let mut transport = Scripted::new(&[replies]);
+        probe(&mut transport, &env())
+    }
+
+    #[test]
+    fn ghostty_speaks_kitty_graphics_without_animation() {
+        let caps = recorded(include_bytes!("../fixtures/probe/ghostty-1.2.3.bin"));
+        assert!(caps.kitty && !caps.animation && !caps.sixel);
+        assert_eq!(
+            caps.identity.map(|id| id.to_string()).as_deref(),
+            Some("ghostty 1.2.3")
+        );
+        assert_eq!(
+            caps.cell,
+            Some(CellPixels {
+                width: 16,
+                height: 35
+            })
+        );
+    }
+
+    #[test]
+    fn iterm2_speaks_kitty_graphics_and_sixel() {
+        let caps = recorded(include_bytes!("../fixtures/probe/iterm2-3.7.7.bin"));
+        assert!(caps.kitty && caps.sixel && !caps.animation);
+        assert_eq!(
+            caps.identity.map(|id| id.to_string()).as_deref(),
+            Some("iTerm2 3.7.7")
+        );
+        assert_eq!(
+            caps.cell,
+            Some(CellPixels {
+                width: 7,
+                height: 17
+            })
+        );
     }
 
     #[test]
