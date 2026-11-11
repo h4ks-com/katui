@@ -38,9 +38,9 @@ same scene and presenters under all three:
 2. No layer below L2 knows what a widget is.
 3. The core (proto, scene, present, draw, layout, widgets, docs) performs
    zero I/O: everything flows through trait seams the pure crates define
-   and katui-rt implements: `Transport` lives in katui-proto, `Sink` in
-   katui-present, and `Source` (the event seam, still planned) will live
-   in katui-rt. The probe's `Env::capture` reading the process
+   and katui-rt implements: `Transport` lives in katui-proto and `Sink` in
+   katui-present, and input reaches an app as parsed events that
+   katui-rt's `Headless` driver feeds in tests. The probe's `Env::capture` reading the process
    environment is the one sanctioned exception. That single rule is what
    makes ~90 percent of the system unit-testable without a terminal.
 4. Everything that talks to a real terminal is either an encoder test with
@@ -104,13 +104,13 @@ pub trait Presenter {
     fn present(&mut self, diff: &SceneDiff, caps: &Capabilities,
                out: &mut dyn Sink) -> FrameStats;
 }
-pub fn select(caps: &Capabilities) -> Backend;  // needs-aware choice lands with presenter strategies
-pub struct Needs { alpha: bool, z_order: bool, fps: u8 }  // degrade ladder, lands with surfaces
+pub fn select(caps: &Capabilities) -> Backend;  // PixelScreen's constructors pick the strategy
 pub struct FrameStats { bytes_out: usize, placements_moved: usize,
                         surfaces_patched: usize, encode_us: u64 }
 
 // katui-rt: the only impure layer
-pub trait Source { fn poll(&mut self, d: Duration) -> Option<Event>; }
+pub trait App { fn update(&mut self, e: AppEvent) -> Control; fn draw(..); }
+pub struct Headless<A: App>  // the same loop over fed input, no terminal
 pub struct Runtime { /* raw mode, loop, clock, keymaps, restore guards */ }
 ```
 
@@ -129,12 +129,12 @@ semver-frozen from v0.1; everything experimental hides behind feature flags
 | katui-layout | constraint solving | geometry fixtures; taffy vs kasuari parity suite (same inputs, same rects) for the diffler layout corpus | port diffler's layouts unchanged |
 | katui-widgets | components, focus, styling | render-widget-into-plane insta snapshots; focus graph routing; event propagation (bubble/capture); theme resolution incl. border sets (ttt model) | gallery app |
 | katui-content | formats → scene (markdown, code, diff, html subset, charts) | markdown/tree-sitter/HTML-subset golden scene fixtures; both fidelity modes (html-css.md) | render diffler's markdown pane |
-| katui-rt | ALL I/O and time | tier 2 only: headless driver over fake Sink/Source; loop deadline honored under synthetic load; keymap resolution tables; restore-guard determinism | raw-mode lifecycle across the terminal matrix |
+| katui-rt | ALL I/O and time | tier 2 only: headless driver over a fake Sink and fed input; loop deadline honored under synthetic load; keymap resolution tables; restore-guard determinism | raw-mode lifecycle across the terminal matrix |
 | katui-ratatui | compat adapter | parity harness: render the ratatui demo widget corpus through katui, diff cell-for-cell against ratatui's own TestBackend expectations | diffler spike (the phase 1 gate) |
 
 Testability tiers: tier 1 pure unit (no I/O, `cargo test`, insta, proptest
 fuzz) covers proto, scene, present, draw, layout, widgets, docs. Tier 2
-headless integration (fake Sink/Source in-process) covers rt and the
+headless integration (fake Sink and fed input in-process) covers rt and the
 adapter. Tier 3 is the real-terminal matrix (kitty, ghostty, wezterm,
 konsole, iTerm2, foot, WT), screenshot-based, run per release, never a
 blocker for daily commits. Optional test oracle: a headless VT (avt) to

@@ -38,3 +38,7 @@ katui-widgets = { workspace = true, optional = true }
 
 [lints]
 workspace = true
+
+[[example]]
+name = "counter"
+required-features = ["app"]

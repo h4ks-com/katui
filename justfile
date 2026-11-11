@@ -66,6 +66,10 @@ demo-snake:
 demo-todo:
     cargo run --release -p katui-app --example todo
 
+# the smallest katui program: a click counter
+demo-counter:
+    cargo run --release -p katui --example counter --features app
+
 # the page viewer: local html through the html and css subset, links included
 demo-browse page="":
     cargo run --release -p katui-app --example browse -- {{page}}

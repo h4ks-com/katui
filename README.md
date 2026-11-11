@@ -1,9 +1,58 @@
 # katui
 
-Graphics-first terminal UI engine in Rust: cell and pixel planes over the
-kitty graphics protocol, ratatui-compatible, portable fallbacks. Status:
-skeleton. Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md)
-first.
+katui is a terminal UI engine in Rust that draws real pixels. It renders
+through the kitty graphics protocol and falls back to sixel or quarter
+blocks on other terminals.
+
+- Pixel UIs with layout, text, widgets, mouse and keyboard
+- Games and video at up to 30 frames a second
+- A ratatui backend that adds images to existing ratatui apps
+- Works inside tmux
+
+## Use
+
+```
+cargo add katui --git https://github.com/matheusfillipe/katui --features app
+```
+
+A click counter:
+
+```rust
+use katui::app::{Control, UiApp, run};
+use katui::ui::{Align, Element};
+use katui::widgets::{Emphasis, Theme, button, label, panel};
+
+#[derive(Default)]
+struct Counter(u32);
+
+impl UiApp for Counter {
+    type Message = ();
+
+    fn view(&self, theme: &Theme) -> Element<()> {
+        panel(
+            [
+                label(format!("Clicked {} times", self.0), theme.body(), theme.text),
+                button("Add one", (), Emphasis::Primary, theme),
+            ],
+            theme,
+        )
+        .align(Align::Center)
+    }
+
+    fn update(&mut self, (): ()) -> Control {
+        self.0 += 1;
+        Control::Redraw
+    }
+}
+
+fn main() -> Result<(), katui::rt::RtError> {
+    run(Counter::default())
+}
+```
+
+Run it with `just demo-counter`, and see `just --list` for the other
+demos. The `game`, `content`, `html` and `ratatui` features add the game
+runner, markdown and HTML rendering, and the ratatui backend.
 
 ## Terminals
 
@@ -34,6 +83,9 @@ tmux -L katui -f katui.conf new -s demos
 ```
 
 ## Develop
+
+Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before
+changing code.
 
 ```
 just check   # clippy, the fast gate; run after every change
