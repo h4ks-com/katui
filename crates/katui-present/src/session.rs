@@ -2,7 +2,7 @@
 //! enter, one leave, nothing between.
 
 use crate::Sink;
-use katui_proto::kitty;
+use katui_proto::{clipboard, kitty};
 use std::io;
 
 /// Enter the alternate screen with the cursor hidden; everything drawn
@@ -39,6 +39,12 @@ pub fn report_key_releases<W: Sink>(out: &mut W) -> io::Result<()> {
 /// written before this.
 pub fn terminal_query<W: Sink>(out: &mut W, id: u32) -> io::Result<()> {
     out.write_all(&kitty::barrier(kitty::ImageId(id)))
+}
+
+/// Put `text` on the system clipboard; `multiplexed` routes it through a
+/// tmux or rmux pane.
+pub fn copy_to_clipboard<W: Sink>(out: &mut W, text: &str, multiplexed: bool) -> io::Result<()> {
+    out.write_all(&clipboard::copy(text, multiplexed))
 }
 
 #[cfg(test)]
