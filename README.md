@@ -57,7 +57,8 @@ runner, markdown and HTML rendering, and the ratatui backend.
 ## Terminals
 
 Graphics need a terminal that speaks the kitty graphics protocol, such as
-kitty. Other terminals get a quarter-block fallback.
+kitty, Ghostty or iTerm2 3.7. Terminals with sixel get sixel images, and
+the rest get a quarter-block fallback.
 
 Inside tmux, every image is anchored to one Unicode placeholder cell: plain
 text that tmux moves, clears and hides with the rest of the pane, so
