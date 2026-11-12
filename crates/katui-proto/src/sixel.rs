@@ -1,15 +1,14 @@
-//! The sixel encoder: RGBA pixels to one DCS sixel image over a fixed
-//! 6x6x6 color cube, so encoding needs no palette search and neighboring
-//! tiles agree on every color. We round to the nearest level: dithering
-//! puts many colors in every band, and a sixel band costs a line of
-//! columns per color, so dithered frames run about ten times larger.
+//! The sixel encoder: RGBA pixels to one DCS sixel image with a palette of
+//! its own colors. We bucket colors at five bits a channel and drop a bit
+//! at a time until the buckets fit the palette, so a UI tile keeps its
+//! colors and a gradient keeps its shading. We round instead of dithering:
+//! dithering puts many colors in every band, and a sixel band costs a line
+//! of columns per color, so dithered frames run about ten times larger.
 
 use std::fmt::Write as _;
 
-/// Levels per channel in the color cube.
-const LEVELS: u8 = 6;
-/// The cube's size, the palette length.
-const COLORS: usize = 216;
+/// The most palette entries an image uses.
+const COLORS: usize = 256;
 /// The first character of a sixel, which carries six vertical bits.
 const SIXEL_BASE: u8 = 0x3f;
 
@@ -23,9 +22,12 @@ pub fn encode(pixels: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
     if pixels.len() != columns.checked_mul(rows)?.checked_mul(4)? {
         return None;
     }
-    let indices = quantize(pixels);
+    let (palette, indices) = (2..=5)
+        .rev()
+        .find_map(|bits| quantize(pixels, bits))
+        .unwrap_or_default();
     let mut text = format!("\x1bP0;1;0q\"1;1;{width};{height}");
-    write_palette(&mut text, &indices);
+    write_palette(&mut text, &palette, &indices);
     let mut band = Band::new(columns);
     for (band_index, band_rows) in indices.chunks(columns * 6).enumerate() {
         if band_index > 0 {
@@ -38,46 +40,73 @@ pub fn encode(pixels: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
     Some(text.into_bytes())
 }
 
-/// Every pixel's palette index, `None` where it is transparent.
-fn quantize(pixels: &[u8]) -> Vec<Option<u8>> {
-    pixels
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|&[red, green, blue, alpha]| {
-            if alpha < 128 {
-                return None;
-            }
-            Some(cube_level(red) * LEVELS * LEVELS + cube_level(green) * LEVELS + cube_level(blue))
-        })
-        .collect()
+/// The palette and every pixel's index into it, `None` where a pixel is
+/// transparent.
+type Quantized = (Vec<[u8; 3]>, Vec<Option<u8>>);
+
+fn opaque([red, green, blue, alpha]: [u8; 4]) -> Option<[u8; 3]> {
+    (alpha >= 128).then_some([red, green, blue])
 }
 
-/// The nearest cube level of `value`.
-fn cube_level(value: u8) -> u8 {
-    let level = (u16::from(value) * u16::from(LEVELS - 1) + 127) / 255;
-    u8::try_from(level).unwrap_or(LEVELS - 1)
+/// Bucket the colors at `bits` a channel, each bucket shown as the mean
+/// of its pixels; `None` when there are more buckets than palette entries.
+fn quantize(pixels: &[u8], bits: u8) -> Option<Quantized> {
+    let mut slot = vec![None::<u8>; 1 << (3 * bits)];
+    let mut sums: Vec<([u32; 3], u32)> = Vec::new();
+    let mut indices = Vec::with_capacity(pixels.len() / 4);
+    for pixel in pixels.as_chunks::<4>().0 {
+        let Some(rgb) = opaque(*pixel) else {
+            indices.push(None);
+            continue;
+        };
+        let bucket = rgb.iter().fold(0usize, |key, channel| {
+            key << bits | usize::from(channel >> (8 - bits))
+        });
+        let index = if let Some(index) = slot.get(bucket).copied().flatten() {
+            index
+        } else {
+            let index = u8::try_from(sums.len()).ok()?;
+            sums.push(([0; 3], 0));
+            if let Some(entry) = slot.get_mut(bucket) {
+                *entry = Some(index);
+            }
+            index
+        };
+        if let Some((sum, count)) = sums.get_mut(usize::from(index)) {
+            for (total, channel) in sum.iter_mut().zip(rgb) {
+                *total += u32::from(channel);
+            }
+            *count += 1;
+        }
+        indices.push(Some(index));
+    }
+    let palette = sums
+        .iter()
+        .map(|(sum, count)| sum.map(|total| u8::try_from(total / (*count).max(1)).unwrap_or(255)))
+        .collect();
+    Some((palette, indices))
 }
 
 /// Define the colors `indices` use, so a small tile carries a small
 /// palette.
-fn write_palette(text: &mut String, indices: &[Option<u8>]) {
+fn write_palette(text: &mut String, palette: &[[u8; 3]], indices: &[Option<u8>]) {
     let mut used = [false; COLORS];
     for index in indices.iter().flatten() {
         if let Some(slot) = used.get_mut(usize::from(*index)) {
             *slot = true;
         }
     }
-    let level = |channel: usize| channel * 100 / usize::from(LEVELS - 1);
-    for index in (0..COLORS).filter(|index| used.get(*index) == Some(&true)) {
-        let (red, green, blue) = (index / 36, index / 6 % 6, index % 6);
-        let _ = write!(
-            text,
-            "#{index};2;{};{};{}",
-            level(red),
-            level(green),
-            level(blue)
-        );
+    let percent = |channel: u8| (u16::from(channel) * 100 + 127) / 255;
+    for (index, [red, green, blue]) in palette.iter().enumerate() {
+        if used.get(index) == Some(&true) {
+            let _ = write!(
+                text,
+                "#{index};2;{};{};{}",
+                percent(*red),
+                percent(*green),
+                percent(*blue)
+            );
+        }
     }
 }
 
@@ -168,11 +197,11 @@ mod tests {
         let sixel = encode(&solid(8, 12, [255, 0, 0, 255]), 8, 12).expect("exact pixels");
         let text = String::from_utf8(sixel).expect("sixel is ascii");
         assert!(
-            text.starts_with("\x1bP0;1;0q\"1;1;8;12#180;2;100;0;0#180"),
+            text.starts_with("\x1bP0;1;0q\"1;1;8;12#0;2;100;0;0#0"),
             "only red is defined: {text}"
         );
         assert!(
-            text.ends_with("#180!8~-#180!8~\x1b\\"),
+            text.ends_with("#0!8~-#0!8~\x1b\\"),
             "two full bands of pure red: {text}"
         );
     }
@@ -183,7 +212,7 @@ mod tests {
         pixels[4..8].copy_from_slice(&[0, 0, 0, 0]);
         let text = String::from_utf8(encode(&pixels, 2, 2).expect("exact pixels")).expect("ascii");
         assert!(
-            text.ends_with("#5BA\x1b\\"),
+            text.ends_with("#0BA\x1b\\"),
             "column one has rows 0 and 1, column two row 1: {text}"
         );
     }
@@ -271,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn a_gradient_survives_a_round_trip_within_half_a_cube_step() {
+    fn a_gradient_survives_a_round_trip_within_one_bucket() {
         let (width, height) = (37, 13);
         let mut pixels = Vec::new();
         for y in 0..height {
@@ -287,7 +316,7 @@ mod tests {
             for channel in 0..3 {
                 let error = (i16::from(shown[channel]) - i16::from(rgba[channel])).abs();
                 assert!(
-                    error <= 51,
+                    error <= 16,
                     "pixel {index} channel {channel} is off by {error}"
                 );
             }
@@ -300,13 +329,31 @@ mod tests {
     }
 
     #[test]
-    fn a_midtone_rounds_to_one_cube_level() {
-        let text =
-            String::from_utf8(encode(&solid(4, 4, [128, 128, 128, 255]), 4, 4).expect("exact"))
-                .expect("ascii");
+    fn a_dark_theme_color_keeps_its_exact_value() {
+        let text = String::from_utf8(encode(&solid(4, 4, [26, 22, 38, 255]), 4, 4).expect("exact"))
+            .expect("ascii");
         assert!(
-            text.ends_with("#129!4N\x1b\\"),
-            "grey 128 is level 3 on every channel: {text}"
+            text.contains("#0;2;10;9;15"),
+            "the color is defined as it is: {text}"
         );
+    }
+
+    #[test]
+    fn a_busy_image_drops_bits_until_its_colors_fit_the_palette() {
+        let pixels: Vec<u8> = (0..300u32)
+            .flat_map(|index| [(index * 8 % 256) as u8, (index / 32 * 8) as u8, 0, 255])
+            .collect();
+        let text = String::from_utf8(encode(&pixels, 300, 1).expect("exact")).expect("ascii");
+        let image = decode(&text, 300, 1);
+        for (index, rgba) in pixels.as_chunks::<4>().0.iter().enumerate() {
+            let shown = image[index].expect("every opaque pixel is drawn");
+            for channel in 0..3 {
+                let error = (i16::from(shown[channel]) - i16::from(rgba[channel])).abs();
+                assert!(
+                    error <= 16,
+                    "pixel {index} channel {channel} is off by {error}"
+                );
+            }
+        }
     }
 }
