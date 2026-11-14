@@ -66,6 +66,10 @@ demo-snake:
 demo-todo:
     cargo run --release -p katui-app --example todo
 
+# the widget tour: menus, a tree, a table, controls, a note, toasts and a dialog
+demo-widgets:
+    cargo run --release -p katui-app --example widgets
+
 # the smallest katui program: a click counter
 demo-counter:
     cargo run --release -p katui --example counter --features app
