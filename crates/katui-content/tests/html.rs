@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use katui_content::{HtmlDefaults, HtmlHost, html};
+use katui_content::{HtmlDefaults, HtmlHost, html, markdown_view};
 use katui_draw::{Rgba, TextEngine, bundled_fonts};
 use katui_scene::surface::Surface;
 use katui_ui::{CellPixels, Ui, UiOptions};
@@ -143,4 +143,40 @@ fn every_link_answers_its_own_clicks_wherever_it_sits() {
         None,
         "the text before a link stays plain"
     );
+}
+
+#[test]
+fn markdown_renders_through_the_html_subset_and_its_links_answer_clicks() {
+    let defaults = HtmlDefaults {
+        font_size: 15.0,
+        color: Rgba::solid(230, 230, 230),
+        link: Rgba::solid(120, 160, 255),
+        tint: Rgba::solid(45, 42, 60),
+    };
+    let notes =
+        "# Notes\n\nRead [the guide](guide.md) first.\n\n- one\n- two\n\n```\nlet x = 1;\n```\n";
+    let root = markdown_view(notes, &defaults, &Host);
+    let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
+    let mut ui: Ui<String> = Ui::new(engine, UiOptions::default());
+    let output = ui.render(&root, SIZE, CELL);
+    let surface = output.flatten(CELL, SIZE).expect("whole pixels");
+    let path = format!(
+        "{}/../../target/katui-markdown.png",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    image::save_buffer(
+        path,
+        surface.pixels(),
+        surface.width(),
+        surface.height(),
+        image::ExtendedColorType::Rgba8,
+    )
+    .expect("the target directory is writable");
+    let link = (0..SIZE.1 / 4)
+        .flat_map(|row| (0..SIZE.0 / 8).map(move |column| (column, row)))
+        .find_map(|(column, row)| {
+            let (x, y) = (f32::from(column as u16) * 8.0, f32::from(row as u16) * 4.0);
+            ui.hit_test(x, y).and_then(|hit| hit.on_click)
+        });
+    assert_eq!(link.as_deref(), Some("guide.md"));
 }

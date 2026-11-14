@@ -18,7 +18,7 @@ katui-ui = { workspace = true, optional = true }
 scraper = { workspace = true, optional = true }
 
 [features]
-html = ["dep:ego-tree", "dep:katui-draw", "dep:katui-ui", "dep:scraper"]
+html = ["dep:ego-tree", "dep:katui-draw", "dep:katui-ui", "dep:scraper", "pulldown-cmark/html"]
 
 [dev-dependencies]
 image.workspace = true

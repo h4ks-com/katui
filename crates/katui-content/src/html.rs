@@ -38,6 +38,21 @@ pub trait HtmlHost<M> {
     fn image(&self, src: &str) -> Option<Arc<Surface>>;
 }
 
+/// The element tree of the markdown document `source`, drawn through the
+/// same HTML and CSS subset as [`html`].
+pub fn markdown_view<M: Clone>(
+    source: &str,
+    defaults: &HtmlDefaults,
+    host: &dyn HtmlHost<M>,
+) -> Element<M> {
+    let mut page = String::new();
+    pulldown_cmark::html::push_html(
+        &mut page,
+        pulldown_cmark::Parser::new_ext(source, pulldown_cmark::Options::empty()),
+    );
+    html(&page, defaults, host)
+}
+
 /// The element tree of the HTML document `source`.
 pub fn html<M: Clone>(source: &str, defaults: &HtmlDefaults, host: &dyn HtmlHost<M>) -> Element<M> {
     let document = Html::parse_document(source);
