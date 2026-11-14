@@ -86,11 +86,13 @@ Run it with `cargo run`, click the button, and press <kbd>Ctrl</kbd>+<kbd>C</kbd
 ### Pixel UIs
 
 `katui::app` runs an app made of a `view` and an `update`. `katui::widgets`
-gives you labels, buttons, panels, text fields, lists, checkboxes, tabs and
-progress bars, laid out with flexbox and drawn with proportional fonts.
-Clicks, hovers, typing and paste reach your app as messages.
+gives you buttons, text fields and text areas, lists, tables, trees, scroll
+views, checkboxes, switches, radio buttons, sliders, tabs, menus, selects,
+tooltips, dialogs, toasts and split panes, laid out with flexbox and drawn
+with proportional fonts. Clicks, drags, the mouse wheel, typing and paste
+reach your app as messages.
 
-<!-- media: screenshot of the to-do demo with a few tasks, one done -->
+<!-- media: screenshot of the widget tour with the File menu open -->
 
 ### Games
 
@@ -199,6 +201,7 @@ Clone the repository and run any of these with [just](https://github.com/casey/j
 | `just demo-counter` | The first program above |
 | `just demo-glow` | The game example above |
 | `just demo-todo` | A task list with tabs, a text field and a progress bar |
+| `just demo-widgets` | Every widget in one app: menus, a tree, a table, a note, toasts and a dialog |
 | `just demo-browse` | A page viewer for local HTML, with scrolling and links |
 | `just demo-video` | A video player for a file or URL, or a test pattern with a beep when you give it none |
 | `just demo-shardrift` | Drift through a nebula and split crystal rocks |

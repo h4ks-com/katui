@@ -139,20 +139,66 @@ which one has the focus and moves it with <kbd>Tab</kbd> and
 
 The widgets are plain functions that return elements. They all take the
 `theme`, which holds the colors and sizes so your app looks consistent.
+Widgets that keep state between frames have a state type you store in your
+app struct and pass to the widget in `view`.
 
-| Widget | What it shows |
-|---|---|
-| `label(text, size, color)` | A line of text |
-| `button(text, message, emphasis, theme)` | A button that sends `message` |
-| `panel(children, theme)` | A raised card around its children |
-| `text_field(&field, placeholder, focused, theme)` | A one-line text input |
-| `list(&state, theme, row)` | The rows of a scrolling list, built by `row` |
-| `checkbox(text, checked, message, theme)` | A box with a tick and a label |
-| `tabs(titles, selected, theme, message)` | A row of tabs |
-| `progress(fraction, theme)` | A bar filled from 0.0 to 1.0 |
+| Widget | State | What it shows |
+|---|---|---|
+| `label`, `button`, `panel` | | Text, a button that sends a message, a raised card |
+| `text_field` | `TextField` | A one-line text input |
+| `text_area` | `TextArea` | A multi-line text input that scrolls with its cursor |
+| `list` | `ListState` | The rows of a list, built by a function you pass |
+| `table` | `ListState` | Rows cut into `Column`s under a header |
+| `tree` | `TreeState` | Nodes that open to show their children |
+| `scroll_view` | `ScrollState` | Content that scrolls with the wheel, the keys and a scrollbar |
+| `checkbox`, `switch`, `radio` | | On and off, and one choice of several |
+| `slider` | | A value from 0.0 to 1.0 you press or drag to |
+| `tabs`, `progress`, `spinner` | | Tabs, a progress bar, three dots while you work |
+| `select`, `menu` | | A list that opens below a field or a menu title |
+| `tooltip` | | A hint under an element while the pointer is on it |
+| `dialog` | | A box over a dimmed screen, for a question |
+| `toasts` | `Toasts` | Short messages in a corner that go away on their own |
+| `key_hints` | | Keys drawn as key caps with what they do |
+| `split` | | Two panes and a divider you drag |
 
-`TextField` and `ListState` hold the state of their widget. You keep them
-in your app struct and pass them to the widget in `view`.
+The widget tour shows all of them working together. Run it with
+`just demo-widgets` and read `crates/katui-app/examples/widgets.rs`.
+
+## Scrolling
+
+A `scroll_view` keeps its position in a `ScrollState`. It sends a `Scroll`
+message whenever the wheel or the scrollbar moves it; store it with
+`apply`:
+
+```rust,ignore
+Message::Scrolled(scroll) => self.page.apply(scroll),
+```
+
+`ScrollState::handle` moves it with the arrow, page, home and end keys. You
+never have to know how tall the content is: when an offset runs past the
+end, katui sends the clamped position back on the next frame.
+
+## Popups and dialogs
+
+`select`, `menu`, `tooltip`, `dialog` and `toasts` draw above everything
+else, so they never push the rest of the layout around. Your state decides
+whether one is open: `select` and `menu` take an `open` flag and send their
+toggle message when the user clicks them or anywhere outside them. Keep one
+of them open at a time.
+
+Put a `dialog` and `toasts` last in your root element, and the dialog only
+while it is open. A click on the dimmed screen sends the dialog's dismiss
+message, and clicks inside it reach only its own buttons.
+
+To make your own popup, call `.popup(x, y)` on any element: it leaves the
+layout and draws on top, `x` and `y` pixels from its parent's top left.
+
+## Dragging
+
+`slider` and `split` follow the pointer while you hold the button. Your own
+elements can do the same with `.on_press(|x, y| ...)`, which sends a
+message with the pointer's position as fractions of the element's box, on
+the press and on every move until the release.
 
 ## Layout
 
@@ -199,4 +245,5 @@ fn start(&mut self, waker: Waker<Message>) {
 
 To see a bigger app, read the to-do demo in
 `crates/katui-app/examples/todo.rs` and run it with `just demo-todo`. It
-adds filter tabs and a progress bar to the ideas above.
+adds filter tabs and a progress bar to the ideas above. The widget tour,
+`just demo-widgets`, puts every widget in one app.
