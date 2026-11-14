@@ -14,7 +14,7 @@
   <a href="https://matheusfillipe.github.io/katui/katui/">API docs</a>
 </p>
 
-<!-- media: hero video, a 10 second loop of the shardrift, todo and video demos -->
+<p align="center"><img src="assets/demos/shardrift.gif" alt="Shardrift, a katui game: a ship firing through a nebula and splitting crystal rocks" width="800"></p>
 
 katui is a terminal UI library for Rust that draws real pixels. Apps, games
 and video show up as images through the [kitty graphics protocol][kitty],
@@ -92,7 +92,7 @@ tooltips, dialogs, toasts and split panes, laid out with flexbox and drawn
 with proportional fonts. Clicks, drags, the mouse wheel, typing and paste
 reach your app as messages.
 
-<!-- media: screenshot of the widget tour with the File menu open -->
+<img src="assets/demos/widgets.gif" alt="The widget tour: a file tree, a switch with a spinner, a slider, a table and a theme select switching to a light theme" width="800">
 
 ### Games
 
@@ -127,7 +127,7 @@ fn main() -> Result<(), katui::rt::RtError> {
 
 Hold the arrow keys to move the ball.
 
-<!-- media: gif of shardrift or lumenshaft being played -->
+<img src="assets/demos/lumenshaft.gif" alt="Lumenshaft, a katui game: glowing blocks falling down a 3D shaft" width="800">
 
 ### Video
 
@@ -136,7 +136,7 @@ RGBA frames, and gives you the frame that is due now. On a slow terminal it
 skips frames, so the picture keeps to real time. The video demo plays files
 and stream URLs at 30 frames a second, with pause, seek and mute.
 
-<!-- media: gif of the video demo playing a clip, with the progress bar showing -->
+<img src="assets/demos/video.gif" alt="The video demo playing a test pattern with a timecode, pausing and seeking" width="800">
 
 ### HTML and markdown
 
@@ -145,7 +145,7 @@ flex layout, styled text, colors, padding, borders, images and links.
 `katui::content::markdown_view` does the same for markdown. Enable them
 with the `html` feature.
 
-<!-- media: screenshot of the page viewer showing the bundled index page -->
+<img src="assets/demos/html.gif" alt="The HTML showcase page scrolling through headings, lists, flex layout and boxes" width="800">
 
 ### Images in ratatui apps
 
@@ -153,7 +153,7 @@ The `ratatui` feature adds `KatuiBackend`, a ratatui backend, and
 `katui::ratatui::run::run`, which runs a ratatui app on katui's event loop.
 Your existing widgets keep working, with real images placed next to them.
 
-<!-- media: screenshot of the ratatui image viewer showing the Mandelbrot picture -->
+<img src="assets/demos/ratatui.gif" alt="An image viewer made of ratatui widgets, stepping through generated pictures" width="800">
 
 ## Terminals
 
