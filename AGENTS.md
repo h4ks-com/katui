@@ -19,7 +19,7 @@ crates/katui-content/   L6: markdown to scene cells, and an html and css subset 
                         elements behind the html feature (pure)
 crates/katui-draw/      L3: canvas and text rasterizing onto surfaces (pure)
 crates/katui-ui/        L5: reactive element trees over retained layers (pure)
-crates/katui-widgets/   L5: theme, text field, focus, list and control views (pure)
+crates/katui-widgets/   L5: theme, inputs, lists, tables, trees, scroll views, popups (pure)
 crates/katui-app/       run(app): pixel UI programs on the terminal in one call,
                         the to-do, page viewer and widget tour demos
 crates/katui-game/      pixel apps: a light buffer, held keys and a fixed-step runner,

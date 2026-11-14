@@ -1,6 +1,6 @@
 [package]
 name = "katui-widgets"
-description = "katui widgets: a theme, text fields, focus, lists and controls over katui-ui"
+description = "katui widgets over katui-ui: a theme, inputs, lists, tables, trees, scroll views, popups and controls"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
