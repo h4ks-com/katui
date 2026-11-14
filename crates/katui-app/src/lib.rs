@@ -95,6 +95,7 @@ struct Runner<A: UiApp> {
     ui: Ui<A::Message>,
     screen: Screen,
     pointer: Pointer,
+    hovered: Option<(usize, Option<A::Message>)>,
 }
 
 impl<A: UiApp> Runner<A> {
@@ -109,19 +110,61 @@ impl<A: UiApp> Runner<A> {
             ui: Ui::new(engine, options),
             screen: Screen::for_terminal(caps, cell),
             pointer: Pointer::new(caps.cell),
+            hovered: None,
         })
     }
 
     fn mouse(&mut self, mouse: MouseEvent) -> Control {
         let (x, y) = self.pointer.locate(&mouse, self.cell);
-        let Some(hit) = self.ui.hit_test(x, y) else {
+        match mouse.action {
+            MouseAction::Press(Button::Left) => {
+                let message = self
+                    .ui
+                    .press(x, y)
+                    .or_else(|| self.ui.hit_test(x, y).and_then(|hit| hit.on_click));
+                self.send(message)
+            }
+            MouseAction::Drag(Button::Left) => {
+                let message = self.ui.drag(x, y);
+                self.send(message)
+            }
+            MouseAction::Release(Button::Left) => {
+                self.ui.release();
+                Control::Wait
+            }
+            MouseAction::WheelUp => {
+                let message = self.ui.hit_test(x, y).and_then(|hit| hit.on_wheel_up);
+                self.send(message)
+            }
+            MouseAction::WheelDown => {
+                let message = self.ui.hit_test(x, y).and_then(|hit| hit.on_wheel_down);
+                self.send(message)
+            }
+            MouseAction::Move => self.hover(x, y),
+            _ => Control::Wait,
+        }
+    }
+
+    /// Send the leave message of the element the pointer left, then the
+    /// hover message of the one it entered.
+    fn hover(&mut self, x: f32, y: f32) -> Control {
+        let hit = self.ui.hit_test(x, y);
+        let target = hit.as_ref().and_then(|hit| hit.hover_target);
+        if self.hovered.as_ref().map(|(index, _)| *index) == target {
             return Control::Wait;
-        };
-        let message = match mouse.action {
-            MouseAction::Press(Button::Left) => hit.on_click,
-            MouseAction::Move => hit.on_hover,
-            _ => None,
-        };
+        }
+        let left = self.hovered.take().and_then(|(_, leave)| leave);
+        let mut control = self.send(left);
+        if let Some(hit) = hit {
+            if let Some(index) = hit.hover_target {
+                self.hovered = Some((index, hit.on_leave));
+            }
+            control = merge(control, self.send(hit.on_hover));
+        }
+        control
+    }
+
+    fn send(&mut self, message: Option<A::Message>) -> Control {
         message.map_or(Control::Wait, |message| self.app.update(message))
     }
 
@@ -135,6 +178,22 @@ impl<A: UiApp> Runner<A> {
             }
             other => self.app.input(&other),
         }
+    }
+}
+
+/// The more urgent of two answers: quitting beats animating, which beats
+/// one redraw, which beats waiting.
+fn merge(first: Control, second: Control) -> Control {
+    let rank = |control: Control| match control {
+        Control::Wait => 0,
+        Control::Redraw => 1,
+        Control::Animate => 2,
+        Control::Quit => 3,
+    };
+    if rank(second) > rank(first) {
+        second
+    } else {
+        first
     }
 }
 
@@ -188,7 +247,16 @@ impl<A: UiApp> App for Runner<A> {
                 }
             }
         }
-        Ok(Control::Wait)
+        let corrections = self.ui.take_corrections();
+        let corrected = !corrections.is_empty();
+        for message in corrections {
+            self.app.update(message);
+        }
+        Ok(if corrected {
+            Control::Redraw
+        } else {
+            Control::Wait
+        })
     }
 }
 

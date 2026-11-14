@@ -77,6 +77,22 @@ pub(crate) enum Kind {
     Spacer,
 }
 
+/// Where a scrolling element stands: its offset and the largest offset its
+/// content allows, both in pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Scroll {
+    /// How far the content is scrolled.
+    pub offset: f32,
+    /// The furthest the content can scroll.
+    pub max: f32,
+}
+
+/// A message built from where the pointer is, as fractions of a box.
+pub(crate) type PressHandler<M> = Arc<dyn Fn(f32, f32) -> M>;
+
+/// A message built from a new scroll position.
+pub(crate) type ScrollHandler<M> = Arc<dyn Fn(Scroll) -> M>;
+
 /// One node of the view: a container, text, an image or a spacer.
 pub struct Element<M> {
     pub(crate) kind: Kind,
@@ -88,6 +104,13 @@ pub struct Element<M> {
     pub(crate) on_hover: Option<M>,
     pub(crate) span_clicks: Vec<(usize, M)>,
     pub(crate) id: Option<u64>,
+    pub(crate) on_leave: Option<M>,
+    pub(crate) on_scroll: Option<ScrollHandler<M>>,
+    pub(crate) on_press: Option<(PressHandler<M>, bool)>,
+    pub(crate) grip: bool,
+    pub(crate) popup: Option<(f32, f32)>,
+    pub(crate) opaque: bool,
+    pub(crate) scrollbar: Option<Rgba>,
 }
 
 impl<M> Element<M> {
@@ -102,6 +125,13 @@ impl<M> Element<M> {
             on_hover: None,
             span_clicks: Vec::new(),
             id: None,
+            on_leave: None,
+            on_scroll: None,
+            on_press: None,
+            grip: false,
+            popup: None,
+            opaque: false,
+            scrollbar: None,
         }
     }
 
@@ -184,6 +214,73 @@ impl<M> Element<M> {
     #[must_use]
     pub fn on_hover(mut self, message: M) -> Self {
         self.on_hover = Some(message);
+        self
+    }
+
+    /// The message sent when the pointer leaves this element after
+    /// hovering it.
+    #[must_use]
+    pub fn on_leave(mut self, message: M) -> Self {
+        self.on_leave = Some(message);
+        self
+    }
+
+    /// The message for a new scroll position of a [`Self::scroll`]
+    /// element. The view clamps the offset to the content, turns the
+    /// mouse wheel into new positions, and draws a scrollbar the pointer
+    /// can drag.
+    #[must_use]
+    pub fn on_scroll(mut self, message: impl Fn(Scroll) -> M + 'static) -> Self {
+        self.on_scroll = Some(Arc::new(message));
+        self
+    }
+
+    /// The message for a press at fractions `(x, y)` of this box, from 0.0
+    /// at the top left to 1.0 at the bottom right. Dragging after the
+    /// press keeps sending messages, with the fractions clamped to the box.
+    #[must_use]
+    pub fn on_press(mut self, message: impl Fn(f32, f32) -> M + 'static) -> Self {
+        self.on_press = Some((Arc::new(message), false));
+        self
+    }
+
+    /// Like [`Self::on_press`], but only a press on a descendant marked
+    /// [`Self::grip`] starts it, a divider between two panes for one.
+    #[must_use]
+    pub fn on_grip_press(mut self, message: impl Fn(f32, f32) -> M + 'static) -> Self {
+        self.on_press = Some((Arc::new(message), true));
+        self
+    }
+
+    /// Marks the part of an [`Self::on_grip_press`] ancestor that starts
+    /// its drag.
+    #[must_use]
+    pub fn grip(mut self) -> Self {
+        self.grip = true;
+        self
+    }
+
+    /// Takes this element out of the layout and draws it above everything
+    /// else, at `x`, `y` pixels from its parent's top left. Its size comes
+    /// from its content, or from the parent's edges for a [`Length::Fill`]
+    /// side. Popups, menus and dialogs use it.
+    #[must_use]
+    pub fn popup(mut self, x: f32, y: f32) -> Self {
+        self.popup = Some((x, y));
+        self
+    }
+
+    /// Stops clicks on this box from reaching what lies under it.
+    #[must_use]
+    pub fn opaque(mut self) -> Self {
+        self.opaque = true;
+        self
+    }
+
+    /// The color of the scrollbar a scrolling element draws.
+    #[must_use]
+    pub fn scrollbar(mut self, color: Rgba) -> Self {
+        self.scrollbar = Some(color);
         self
     }
 

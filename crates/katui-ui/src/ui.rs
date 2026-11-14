@@ -10,9 +10,10 @@ use katui_scene::surface::Surface;
 use taffy::TaffyTree;
 use taffy::prelude::Size;
 
-use crate::element::Element;
+use crate::element::{Element, PressHandler};
 use crate::layout::{Leaf, TextCache, compute, to_f32};
-use crate::resolve::{CellBox, Draft, Hit, Op, Region, hit_test, resolve};
+use crate::resolve::{CellBox, Draft, Hit, Op, Region, hit_test, press_target, resolve};
+use katui_draw::Rect;
 
 const PLACEMENT: PlacementId = PlacementId(1);
 
@@ -171,11 +172,21 @@ pub struct Ui<M> {
     tree: TaffyTree<Leaf>,
     layers: HashMap<Option<u64>, CachedLayer>,
     regions: Vec<Region<M>>,
+    captured: Option<(Rect, PressHandler<M>)>,
+    corrections: Vec<M>,
     next_image: u32,
     max_layer_cells: Option<(u32, u32)>,
 }
 
-impl<M: Clone> Ui<M> {
+/// Where (`x`, `y`) falls in `rect`, as fractions clamped to the box.
+fn fractions(rect: Rect, x: f32, y: f32) -> (f32, f32) {
+    (
+        ((x - rect.x) / rect.width.max(1.0)).clamp(0.0, 1.0),
+        ((y - rect.y) / rect.height.max(1.0)).clamp(0.0, 1.0),
+    )
+}
+
+impl<M: Clone + 'static> Ui<M> {
     /// A view layer shaping text through `engine`.
     pub fn new(engine: TextEngine, options: UiOptions) -> Self {
         Self {
@@ -183,6 +194,8 @@ impl<M: Clone> Ui<M> {
             tree: TaffyTree::new(),
             layers: HashMap::new(),
             regions: Vec::new(),
+            captured: None,
+            corrections: Vec::new(),
             next_image: options.first_image_id,
             max_layer_cells: options
                 .max_layer_cells
@@ -210,6 +223,7 @@ impl<M: Clone> Ui<M> {
         };
         let resolved = resolve(root, &laid, &mut self.text, surface, cell_f32);
         self.regions = resolved.regions;
+        self.corrections.extend(resolved.corrections);
         let output = self.present(&resolved.drafts, (cell_width, cell_height));
         self.text.end_render();
         output
@@ -219,6 +233,34 @@ impl<M: Clone> Ui<M> {
     /// the last layout.
     pub fn hit_test(&self, x: f32, y: f32) -> Option<Hit<M>> {
         hit_test(&self.regions, x, y)
+    }
+
+    /// The message of the press handler under (`x`, `y`), which then
+    /// follows the pointer through [`Self::drag`] until [`Self::release`].
+    pub fn press(&mut self, x: f32, y: f32) -> Option<M> {
+        let (rect, handler) = press_target(&self.regions, x, y)?;
+        let (across, down) = fractions(rect, x, y);
+        let message = handler(across, down);
+        self.captured = Some((rect, handler));
+        Some(message)
+    }
+
+    /// The message of the pressed handler for the pointer at (`x`, `y`).
+    pub fn drag(&self, x: f32, y: f32) -> Option<M> {
+        let (rect, handler) = self.captured.as_ref()?;
+        let (across, down) = fractions(*rect, x, y);
+        Some(handler(across, down))
+    }
+
+    /// End the press [`Self::press`] started.
+    pub fn release(&mut self) {
+        self.captured = None;
+    }
+
+    /// The scroll positions the last renders clamped, as their handlers'
+    /// messages, for the application to store.
+    pub fn take_corrections(&mut self) -> Vec<M> {
+        std::mem::take(&mut self.corrections)
     }
 
     /// The whole pixels of the layer `key` as last rendered, its tiles

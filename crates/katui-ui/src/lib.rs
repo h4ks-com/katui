@@ -10,7 +10,7 @@ mod layout;
 mod resolve;
 mod ui;
 
-pub use element::{Align, Element, Length};
+pub use element::{Align, Element, Length, Scroll};
 pub use katui_draw::TextSpan;
 pub use katui_proto::probe::CellPixels;
 pub use resolve::Hit;

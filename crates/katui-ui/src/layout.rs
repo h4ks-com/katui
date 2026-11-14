@@ -392,7 +392,26 @@ fn style_of<M>(element: &Element<M>, parent: Parent, scrolled: bool) -> Style {
         style.grid_template_rows = vec![fr(1.0)];
     }
     apply_fill(&mut style, element, parent);
+    if let Some((x, y)) = element.popup {
+        float(&mut style, element, x, y);
+    }
     style
+}
+
+/// Takes a popup out of the flow at `x`, `y` from its parent, stretching a
+/// [`Length::Fill`] side to the parent's far edge.
+fn float<M>(style: &mut Style, element: &Element<M>, x: f32, y: f32) {
+    let stretch = |fill: bool| if fill { length(0.0) } else { auto() };
+    style.position = Position::Absolute;
+    style.inset = Rect {
+        left: length(x),
+        top: length(y),
+        right: stretch(element.style.width == Length::Fill),
+        bottom: stretch(element.style.height == Length::Fill),
+    };
+    style.flex_grow = 0.0;
+    style.align_self = None;
+    style.justify_self = None;
 }
 
 fn apply_fill<M>(style: &mut Style, element: &Element<M>, parent: Parent) {
