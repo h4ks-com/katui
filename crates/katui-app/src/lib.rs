@@ -42,7 +42,8 @@ pub trait UiApp {
         Control::Wait
     }
 
-    /// The theme for cells of `cell` pixels.
+    /// The theme for cells of `cell` pixels. The runner asks before every
+    /// frame, so returning another theme switches the look.
     fn theme(&self, cell: CellPixels) -> Theme {
         Theme::dark(cell)
     }
@@ -91,7 +92,6 @@ struct Runner<A: UiApp> {
     app: A,
     caps: Capabilities,
     cell: CellPixels,
-    theme: Theme,
     ui: Ui<A::Message>,
     screen: Screen,
     pointer: Pointer,
@@ -103,7 +103,6 @@ impl<A: UiApp> Runner<A> {
         let engine = TextEngine::new(bundled_fonts()).map_err(io::Error::other)?;
         let options = UiOptions::for_terminal(FIRST_IMAGE, caps.multiplexed());
         Ok(Self {
-            theme: app.theme(cell),
             app,
             caps: caps.clone(),
             cell,
@@ -210,7 +209,6 @@ impl<A: UiApp> App for Runner<A> {
             AppEvent::Message(message) => self.app.update(message),
             AppEvent::Resized(_) => {
                 self.cell = katui_rt::tty::cell_size(&self.caps);
-                self.theme = self.app.theme(self.cell);
                 self.screen.repaint();
                 Control::Redraw
             }
@@ -228,7 +226,8 @@ impl<A: UiApp> App for Runner<A> {
             u32::from(size.columns) * u32::from(self.cell.width),
             u32::from(rows) * u32::from(self.cell.height),
         );
-        let root = self.app.view(&self.theme);
+        let theme = self.app.theme(self.cell);
+        let root = self.app.view(&theme);
         let output = self.ui.render(&root, pixels, self.cell);
         match &mut self.screen {
             Screen::Kitty(screen) => {

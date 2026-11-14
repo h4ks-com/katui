@@ -47,6 +47,38 @@ impl Theme {
         }
     }
 
+    /// The light theme at `cell`.
+    #[must_use]
+    pub fn light(cell: CellPixels) -> Self {
+        Self {
+            cell,
+            background: Paint::Solid(Rgba::solid(246, 244, 239)),
+            raised: Paint::Solid(Rgba::solid(255, 255, 255)),
+            highlight: Paint::Solid(Rgba::solid(226, 231, 244)),
+            border: Paint::Solid(Rgba::solid(210, 206, 198)),
+            text: Rgba::solid(30, 32, 40),
+            muted: Rgba::solid(110, 112, 124),
+            accent: Rgba::solid(52, 96, 210),
+            on_accent: Rgba::solid(255, 255, 255),
+            danger: Rgba::solid(196, 40, 40),
+        }
+    }
+
+    /// The same theme with every size and type size times `factor`, for a
+    /// zoom setting.
+    #[must_use]
+    pub fn scaled(mut self, factor: f32) -> Self {
+        let scale = |pixels: u16| {
+            let scaled = (f32::from(pixels) * factor.max(0.1)).round();
+            u16::try_from(scaled as i64).unwrap_or(pixels).max(1)
+        };
+        self.cell = CellPixels {
+            width: scale(self.cell.width),
+            height: scale(self.cell.height),
+        };
+        self
+    }
+
     /// The width of one cell, in pixels.
     #[must_use]
     pub fn cell_width(&self) -> f32 {
@@ -93,5 +125,24 @@ impl Theme {
     #[must_use]
     pub fn rows(&self, count: f32) -> Length {
         Length::Px(self.cell_height() * count)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use katui_ui::CellPixels;
+
+    use super::Theme;
+
+    #[test]
+    fn scaling_grows_every_size_with_the_cell() {
+        let cell = CellPixels {
+            width: 10,
+            height: 20,
+        };
+        let large = Theme::dark(cell).scaled(1.5);
+        assert_eq!((large.cell.width, large.cell.height), (15, 30));
+        assert!(large.body() > Theme::dark(cell).body());
+        assert_eq!(Theme::light(cell).scaled(1.0).cell, cell);
     }
 }

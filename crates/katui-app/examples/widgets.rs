@@ -6,8 +6,9 @@
 use std::time::{Duration, Instant};
 
 use katui_app::{Control, UiApp, Waker, run};
+use katui_draw::{Paint, Rgba};
 use katui_proto::input::{InputEvent, Key};
-use katui_ui::{Align, Element, Length};
+use katui_ui::{Align, CellPixels, Element, Length};
 use katui_widgets::{
     Column, Edit, Emphasis, Focus, ListState, Orientation, Scroll, ScrollState, TextArea, Theme,
     Toasts, TreeNode, TreeState, button, dialog, key_hints, label, menu, panel, radio, scroll_view,
@@ -15,6 +16,7 @@ use katui_widgets::{
 };
 
 const SIZES: [&str; 3] = ["Small", "Medium", "Large"];
+const SCALES: [f32; 3] = [0.85, 1.0, 1.2];
 const THEMES: [&str; 3] = ["Dusk", "Forest", "Paper"];
 const FILE_MENU: [&str; 3] = ["Save the note", "Clear the note", "Quit"];
 const TICK: Duration = Duration::from_millis(250);
@@ -248,8 +250,29 @@ fn files() -> Vec<TreeNode> {
     ]
 }
 
+/// The dark theme turned green.
+fn forest(cell: CellPixels) -> Theme {
+    Theme {
+        background: Paint::Solid(Rgba::solid(18, 28, 22)),
+        raised: Paint::Solid(Rgba::solid(28, 42, 33)),
+        highlight: Paint::Solid(Rgba::solid(42, 64, 50)),
+        border: Paint::Solid(Rgba::solid(58, 84, 66)),
+        accent: Rgba::solid(120, 214, 150),
+        ..Theme::dark(cell)
+    }
+}
+
 impl UiApp for Tour {
     type Message = Message;
+
+    fn theme(&self, cell: CellPixels) -> Theme {
+        let theme = match self.theme {
+            1 => forest(cell),
+            2 => Theme::light(cell),
+            _ => Theme::dark(cell),
+        };
+        theme.scaled(SCALES.get(self.size).copied().unwrap_or(1.0))
+    }
 
     fn start(&mut self, waker: Waker<Message>) {
         std::thread::spawn(move || {
@@ -370,5 +393,56 @@ impl Tour {
         } else {
             popup
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use katui_app::UiApp as _;
+    use katui_draw::{TextEngine, bundled_fonts};
+    use katui_ui::{CellPixels, Ui, UiOptions};
+
+    use super::{Message, Tour};
+
+    const CELL: CellPixels = CellPixels {
+        width: 8,
+        height: 17,
+    };
+
+    fn render(tour: &Tour, name: &str) -> Vec<u8> {
+        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
+        let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());
+        let size = (8 * 120, 17 * 40);
+        let theme = tour.theme(CELL);
+        let output = ui.render(&tour.view(&theme), size, CELL);
+        let surface = output.flatten(CELL, size).expect("whole pixels");
+        let path = format!(
+            "{}/../../target/katui-tour-{name}.png",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        image::save_buffer(
+            path,
+            surface.pixels(),
+            surface.width(),
+            surface.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .expect("the target directory is writable");
+        surface.pixels().to_vec()
+    }
+
+    #[test]
+    fn the_theme_and_size_settings_change_the_screen() {
+        let mut tour = Tour::new();
+        let dusk = render(&tour, "dusk");
+        tour.update(Message::Theme(2));
+        let paper = render(&tour, "paper");
+        tour.update(Message::Size(2));
+        let large = render(&tour, "paper-large");
+        tour.update(Message::Theme(1));
+        let forest = render(&tour, "forest-large");
+        assert_ne!(dusk, paper, "the theme changes the colors");
+        assert_ne!(paper, large, "the size changes the layout");
+        assert_ne!(large, forest);
     }
 }
