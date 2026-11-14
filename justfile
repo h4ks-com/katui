@@ -70,6 +70,10 @@ demo-todo:
 demo-counter:
     cargo run --release -p katui --example counter --features app
 
+# the smallest katui game: a glowing ball the arrow keys steer
+demo-glow:
+    cargo run --release -p katui --example glow --features game
+
 # the page viewer: local html through the html and css subset, links included
 demo-browse page="":
     cargo run --release -p katui-app --example browse -- {{page}}
@@ -109,6 +113,11 @@ demo-irc:
 # docs gate: broken intra-doc links and rustdoc warnings fail like code
 docs:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+
+# the public api reference, as published to github pages
+api-docs:
+    cargo doc --workspace --no-deps --all-features
+    echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
 
 # the gate: must pass before any commit; CI runs the same targets
 ci: fmt-check clippy test docs typos

@@ -1,21 +1,48 @@
-# katui
+<h1 align="center">katui</h1>
 
-katui is a terminal UI engine in Rust that draws real pixels. It renders
-through the kitty graphics protocol and falls back to sixel or quarter
-blocks on other terminals.
+<p align="center">
+  Real pixels in your terminal, from Rust.
+</p>
 
-- Pixel UIs with layout, text, widgets, mouse and keyboard
-- Games and video at up to 30 frames a second
-- A ratatui backend that adds images to existing ratatui apps
-- Works inside tmux
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#a-first-program">First program</a> ·
+  <a href="#what-you-can-build">What you can build</a> ·
+  <a href="#terminals">Terminals</a> ·
+  <a href="#demos">Demos</a> ·
+  <a href="docs/README.md">Guides</a> ·
+  <a href="https://matheusfillipe.github.io/katui/katui/">API docs</a>
+</p>
 
-## Use
+<!-- media: hero video, a 10 second loop of the shardrift, todo and video demos -->
+
+katui is a terminal UI library for Rust that draws real pixels. Apps, games
+and video show up as images through the [kitty graphics protocol][kitty],
+and terminals without it get [sixel][sixel] images or quarter-block
+characters instead.
+
+You describe what to show. katui finds out what the terminal supports, lays
+out and draws your view, sends only the parts that changed, and passes keys
+and mouse clicks back to you.
+
+[kitty]: https://sw.kovidgoyal.net/kitty/graphics-protocol/
+[sixel]: https://en.wikipedia.org/wiki/Sixel
+
+## Install
+
+katui needs Rust 1.90 or newer and runs on macOS and Linux. Start a project
+and add katui with the `app` feature, which brings in the app runner, the
+layout and the widgets:
 
 ```
+cargo new counter && cd counter
 cargo add katui --git https://github.com/matheusfillipe/katui --features app
 ```
 
-A click counter:
+## A first program
+
+Put this in `src/main.rs`. It is a complete katui app: a label and a button
+that counts its clicks.
 
 ```rust
 use katui::app::{Control, UiApp, run};
@@ -50,20 +77,103 @@ fn main() -> Result<(), katui::rt::RtError> {
 }
 ```
 
-Run it with `just demo-counter`, and see `just --list` for the other
-demos. The `game`, `content`, `html` and `ratatui` features add the game
-runner, markdown and HTML rendering, and the ratatui backend.
+Run it with `cargo run`, click the button, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> to quit.
+
+<!-- media: screenshot of the counter, cropped to the terminal window -->
+
+## What you can build
+
+### Pixel UIs
+
+`katui::app` runs an app made of a `view` and an `update`. `katui::widgets`
+gives you labels, buttons, panels, text fields, lists, checkboxes, tabs and
+progress bars, laid out with flexbox and drawn with proportional fonts.
+Clicks, hovers, typing and paste reach your app as messages.
+
+<!-- media: screenshot of the to-do demo with a few tasks, one done -->
+
+### Games
+
+`katui::game::play` runs a game loop that moves the world 60 times a second,
+however fast the terminal draws. You move things in `step` and paint them in
+`render` onto a `Light`, a canvas where colors add up like light, with
+glows, lines, polygons and text. Add the `game` feature to use it.
+
+```rust
+use katui::game::{Game, HeldKeys, Key, Light, P2, play};
+
+struct Ball(f32);
+
+impl Game for Ball {
+    fn step(&mut self, keys: &HeldKeys, dt: f32) {
+        let push =
+            f32::from(i8::from(keys.is_held(Key::Right)) - i8::from(keys.is_held(Key::Left)));
+        self.0 += push * 80.0 * dt;
+    }
+
+    fn render(&mut self, light: &mut Light) {
+        light.dim(0.0);
+        let middle = P2::new(self.0, light.height() as f32 / 2.0);
+        light.glow(middle, 24.0, [2.0, 0.9, 0.4]);
+    }
+}
+
+fn main() -> Result<(), katui::rt::RtError> {
+    play(Ball(40.0))
+}
+```
+
+Hold the arrow keys to move the ball.
+
+<!-- media: gif of shardrift or lumenshaft being played -->
+
+### Video
+
+`katui::rt::media::VideoStream` runs ffmpeg, or any program that writes raw
+RGBA frames, and gives you the frame that is due now. On a slow terminal it
+skips frames, so the picture keeps to real time. The video demo plays files
+and stream URLs at 30 frames a second, with pause, seek and mute.
+
+<!-- media: gif of the video demo playing a clip, with the progress bar showing -->
+
+### HTML and markdown
+
+`katui::content::html` turns an HTML and CSS subset into a view: block and
+flex layout, styled text, colors, padding, borders, images and links.
+`katui::content::markdown_view` does the same for markdown. Enable them
+with the `html` feature.
+
+<!-- media: screenshot of the page viewer showing the bundled index page -->
+
+### Images in ratatui apps
+
+The `ratatui` feature adds `KatuiBackend`, a ratatui backend. Swap it in
+and your existing widgets keep working, with kitty images placed next to
+them.
+
+<!-- media: screenshot of the gallery demo -->
 
 ## Terminals
 
-Graphics need a terminal that speaks the kitty graphics protocol, such as
-kitty, Ghostty or iTerm2 3.7. Terminals with sixel get sixel images, and
-the rest get a quarter-block fallback.
+| Terminal | What katui draws |
+|---|---|
+| kitty, Ghostty, iTerm2 3.7 | Full pixels through the kitty graphics protocol |
+| Terminals with sixel | Sixel images |
+| Any other color terminal | Quarter blocks, four pixels per cell |
+| tmux | Kitty graphics, when the terminal outside tmux speaks it |
 
-Inside tmux, every image is anchored to one Unicode placeholder cell: plain
-text that tmux moves, clears and hides with the rest of the pane, so
-resizes, splits and window switches stay clean. tmux needs passthrough on
-and true color for the outer terminal. A minimal config:
+katui checks what the terminal supports when it starts. To choose yourself,
+set `KATUI_GRAPHICS` when you run your app:
+
+```
+KATUI_GRAPHICS=blocks cargo run
+```
+
+Inside tmux, katui ties every image to placeholder characters, so tmux
+moves, hides and clears images along with the text of the pane. tmux needs
+to pass graphics through to the outer terminal and to know it has true
+color. The other lines let keys, focus changes and the mouse reach your app
+without delay:
 
 ```
 set -s escape-time 0
@@ -73,9 +183,6 @@ set -g mouse on
 set -as terminal-features ',xterm*:RGB,xterm*:sync'
 ```
 
-Set `KATUI_GRAPHICS` to `kitty`, `sixel` or `blocks` to override the
-backend katui detects. `just info` prints what it detected.
-
 To try the demos without touching your own sessions, save that as
 `katui.conf` and start a separate tmux server with only that config:
 
@@ -83,14 +190,56 @@ To try the demos without touching your own sessions, save that as
 tmux -L katui -f katui.conf new -s demos
 ```
 
+## Demos
+
+Clone the repository and run any of these with [just](https://github.com/casey/just):
+
+| Command | What it shows |
+|---|---|
+| `just demo-counter` | The first program above |
+| `just demo-glow` | The game example above |
+| `just demo-todo` | A task list with tabs, a text field and a progress bar |
+| `just demo-browse` | A page viewer for local HTML, with scrolling and links |
+| `just demo-video` | A video player for a file or URL, or a test pattern with a beep when you give it none |
+| `just demo-shardrift` | Drift through a nebula and split crystal rocks |
+| `just demo-lumenshaft` | Stack glowing blocks down a 3D shaft |
+| `just demo-cube` | A lit cube in software 3D that the arrow keys spin |
+| `just demo-plasma` | An interference plasma |
+
+`just --list` shows the rest, and `just info` prints what katui detected in
+your terminal. The video demo needs `ffmpeg` for the picture and `ffplay`
+for the sound.
+
+## Learn more
+
+The [guides](docs/README.md) walk you through each kind of program, one
+runnable example at a time: [getting started](docs/getting-started.md),
+[pixel UI apps](docs/ui-apps.md), [games](docs/games.md),
+[video](docs/video.md), [HTML and markdown](docs/html-and-markdown.md) and
+[images in ratatui apps](docs/ratatui.md). [How katui works](docs/architecture.md)
+explains the layers between your code and the terminal.
+
+The [API docs](https://matheusfillipe.github.io/katui/katui/) list every
+type and function. Run `just api-docs` to build them locally.
+
+## Status
+
+katui is young. It works in the terminals above and in its own demos, the
+API still changes between commits, and it is not on crates.io yet.
+
 ## Develop
 
-Read [ARCHITECTURE.md](ARCHITECTURE.md) and [AGENTS.md](AGENTS.md) before
-changing code.
+Contributors follow the design rules in [ARCHITECTURE.md](ARCHITECTURE.md)
+and the workflow in [AGENTS.md](AGENTS.md). The checks run through
+[just](https://github.com/casey/just):
 
 ```
-just check   # clippy, the fast gate; run after every change
-just ci      # the full local gate; must pass before any commit
-just hooks   # install the prek hooks, once per clone
-just --list  # everything else
+just check   # lint, after every change
+just ci      # every check, before every commit
+just hooks   # install the git hooks, once per clone
 ```
+
+## License
+
+katui is licensed under either the [MIT license](LICENSE-MIT) or the
+[Apache License 2.0](LICENSE-APACHE), at your option.

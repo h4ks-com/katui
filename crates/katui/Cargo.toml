@@ -36,9 +36,20 @@ katui-ratatui = { workspace = true, optional = true }
 katui-ui = { workspace = true, optional = true }
 katui-widgets = { workspace = true, optional = true }
 
+[dev-dependencies]
+ratatui.workspace = true
+
+# the guides in docs/ use ratatui in doctests, which machete does not read
+[package.metadata.cargo-machete]
+ignored = ["ratatui"]
+
 [lints]
 workspace = true
 
 [[example]]
 name = "counter"
 required-features = ["app"]
+
+[[example]]
+name = "glow"
+required-features = ["game"]

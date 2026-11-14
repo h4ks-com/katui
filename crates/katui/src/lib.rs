@@ -5,6 +5,10 @@
 //! always here. `widgets` (with `ui` and `draw`) and `layout` come by
 //! default; `app`, `game`, `content`, `html` and `ratatui` are opt-in.
 //!
+//! The guides at <https://github.com/matheusfillipe/katui/tree/main/docs>
+//! walk through apps, games, video, documents and ratatui, one runnable
+//! example at a time.
+//!
 //! ```
 //! use katui::scene::CellSize;
 //!
@@ -33,3 +37,27 @@ pub use katui_ratatui as ratatui;
 pub use katui_ui as ui;
 #[cfg(feature = "widgets")]
 pub use katui_widgets as widgets;
+
+/// The guides in `docs/`, compiled as doctests so their programs keep
+/// building against the current API.
+#[cfg(all(
+    doctest,
+    feature = "app",
+    feature = "game",
+    feature = "html",
+    feature = "ratatui"
+))]
+mod guides {
+    #[doc = include_str!("../../../docs/getting-started.md")]
+    struct GettingStarted;
+    #[doc = include_str!("../../../docs/ui-apps.md")]
+    struct UiApps;
+    #[doc = include_str!("../../../docs/games.md")]
+    struct Games;
+    #[doc = include_str!("../../../docs/video.md")]
+    struct Video;
+    #[doc = include_str!("../../../docs/html-and-markdown.md")]
+    struct HtmlAndMarkdown;
+    #[doc = include_str!("../../../docs/ratatui.md")]
+    struct Ratatui;
+}
