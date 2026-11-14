@@ -123,9 +123,47 @@ pub fn fit_to_area(decoded: &DynamicImage, area: CellRect, cell: CellPixels) -> 
         .into_raw()
 }
 
+/// `decoded` scaled to fit inside the pixel size of `area` with its shape
+/// kept, centered, with transparent bars on the sides it does not fill:
+/// RGBA bytes of exactly the area's pixel size.
+#[must_use]
+pub fn contain_in_area(decoded: &DynamicImage, area: CellRect, cell: CellPixels) -> Vec<u8> {
+    let (target_w, target_h) = pixel_area(area, cell);
+    let mut canvas = image::RgbaImage::new(target_w, target_h);
+    let (width, height) = (decoded.width().max(1), decoded.height().max(1));
+    let scale =
+        (f64::from(target_w) / f64::from(width)).min(f64::from(target_h) / f64::from(height));
+    let fitted_w = (f64::from(width) * scale)
+        .round()
+        .clamp(1.0, f64::from(target_w.max(1)));
+    let fitted_h = (f64::from(height) * scale)
+        .round()
+        .clamp(1.0, f64::from(target_h.max(1)));
+    let (fitted_w, fitted_h) = (whole(fitted_w), whole(fitted_h));
+    let filter = if scale >= 1.0 {
+        image::imageops::FilterType::Nearest
+    } else {
+        image::imageops::FilterType::Triangle
+    };
+    let fitted = decoded.resize_exact(fitted_w, fitted_h, filter).to_rgba8();
+    image::imageops::overlay(
+        &mut canvas,
+        &fitted,
+        i64::from((target_w - fitted_w) / 2),
+        i64::from((target_h - fitted_h) / 2),
+    );
+    canvas.into_raw()
+}
+
+/// A whole number of pixels from a rounded value already clamped into
+/// `u32` range.
+fn whole(value: f64) -> u32 {
+    u32::try_from(value as i64).unwrap_or(1)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{decode, fit_to_area, pixel_area};
+    use super::{contain_in_area, decode, fit_to_area, pixel_area};
     use image::{DynamicImage, RgbImage};
     use katui_proto::probe::CellPixels;
     use katui_scene::placement::CellRect;
@@ -156,6 +194,21 @@ mod tests {
         let decoded = DynamicImage::ImageRgb8(RgbImage::from_pixel(3, 3, image::Rgb([10, 20, 30])));
         let bytes = fit_to_area(&decoded, area(4, 2), cell());
         assert_eq!(bytes.len(), 40 * 40 * 4, "width * height * rgba");
+    }
+
+    #[test]
+    fn containing_keeps_the_shape_and_pads_with_transparency() {
+        let wide = DynamicImage::ImageRgb8(RgbImage::from_pixel(40, 10, image::Rgb([200, 0, 0])));
+        let cell = CellPixels {
+            width: 10,
+            height: 10,
+        };
+        let rgba = contain_in_area(&wide, area(4, 4), cell);
+        assert_eq!(rgba.len(), 40 * 40 * 4, "the bytes cover the whole area");
+        let alpha = |x: usize, y: usize| rgba[(y * 40 + x) * 4 + 3];
+        assert_eq!(alpha(20, 0), 0, "the bar above is transparent");
+        assert_eq!(alpha(20, 20), 255, "the middle holds the picture");
+        assert_eq!(alpha(20, 39), 0, "the bar below is transparent");
     }
 
     #[test]

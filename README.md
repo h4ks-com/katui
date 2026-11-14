@@ -149,11 +149,11 @@ with the `html` feature.
 
 ### Images in ratatui apps
 
-The `ratatui` feature adds `KatuiBackend`, a ratatui backend. Swap it in
-and your existing widgets keep working, with kitty images placed next to
-them.
+The `ratatui` feature adds `KatuiBackend`, a ratatui backend, and
+`katui::ratatui::run::run`, which runs a ratatui app on katui's event loop.
+Your existing widgets keep working, with real images placed next to them.
 
-<!-- media: screenshot of the gallery demo -->
+<!-- media: screenshot of the ratatui image viewer showing the Mandelbrot picture -->
 
 ## Terminals
 
@@ -203,6 +203,8 @@ Clone the repository and run any of these with [just](https://github.com/casey/j
 | `just demo-todo` | A task list with tabs, a text field and a progress bar |
 | `just demo-widgets` | Every widget in one app: menus, a tree, a table, a note, toasts and a dialog |
 | `just demo-browse` | A page viewer for local HTML, with scrolling and links |
+| `just demo-html` | Every part of the HTML and CSS subset on one page |
+| `just demo-ratatui` | An image viewer made of ratatui widgets, with the picture beside them |
 | `just demo-video` | A video player for a file or URL, or a test pattern with a beep when you give it none |
 | `just demo-shardrift` | Drift through a nebula and split crystal rocks |
 | `just demo-lumenshaft` | Stack glowing blocks down a 3D shaft |

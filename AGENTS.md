@@ -12,7 +12,7 @@ crates/katui/           every crate below under one name, the optional ones behi
 crates/katui-proto/     L0: protocol codecs (kitty, rgp), capability probes (pure, no I/O)
 crates/katui-scene/     L2: cell plane, placements, RGBA surfaces with tile damage (pure state)
 crates/katui-present/   L1: presenters: cells, blocks, kitty placements, full-frame surfaces (pure)
-crates/katui-ratatui/   ratatui Backend adapter, image decode/fit, the gallery demo
+crates/katui-ratatui/   ratatui Backend adapter, image decode/fit, the image viewer demo
 crates/katui-rt/        the impure layer: /dev/tty transport, frame clock, session guard
 crates/katui-layout/    L4: constraint splitting of cell rectangles (pure)
 crates/katui-content/   L6: markdown to scene cells, and an html and css subset to ui

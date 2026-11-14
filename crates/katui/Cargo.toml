@@ -20,7 +20,7 @@ app = ["dep:katui-app", "widgets"]
 game = ["dep:katui-game"]
 content = ["dep:katui-content"]
 html = ["content", "katui-content/html"]
-ratatui = ["dep:katui-ratatui"]
+ratatui = ["dep:katui-ratatui", "katui-ratatui/run"]
 
 [dependencies]
 katui-present.workspace = true

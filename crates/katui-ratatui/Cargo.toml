@@ -17,10 +17,19 @@ katui-scene.workspace = true
 ratatui.workspace = true
 thiserror.workspace = true
 
-# examples only: the library itself stays pure, the demos need the
-# impure runtime
+katui-rt = { workspace = true, optional = true }
+
+[features]
+# the event loop that runs a ratatui app on the terminal; the backend
+# itself stays pure without it
+run = ["dep:katui-rt"]
+
 [dev-dependencies]
 katui-rt.workspace = true
 
 [lints]
 workspace = true
+
+[[example]]
+name = "viewer"
+required-features = ["run"]

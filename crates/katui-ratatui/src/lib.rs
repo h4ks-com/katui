@@ -6,16 +6,21 @@
 //! runtime's transport.
 
 pub mod image;
+#[cfg(all(unix, feature = "run"))]
+pub mod run;
 
 use std::io;
 
 use katui_present::cells::{
     ClearKind, clear_region, hide_cursor, move_cursor, render_cell, show_cursor,
 };
-use katui_present::kitty::{Images, Kitty, RgbaImage};
+use katui_present::kitty::{Images, Kitty};
 use katui_scene::CellSize;
 use katui_scene::cell::{Attrs, Buffer, Cell as SceneCell, Color, Position};
-use katui_scene::placement::{self, CellRect, ImageId, Placement, PlacementId};
+use katui_scene::placement::{self, Placement, PlacementId};
+
+pub use katui_present::kitty::RgbaImage;
+pub use katui_scene::placement::{CellRect, ImageId};
 use ratatui::backend::{Backend, ClearType, WindowSize};
 use ratatui::buffer::{Buffer as RatBuffer, Cell as RatCell, CellDiffOption};
 use ratatui::layout::{Position as RatPosition, Rect, Size};
@@ -89,6 +94,11 @@ impl<W: io::Write> KatuiBackend<W> {
     /// The writer back.
     pub fn into_inner(self) -> W {
         self.out
+    }
+
+    /// The writer, for a caller that collects the bytes as it goes.
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.out
     }
 
     /// Draw one RGBA image at `area`, replacing every image drawn

@@ -50,9 +50,9 @@ hooks:
 info:
     cargo run -p katui-rt --bin katui-info
 
-# the gallery demo: styled cells plus a kitty-protocol image (needs a terminal)
-demo-gallery:
-    cargo run --release -p katui-ratatui --example gallery
+# an image viewer made of ratatui widgets, with the picture beside them
+demo-ratatui *files:
+    cargo run --release -p katui-ratatui --features run --example viewer -- {{files}}
 
 # the plasma demo: an interference plasma in pixels or quarter blocks
 demo-plasma:

@@ -1,9 +1,9 @@
 # Images in ratatui apps
 
 If you already have a [ratatui](https://ratatui.rs) app, you can keep all
-of it and add pictures. katui's `KatuiBackend` is a ratatui backend: your
-widgets draw the same way, and the backend can place kitty images in areas
-your layout leaves for them.
+of it and add pictures. katui runs your app on its own event loop, draws
+your widgets as text, and places kitty images in the areas your layout
+leaves for them.
 
 Add the `ratatui` feature, and ratatui itself at the version katui uses:
 
@@ -14,79 +14,113 @@ cargo add ratatui@0.30
 
 ## A picture under a title
 
-This program shows a bordered title and the image file you pass, filling
-the rest of the screen. Press <kbd>Enter</kbd> to leave.
+This program shows a bordered title and a gradient below it. Press
+<kbd>q</kbd> to quit.
 
 ```rust,no_run
-use std::io;
-
-use katui::ratatui::image::{decode, fit_to_area, pixel_area};
-use katui::ratatui::{ImageSlot, KatuiBackend};
-use katui::rt::session::Session;
-use katui::scene::placement::{CellRect, ImageId};
-use ratatui::Terminal;
+use katui::proto::input::{InputEvent, Key};
+use katui::proto::probe::CellPixels;
+use katui::ratatui::image::pixel_area;
+use katui::ratatui::run::{Control, RatatuiApp, cell_rect, run};
+use katui::ratatui::{ImageFrame, ImageId, ImageSlot, RgbaImage};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::widgets::{Block, Paragraph};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = std::env::args().nth(1).ok_or("pass an image file")?;
-    let caps = katui::rt::tty::probe_default();
-    let cell = katui::rt::tty::cell_size(&caps);
-    let size = katui::rt::tty::size()?;
+#[derive(Default)]
+struct Picture {
+    area: Rect,
+    size: (u32, u32),
+    pixels: Vec<u8>,
+}
 
-    let session = Session::enter(io::stdout())?;
-    let backend = KatuiBackend::new(size.columns, size.rows, io::stdout());
-    let mut terminal = Terminal::new(backend)?;
-    let mut picture = Rect::default();
-    terminal.draw(|frame| {
+impl RatatuiApp for Picture {
+    type Message = ();
+
+    fn draw(&mut self, frame: &mut Frame<'_>, cell: CellPixels) {
         let [title, rest] =
             Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).areas(frame.area());
         frame.render_widget(Paragraph::new("A picture").block(Block::bordered()), title);
         frame.render_widget(ImageSlot, rest);
-        picture = rest;
-    })?;
+        if rest != self.area {
+            self.area = rest;
+            self.size = pixel_area(cell_rect(rest), cell);
+            self.pixels = gradient(self.size);
+        }
+    }
 
-    let area = CellRect {
-        x: picture.x,
-        y: picture.y,
-        columns: picture.width,
-        rows: picture.height,
-    };
-    let pixels = fit_to_area(&decode(&std::fs::read(path)?)?, area, cell);
-    let (width, height) = pixel_area(area, cell);
-    terminal.backend_mut().draw_image(ImageId(1), &pixels, width, height, area)?;
+    fn images(&self) -> Vec<ImageFrame<'_>> {
+        RgbaImage::new(self.size.0, self.size.1, &self.pixels)
+            .map(|pixels| ImageFrame {
+                image: ImageId(self.size.0 * 10_000 + self.size.1),
+                pixels,
+                area: cell_rect(self.area),
+            })
+            .into_iter()
+            .collect()
+    }
 
-    io::stdin().read_line(&mut String::new())?;
-    session.leave()?;
-    Ok(())
+    fn input(&mut self, event: &InputEvent) -> Control {
+        match event {
+            InputEvent::Key(Key::Char('q'), _) => Control::Quit,
+            _ => Control::Wait,
+        }
+    }
+}
+
+fn gradient((width, height): (u32, u32)) -> Vec<u8> {
+    (0..width * height)
+        .flat_map(|at| {
+            let red = u8::try_from(at % width.max(1) * 255 / width.max(1)).unwrap_or(255);
+            [red, 90, 200, 255]
+        })
+        .collect()
+}
+
+fn main() -> Result<(), katui::rt::RtError> {
+    run(Picture::default())
 }
 ```
 
 ## How it fits together
 
-- `probe_default` asks the terminal what it supports, and `cell_size` gives
-  the pixel size of one cell, which turns a cell area into a pixel size.
-- `Session` switches to the alternate screen and restores the terminal
-  when you leave.
+`run` probes the terminal, switches to the alternate screen, and calls
+your app:
+
+- `draw` renders a frame with ratatui, as you always have. `cell` is the
+  pixel size of one terminal cell, so you can draw an image at the full
+  resolution of its area.
 - `ImageSlot` is a ratatui widget that marks an area as taken, so ratatui
   never draws text over the picture.
-- `decode` reads PNG, JPEG, GIF and WebP. `fit_to_area` scales the image to
-  the area's pixel size.
-- `draw_image` places the image. Call it after each `terminal.draw`.
-  `draw_images` takes several at once. Both compare with the last frame, so
+- `images` lists the pictures for this frame, each with an id, its RGBA
+  pixels and the cells it covers. katui compares them with the last frame:
   an unchanged image costs nothing, a moved one is placed again without
-  sending its pixels, and an image you leave out is removed.
+  sending its pixels, and one you leave out is removed. Give an image a
+  new id when its pixels change.
+- `input` gets keys, mouse events and pastes, and returns what to do next.
+  <kbd>Ctrl</kbd>+<kbd>C</kbd> always quits.
 
-Give an image a new `ImageId` when its pixels change, and keep the same id
-while they stay the same.
+After a resize, katui clears the screen and calls `draw` again with the
+new size.
 
-Images need a terminal with kitty graphics. Elsewhere your ratatui widgets
-still draw as usual and the image areas stay empty.
+## Real images
 
-To decode images without blocking your app, use
-`katui::ratatui::image::ImageCache`. It decodes on worker threads: you
-`request` a file's bytes under a key, `poll` each frame for the keys that
-finished, and take the fitted pixels with `fitted`. It decodes each key
-once and scales once per size, so redraws stay cheap.
+`katui::ratatui::image` decodes PNG, JPEG, GIF and WebP with `decode`.
+`contain_in_area` scales a picture to fit an area with its shape kept and
+transparent bars on the sides, and `fit_to_area` stretches it to fill the
+area. `ImageCache` decodes on worker threads: you `request` a file's bytes
+under a key, `poll` each frame for the keys that finished, and take the
+fitted pixels with `fitted`.
 
-Run `just demo-gallery` to see a ratatui frame with a generated image.
+Images need a terminal with kitty graphics. Elsewhere your widgets still
+draw as usual and the image areas stay empty.
+
+Run `just demo-ratatui` to see an image viewer built this way, with lists,
+tabs, a gauge and a sparkline beside the picture. Pass image files to add
+them to its list: `just demo-ratatui photo.jpg`.
+
+## Your own loop
+
+If your app already owns its loop, use `KatuiBackend` directly as the
+backend of a `ratatui::Terminal`, and call
+`terminal.backend_mut().draw_images(&frames)` after each `terminal.draw`.
