@@ -1,8 +1,7 @@
 default:
     @just --list
 
-# fast inner-loop verification; agents run this after every change.
-# the same denials as ci, so a warning fails here first
+# clippy with ci's denials, after every change
 check: clippy
 
 fmt:
@@ -14,7 +13,7 @@ fmt-check:
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# auto-fix what is mechanical
+# apply clippy's and rustfmt's fixes
 fix:
     cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged
     cargo fmt --all
@@ -22,110 +21,109 @@ fix:
 test:
     cargo test --workspace --all-features --all-targets
 
-# license, advisory and source bans; config in deny.toml
+# licenses, advisories and sources, from deny.toml
 deny:
     cargo deny check
 
-# spelling gate, matches CI's typos job
 typos:
     if command -v typos >/dev/null; then typos; else echo "typos not installed, skipping"; fi
 
-# complexity and maintainability report, per function (cargo install rust-code-analysis-cli)
+# complexity per function, into target/metrics (cargo install rust-code-analysis-cli)
 metrics:
     rust-code-analysis-cli -m -p crates -l rust -O json -o target/metrics -j 8
 
-# copy-paste duplication gate, matches CI's dupes job; config in .jscpd.json
+# copy-paste duplication, from .jscpd.json
 dupes:
     npx --yes jscpd@4 crates/
 
-# unused-dependency gate, matches CI's machete job
+# unused dependencies
 machete:
     cargo machete
 
-# install the prek hooks, once per clone
+# install the git hooks, once per clone
 hooks:
     prek install
 
-# print the terminal's capability card (needs a terminal)
-info:
-    cargo run -p katui-rt --bin katui-info
-
-# an image viewer made of ratatui widgets, with the picture beside them
-demo-ratatui *files:
-    cargo run --release -p katui-ratatui --features run --example viewer -- {{files}}
-
-# the plasma demo: an interference plasma in pixels or quarter blocks
-demo-plasma:
-    cargo run --release -p katui-game --example plasma
-
-# the snake demo: a self-playing game on a pixel surface
-demo-snake:
-    cargo run --release -p katui-game --example snake
-
-# the to-do demo: a task list on the widgets crate through katui-app
-demo-todo:
-    cargo run --release -p katui-app --example todo
-
-# the widget tour: menus, a tree, a table, controls, a note, toasts and a dialog
-demo-widgets:
-    cargo run --release -p katui-app --example widgets
-
-# the smallest katui program: a click counter
-demo-counter:
-    cargo run --release -p katui --example counter --features app
-
-# the smallest katui game: a glowing ball the arrow keys steer
-demo-glow:
-    cargo run --release -p katui --example glow --features game
-
-# the page viewer: local html through the html and css subset, links included
-demo-browse page="":
-    cargo run --release -p katui-app --example browse -- {{page}}
-
-# every part of the html and css subset on one page, in the page viewer
-demo-html:
-    cargo run --release -p katui-app --example browse -- crates/katui-app/examples/pages/showcase.html
-
-# the cube demo: a lit cube turning in software 3D, arrow keys steer its spin
-demo-cube:
-    cargo run --release -p katui-game --example cube
-
-# the dvd demo: the immortal bouncing logo, color per bounce, corner-hit flash
-demo-dvd:
-    cargo run --release -p katui-game --example dvd
-
-# the life demo: conway's automaton in 256 colors, age-hot cells, ash trails
-demo-life:
-    cargo run --release -p katui-game --example life
-
-# the lumenshaft demo: stack glowing blocks down a 3d shaft
-demo-lumenshaft:
-    cargo run --release -p katui-game --example lumenshaft
-
-# the shardrift demo: drift through a nebula and split crystal rocks
-demo-shardrift:
-    cargo run --release -p katui-game --example shardrift
-
-# the video demo: a file or stream url through ffmpeg, a test pattern without one
-demo-video clip="":
-    cargo run --release -p katui-game --example video -- {{clip}}
-
-# the pacing instrument: fps, latency and bytes per frame for each pixel strategy
-pace:
-    cargo run --release -p katui-rt --example pace
-
-# the irc demo: a client drawn in real pixels (needs a graphics terminal)
-demo-irc:
-    cargo run --release --manifest-path demos/obby-chat/Cargo.toml
-
-# docs gate: broken intra-doc links and rustdoc warnings fail like code
+# rustdoc with warnings as errors
 docs:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 
-# the public api reference, as published to github pages
+# the public api reference, as github pages publishes it
 api-docs:
     cargo doc --workspace --no-deps --all-features
     echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
 
-# the gate: must pass before any commit; CI runs the same targets
+# every gate, before every commit
 ci: fmt-check clippy test docs typos
+
+# print what katui detects in this terminal
+info:
+    cargo run -p katui-rt --bin katui-info
+
+# fps, latency and bytes per frame for each pixel strategy
+pace:
+    cargo run --release -p katui-rt --example pace
+
+# a click counter, the smallest app
+demo-counter:
+    cargo run --release -p katui --example counter --features app
+
+# a ball the arrow keys steer, the smallest game
+demo-glow:
+    cargo run --release -p katui --example glow --features game
+
+# a task list with tabs, a text field and a progress bar
+demo-todo:
+    cargo run --release -p katui-app --example todo
+
+# every widget in one app
+demo-widgets:
+    cargo run --release -p katui-app --example widgets
+
+# local html pages with links and scrolling
+demo-browse page="":
+    cargo run --release -p katui-app --example browse -- {{page}}
+
+# every part of the html and css subset on one page
+demo-html:
+    cargo run --release -p katui-app --example browse -- crates/katui-app/examples/pages/showcase.html
+
+# an image viewer made of ratatui widgets
+demo-ratatui *files:
+    cargo run --release -p katui-ratatui --features run --example viewer -- {{files}}
+
+# a video file or stream url, or a test pattern without one
+demo-video clip="":
+    cargo run --release -p katui-game --example video -- {{clip}}
+
+# fly through a nebula and split crystal rocks
+demo-shardrift:
+    cargo run --release -p katui-game --example shardrift
+
+# stack glowing blocks down a 3d shaft
+demo-lumenshaft:
+    cargo run --release -p katui-game --example lumenshaft
+
+# a lit cube in software 3d, steered with the arrows
+demo-cube:
+    cargo run --release -p katui-game --example cube
+
+# a snake that plays itself
+demo-snake:
+    cargo run --release -p katui-game --example snake
+
+# the bouncing logo
+demo-dvd:
+    cargo run --release -p katui-game --example dvd
+
+# conway's game of life with glowing cells
+demo-life:
+    cargo run --release -p katui-game --example life
+
+# an interference plasma
+demo-plasma:
+    cargo run --release -p katui-game --example plasma
+
+# an irc client
+demo-irc:
+    cargo run --release --manifest-path demos/obby-chat/Cargo.toml
