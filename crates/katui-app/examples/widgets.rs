@@ -18,7 +18,7 @@ use katui_widgets::{
 const SIZES: [&str; 3] = ["Small", "Medium", "Large"];
 const SCALES: [f32; 3] = [0.85, 1.0, 1.2];
 const THEMES: [&str; 3] = ["Dusk", "Forest", "Paper"];
-const FILE_MENU: [&str; 3] = ["Save the note", "Clear the note", "Quit"];
+const FILE_MENU: [&str; 3] = ["Count the note's lines", "Clear the note", "Quit"];
 const TICK: Duration = Duration::from_millis(250);
 
 fn main() -> Result<(), katui_rt::RtError> {
@@ -26,7 +26,7 @@ fn main() -> Result<(), katui_rt::RtError> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Field {
+enum Focused {
     Note,
     Table,
 }
@@ -74,7 +74,7 @@ struct Tour {
     sidebar: f32,
     tip: bool,
     toasts: Toasts,
-    focus: Focus<Field>,
+    focus: Focus<Focused>,
     started: Instant,
 }
 
@@ -108,7 +108,7 @@ impl Tour {
             sidebar: 0.25,
             tip: false,
             toasts: Toasts::default(),
-            focus: Focus::new(Field::Note, [Field::Table]),
+            focus: Focus::new(Focused::Note, [Focused::Table]),
             started: Instant::now(),
         }
     }
@@ -131,7 +131,7 @@ impl Tour {
             key_hints(
                 &[
                     ("Tab", "switch field"),
-                    ("Esc", "close"),
+                    ("Esc", "close the popup"),
                     ("Ctrl+C", "quit"),
                 ],
                 theme,
@@ -147,7 +147,11 @@ impl Tour {
         let busy: Element<Message> = if self.busy {
             Element::row([
                 spinner(self.started.elapsed(), theme),
-                label("Working", theme.body(), theme.muted),
+                label(
+                    "Turn off the switch to stop working",
+                    theme.body(),
+                    theme.muted,
+                ),
             ])
             .gap(theme.cell_width())
             .align(Align::Center)
@@ -181,8 +185,8 @@ impl Tour {
                 ),
                 slider(self.volume, theme, Message::Volume),
                 tooltip(
-                    button("Save", Message::File(0), Emphasis::Primary, theme),
-                    "Save the note to the disk",
+                    button("Count lines", Message::File(0), Emphasis::Primary, theme),
+                    "Count the lines in the note",
                     self.tip,
                     Message::ShowTip,
                     Message::HideTip,
@@ -213,7 +217,7 @@ impl Tour {
                 text_area(
                     &self.note,
                     "Write a note",
-                    self.focus.is(Field::Note),
+                    self.focus.is(Focused::Note),
                     theme,
                 ),
             ],
@@ -222,16 +226,24 @@ impl Tour {
         .width(Length::Fill)
     }
 
-    fn files(theme: &Theme, state: &TreeState) -> Element<Message> {
-        let roots = files();
+    fn file_tree(theme: &Theme, state: &TreeState) -> Element<Message> {
+        let roots = sample_files();
         Element::column([tree(&roots, state, theme, Message::Open, Message::Pick)])
             .padding(theme.cell_height() * 0.5)
             .size(Length::Fill, Length::Fill)
             .background(theme.raised.clone())
     }
+
+    fn toggle(&mut self, popup: Popup) {
+        self.popup = if self.popup == popup {
+            Popup::None
+        } else {
+            popup
+        };
+    }
 }
 
-fn files() -> Vec<TreeNode> {
+fn sample_files() -> Vec<TreeNode> {
     vec![
         TreeNode::branch(
             1,
@@ -291,7 +303,7 @@ impl UiApp for Tour {
         )
         .padding(theme.cell_height());
         let body = split(
-            Tour::files(theme, &self.files),
+            Tour::file_tree(theme, &self.files),
             page,
             self.sidebar,
             Orientation::Horizontal,
@@ -302,7 +314,7 @@ impl UiApp for Tour {
         if self.popup == Popup::Quit {
             root.push(dialog(
                 "Quit the tour?",
-                label("The note is not saved anywhere.", theme.body(), theme.muted),
+                label("Quit now to discard the note.", theme.body(), theme.muted),
                 [
                     button("Stay", Message::Dismiss, Emphasis::Plain, theme),
                     button("Quit", Message::ConfirmQuit, Emphasis::Primary, theme),
@@ -331,28 +343,23 @@ impl UiApp for Tour {
             Message::File(0) => {
                 self.popup = Popup::None;
                 let lines = self.note.text().lines().count();
-                self.toast(format!("Saved {lines} lines"));
+                self.toast(format!("The note has {lines} lines"));
             }
             Message::File(1) => {
                 self.popup = Popup::None;
                 self.note.take();
-                self.toast("Cleared the note");
             }
             Message::File(_) => self.popup = Popup::Quit,
             Message::Theme(index) => {
                 self.theme = index;
                 self.popup = Popup::None;
-                self.toast(format!(
-                    "Picked {}",
-                    THEMES.get(index).copied().unwrap_or_default()
-                ));
             }
             Message::Size(index) => self.size = index,
             Message::Busy => self.busy = !self.busy,
             Message::Volume(volume) => self.volume = volume,
             Message::Row(index) => {
                 self.table.select(index);
-                self.focus.set(Field::Table);
+                self.focus.set(Focused::Table);
             }
             Message::Scrolled(scroll) => self.page.apply(scroll),
             Message::Open(id) => self.files.toggle(id),
@@ -375,8 +382,8 @@ impl UiApp for Tour {
             return Control::Redraw;
         }
         let handled = match self.focus.current() {
-            Field::Note => self.note.handle(event) != Edit::Ignored,
-            Field::Table => self.table.handle(event),
+            Focused::Note => self.note.handle(event) != Edit::Ignored,
+            Focused::Table => self.table.handle(event),
         };
         if handled || self.page.handle(event, 40.0) {
             Control::Redraw
@@ -386,22 +393,15 @@ impl UiApp for Tour {
     }
 }
 
-impl Tour {
-    fn toggle(&mut self, popup: Popup) {
-        self.popup = if self.popup == popup {
-            Popup::None
-        } else {
-            popup
-        };
-    }
-}
+#[cfg(test)]
+mod common;
 
 #[cfg(test)]
 mod tests {
     use katui_app::UiApp as _;
-    use katui_draw::{TextEngine, bundled_fonts};
-    use katui_ui::{CellPixels, Ui, UiOptions};
+    use katui_ui::CellPixels;
 
+    use super::common::render_to_png;
     use super::{Message, Tour};
 
     const CELL: CellPixels = CellPixels {
@@ -410,25 +410,13 @@ mod tests {
     };
 
     fn render(tour: &Tour, name: &str) -> Vec<u8> {
-        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
-        let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());
-        let size = (8 * 120, 17 * 40);
-        let theme = tour.theme(CELL);
-        let output = ui.render(&tour.view(&theme), size, CELL);
-        let surface = output.flatten(CELL, size).expect("whole pixels");
-        let path = format!(
-            "{}/../../target/katui-tour-{name}.png",
-            env!("CARGO_MANIFEST_DIR")
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ExtendedColorType::Rgba8,
+        let view = tour.view(&tour.theme(CELL));
+        render_to_png(
+            &view,
+            (8 * 120, 17 * 40),
+            CELL,
+            &format!("katui-tour-{name}"),
         )
-        .expect("the target directory is writable");
-        surface.pixels().to_vec()
     }
 
     #[test]

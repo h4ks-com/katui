@@ -1,6 +1,6 @@
-//! The scene: layer 2 of the stack in ARCHITECTURE.md. Retained,
-//! backend-independent state. Cell planes hold text, pixel surfaces hold
-//! RGBA, presenters turn the diff of two scenes into terminal bytes.
+//! The scene: retained, backend-independent state. Cell planes hold text,
+//! pixel surfaces hold RGBA, presenters turn the diff of two scenes into
+//! terminal bytes.
 
 pub mod cell;
 pub mod placement;
@@ -9,9 +9,7 @@ pub mod surface;
 /// A rectangular size in terminal cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CellSize {
-    /// Columns, the horizontal extent.
     pub columns: u16,
-    /// Rows, the vertical extent.
     pub rows: u16,
 }
 

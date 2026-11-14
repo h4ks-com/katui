@@ -138,9 +138,7 @@ impl Pacer {
         }
         Ok(answering)
     }
-}
 
-impl Pacer {
     fn deliver_with_device_attributes<W: io::Write, M: Send + 'static>(
         &mut self,
         out: &mut W,

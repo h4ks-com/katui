@@ -1,5 +1,5 @@
 //! Documents for the terminal. The markdown renderer covers the subset a
-//! terminal actually shows as scene cells: headings, paragraphs, lists,
+//! terminal shows as scene cells: headings, paragraphs, lists,
 //! fenced code and inline code. With the `html` feature, an HTML and CSS
 //! subset renders as katui-ui elements in pixels.
 
@@ -115,11 +115,7 @@ impl Context {
         } else {
             (Color::Reset, Attrs::EMPTY)
         };
-        self.paragraph.push(Span {
-            text: text.to_owned(),
-            color,
-            attrs,
-        });
+        self.push_styled(text, color, attrs);
     }
 
     fn push_styled(&mut self, text: &str, color: Color, attrs: Attrs) {
@@ -131,11 +127,7 @@ impl Context {
     }
 
     fn space(&mut self) {
-        self.paragraph.push(Span {
-            text: " ".to_owned(),
-            color: Color::Reset,
-            attrs: Attrs::EMPTY,
-        });
+        self.push_styled(" ", Color::Reset, Attrs::EMPTY);
     }
 
     fn flush_paragraph(&mut self, lines: &mut Vec<Vec<Span>>) {

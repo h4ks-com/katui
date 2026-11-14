@@ -1,6 +1,6 @@
 //! Canvas and text rasterizing onto katui pixel surfaces.
 //!
-//! The crate is pure: callers pass font bytes in and read RGBA surfaces
+//! The crate does no I/O: callers pass font bytes in and read RGBA surfaces
 //! out.
 
 mod blend;
@@ -24,9 +24,7 @@ pub use text::{TextEngine, TextLayout, TextSpan, TextStyle};
 /// A position in pixels; `x` grows right and `y` grows down.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point {
-    /// Horizontal position.
     pub x: f32,
-    /// Vertical position.
     pub y: f32,
 }
 
@@ -41,13 +39,9 @@ impl Point {
 /// A rectangle in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
-    /// Left edge.
     pub x: f32,
-    /// Top edge.
     pub y: f32,
-    /// Width.
     pub width: f32,
-    /// Height.
     pub height: f32,
 }
 
@@ -103,12 +97,7 @@ pub enum Paint {
 pub enum DrawError {
     /// The dimensions are zero or exceed what a pixmap can hold.
     #[error("invalid canvas size {width}x{height}")]
-    InvalidSize {
-        /// Requested width.
-        width: u32,
-        /// Requested height.
-        height: u32,
-    },
+    InvalidSize { width: u32, height: u32 },
     /// Every supplied byte buffer failed to parse as a font.
     #[error("every supplied font failed to parse")]
     NoUsableFont,
@@ -116,7 +105,6 @@ pub enum DrawError {
 
 #[cfg(test)]
 pub(crate) mod testing {
-    use std::fs;
     use std::path::PathBuf;
 
     use katui_scene::surface::Surface;
@@ -128,10 +116,10 @@ pub(crate) mod testing {
     }
 
     pub(crate) fn save_png(name: &str, surface: &Surface) {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/katui-draw");
-        fs::create_dir_all(&dir).expect("the target directory is writable");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../target/katui-draw-{name}.png"));
         image::save_buffer(
-            dir.join(name),
+            path,
             surface.pixels(),
             surface.width(),
             surface.height(),
@@ -224,7 +212,7 @@ mod tests {
         let surface = canvas
             .to_surface()
             .expect("the canvas buffer matches its own dimensions");
-        save_png("sample.png", &surface);
+        save_png("sample", &surface);
         assert!(message.line_count() > 3);
     }
 }

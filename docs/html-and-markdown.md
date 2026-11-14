@@ -119,7 +119,6 @@ everything above applies to markdown too.
 
 ## Scrolling
 
-A long document can be taller than the screen. Wrap it in a column and set
-`.scroll(offset)` in pixels, moving the offset from `input` when the reader
-presses the arrow keys. The page viewer demo does exactly this: run
-`just demo-browse` and read `crates/katui-app/examples/browse.rs`.
+A long document can be taller than the screen. Keep a `ScrollState` for it
+as in [Scrolling](ui-apps.md#scrolling). Run `just demo-browse` to see a
+scrolling page viewer.

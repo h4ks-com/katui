@@ -1,12 +1,13 @@
 //! A small page through the HTML subset, written to a PNG.
 #![cfg(feature = "html")]
+#![allow(clippy::expect_used)]
 
 use std::sync::Arc;
 
 use katui_content::{HtmlDefaults, HtmlHost, html, markdown_view};
 use katui_draw::{Rgba, TextEngine, bundled_fonts};
 use katui_scene::surface::Surface;
-use katui_ui::{CellPixels, Ui, UiOptions};
+use katui_ui::{CellPixels, Element, Ui, UiOptions};
 
 const CELL: CellPixels = CellPixels {
     width: 9,
@@ -51,20 +52,21 @@ impl HtmlHost<String> for Host {
     }
 }
 
-#[test]
-fn a_page_renders_with_its_styles_and_its_link_answers_clicks() {
-    let defaults = HtmlDefaults {
+fn defaults() -> HtmlDefaults {
+    HtmlDefaults {
         font_size: 15.0,
         color: Rgba::solid(230, 230, 230),
         link: Rgba::solid(120, 160, 255),
         tint: Rgba::solid(45, 42, 60),
-    };
-    let root = html(PAGE, &defaults, &Host);
+    }
+}
+
+fn render_to_png(root: &Element<String>, name: &str) -> Ui<String> {
     let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
     let mut ui: Ui<String> = Ui::new(engine, UiOptions::default());
-    let output = ui.render(&root, SIZE, CELL);
+    let output = ui.render(root, SIZE, CELL);
     let surface = output.flatten(CELL, SIZE).expect("whole pixels");
-    let path = format!("{}/../../target/katui-html.png", env!("CARGO_MANIFEST_DIR"));
+    let path = format!("{}/../../target/{name}.png", env!("CARGO_MANIFEST_DIR"));
     image::save_buffer(
         path,
         surface.pixels(),
@@ -73,13 +75,29 @@ fn a_page_renders_with_its_styles_and_its_link_answers_clicks() {
         image::ExtendedColorType::Rgba8,
     )
     .expect("the target directory is writable");
-    let link = (0..SIZE.1 / 4)
-        .flat_map(|row| (0..SIZE.0 / 8).map(move |column| (column, row)))
-        .find_map(|(column, row)| {
-            let (x, y) = (f32::from(column as u16) * 8.0, f32::from(row as u16) * 4.0);
-            ui.hit_test(x, y).and_then(|hit| hit.on_click)
-        });
-    assert_eq!(link.as_deref(), Some("/widgets"));
+    ui
+}
+
+/// Every distinct link under a 4px grid, in reading order.
+fn links(ui: &Ui<String>) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for row in 0..SIZE.1 / 4 {
+        for column in 0..SIZE.0 / 4 {
+            let (x, y) = (f32::from(column as u16) * 4.0, f32::from(row as u16) * 4.0);
+            if let Some(href) = ui.hit_test(x, y).and_then(|hit| hit.on_click)
+                && !found.contains(&href)
+            {
+                found.push(href);
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn a_page_renders_with_its_styles_and_its_link_answers_clicks() {
+    let ui = render_to_png(&html(PAGE, &defaults(), &Host), "katui-html");
+    assert_eq!(links(&ui), ["/widgets"]);
 }
 
 const LINKS: &str = r#"<body>
@@ -103,41 +121,8 @@ impl HtmlHost<String> for Pictures {
 
 #[test]
 fn every_link_answers_its_own_clicks_wherever_it_sits() {
-    let defaults = HtmlDefaults {
-        font_size: 15.0,
-        color: Rgba::solid(230, 230, 230),
-        link: Rgba::solid(120, 160, 255),
-        tint: Rgba::solid(45, 42, 60),
-    };
-    let root = html(LINKS, &defaults, &Pictures);
-    let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
-    let mut ui: Ui<String> = Ui::new(engine, UiOptions::default());
-    let output = ui.render(&root, SIZE, CELL);
-    let surface = output.flatten(CELL, SIZE).expect("whole pixels");
-    let path = format!(
-        "{}/../../target/katui-html-links.png",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    image::save_buffer(
-        path,
-        surface.pixels(),
-        surface.width(),
-        surface.height(),
-        image::ExtendedColorType::Rgba8,
-    )
-    .expect("the target directory is writable");
-    let mut found: Vec<String> = Vec::new();
-    for row in 0..SIZE.1 / 4 {
-        for column in 0..SIZE.0 / 4 {
-            let (x, y) = (f32::from(column as u16) * 4.0, f32::from(row as u16) * 4.0);
-            if let Some(href) = ui.hit_test(x, y).and_then(|hit| hit.on_click)
-                && !found.contains(&href)
-            {
-                found.push(href);
-            }
-        }
-    }
-    assert_eq!(found, ["a.html", "b.html", "c.html", "d.html"]);
+    let ui = render_to_png(&html(LINKS, &defaults(), &Pictures), "katui-html-links");
+    assert_eq!(links(&ui), ["a.html", "b.html", "c.html", "d.html"]);
     assert_eq!(
         ui.hit_test(2.0, 8.0).and_then(|hit| hit.on_click),
         None,
@@ -147,36 +132,8 @@ fn every_link_answers_its_own_clicks_wherever_it_sits() {
 
 #[test]
 fn markdown_renders_through_the_html_subset_and_its_links_answer_clicks() {
-    let defaults = HtmlDefaults {
-        font_size: 15.0,
-        color: Rgba::solid(230, 230, 230),
-        link: Rgba::solid(120, 160, 255),
-        tint: Rgba::solid(45, 42, 60),
-    };
     let notes =
         "# Notes\n\nRead [the guide](guide.md) first.\n\n- one\n- two\n\n```\nlet x = 1;\n```\n";
-    let root = markdown_view(notes, &defaults, &Host);
-    let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
-    let mut ui: Ui<String> = Ui::new(engine, UiOptions::default());
-    let output = ui.render(&root, SIZE, CELL);
-    let surface = output.flatten(CELL, SIZE).expect("whole pixels");
-    let path = format!(
-        "{}/../../target/katui-markdown.png",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    image::save_buffer(
-        path,
-        surface.pixels(),
-        surface.width(),
-        surface.height(),
-        image::ExtendedColorType::Rgba8,
-    )
-    .expect("the target directory is writable");
-    let link = (0..SIZE.1 / 4)
-        .flat_map(|row| (0..SIZE.0 / 8).map(move |column| (column, row)))
-        .find_map(|(column, row)| {
-            let (x, y) = (f32::from(column as u16) * 8.0, f32::from(row as u16) * 4.0);
-            ui.hit_test(x, y).and_then(|hit| hit.on_click)
-        });
-    assert_eq!(link.as_deref(), Some("guide.md"));
+    let ui = render_to_png(&markdown_view(notes, &defaults(), &Host), "katui-markdown");
+    assert_eq!(links(&ui), ["guide.md"]);
 }

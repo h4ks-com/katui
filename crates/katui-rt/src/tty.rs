@@ -13,8 +13,8 @@ use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::fd::OwnedFd;
 use rustix::fs::{Mode, OFlags};
 use rustix::termios::{
-    InputModes, LocalModes, OptionalActions, QueueSelector, SpecialCodeIndex, Termios, tcflush,
-    tcgetattr, tcgetwinsize, tcsetattr,
+    InputModes, LocalModes, OptionalActions, QueueSelector, SpecialCodeIndex, Termios, Winsize,
+    tcflush, tcgetattr, tcgetwinsize, tcsetattr,
 };
 
 use crate::RtError;
@@ -29,25 +29,42 @@ fn open_tty() -> Result<File, RtError> {
     Ok(File::from(fd))
 }
 
-/// The shared raw-mode entry: no echo, no line buffering, no flow
-/// control, a one-byte read floor. `with_signals` keeps ISIG on for the
-/// probe (Ctrl-C must stay a signal there) and drops it for raw input,
-/// where Ctrl-C arrives as a byte.
-fn enter_raw(tty: &File, with_signals: bool) -> Result<Termios, RtError> {
-    let saved = tcgetattr(tty.as_fd())?;
-    let mut raw = saved.clone();
-    let mut modes = LocalModes::ECHO | LocalModes::ICANON;
-    if !with_signals {
-        modes |= LocalModes::ISIG;
+/// The terminal in raw mode until drop: no echo, no line buffering, no
+/// flow control, a one-byte read floor. `with_signals` keeps ISIG on for
+/// the probe (Ctrl-C must stay a signal there) and drops it for raw
+/// input, where Ctrl-C arrives as a byte.
+struct RawTty {
+    tty: File,
+    saved: Termios,
+}
+
+impl RawTty {
+    fn enter(tty: File, with_signals: bool) -> Result<Self, RtError> {
+        let saved = tcgetattr(tty.as_fd())?;
+        let mut raw = saved.clone();
+        let mut modes = LocalModes::ECHO | LocalModes::ICANON;
+        if !with_signals {
+            modes |= LocalModes::ISIG;
+        }
+        raw.local_modes -= modes;
+        raw.input_modes -= InputModes::IXON | InputModes::ICRNL;
+        // pin the noncanonical read floor so a previous owner's VMIN cannot
+        // stall trailing fragments
+        raw.special_codes[SpecialCodeIndex::VMIN] = 1;
+        raw.special_codes[SpecialCodeIndex::VTIME] = 0;
+        tcsetattr(tty.as_fd(), OptionalActions::Now, &raw)?;
+        Ok(Self { tty, saved })
     }
-    raw.local_modes -= modes;
-    raw.input_modes -= InputModes::IXON | InputModes::ICRNL;
-    // pin the noncanonical read floor so a previous owner's VMIN cannot
-    // stall trailing fragments
-    raw.special_codes[SpecialCodeIndex::VMIN] = 1;
-    raw.special_codes[SpecialCodeIndex::VTIME] = 0;
-    tcsetattr(tty.as_fd(), OptionalActions::Now, &raw)?;
-    Ok(saved)
+}
+
+impl Drop for RawTty {
+    fn drop(&mut self) {
+        // replies and keys that arrived after the last read would reach
+        // the parent shell as typed junk, so we flush them first; drop
+        // cannot report, so the restore is best effort
+        let _ = tcflush(self.tty.as_fd(), QueueSelector::IFlush);
+        let _ = tcsetattr(self.tty.as_fd(), OptionalActions::Now, &self.saved);
+    }
 }
 
 /// The pause after the terminal claims input it cannot deliver.
@@ -57,17 +74,12 @@ const SPURIOUS_READY_BACKOFF: Duration = Duration::from_millis(4);
 /// terminal delivers bytes one at a time, with `Ctrl-C`, `q` and `Esc`
 /// arriving as plain bytes instead of signals, and the saved state
 /// restores on drop whatever ends the run.
-pub struct RawInput {
-    tty: File,
-    saved: Termios,
-}
+pub struct RawInput(RawTty);
 
 impl RawInput {
     /// Grab the controlling terminal in raw mode.
     pub fn open() -> Result<Self, RtError> {
-        let tty = open_tty()?;
-        let saved = enter_raw(&tty, false)?;
-        Ok(Self { tty, saved })
+        Ok(Self(RawTty::enter(open_tty()?, false)?))
     }
 
     /// Wait up to `wait` for input; `None` on silence.
@@ -76,11 +88,11 @@ impl RawInput {
         let mut buffer = [0u8; 4096];
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
+            let mut fds = [PollFd::new(&self.0.tty, PollFlags::IN)];
             if !matches!(poll(&mut fds, Some(&timespec(remaining))), Ok(ready) if ready > 0) {
                 return None;
             }
-            match rustix::io::read(self.tty.as_fd(), &mut buffer) {
+            match rustix::io::read(self.0.tty.as_fd(), &mut buffer) {
                 Ok(count) if count > 0 => return buffer.get(..count).map(<[u8]>::to_vec),
                 // macOS ptys can report readable with no bytes to deliver,
                 // so we back off here or this loop would spin a whole core
@@ -93,21 +105,11 @@ impl RawInput {
     }
 }
 
-impl Drop for RawInput {
-    fn drop(&mut self) {
-        // drop cannot report, so the restore is best effort; bytes that
-        // arrived after the last read are drained so the shell sees none
-        let _ = tcflush(self.tty.as_fd(), QueueSelector::IFlush);
-        let _ = tcsetattr(self.tty.as_fd(), OptionalActions::Now, &self.saved);
-    }
-}
-
 /// The probe transport over `/dev/tty`, raw for its lifetime and restored
 /// on drop however the exchange ends. The total listening budget lives
 /// here: reads stop returning once it is spent.
 pub struct TtyTransport {
-    tty: File,
-    saved: Termios,
+    raw: RawTty,
     deadline: Instant,
 }
 
@@ -123,10 +125,8 @@ impl TtyTransport {
     /// seam the pty test drives, since /dev/tty cannot be pointed
     /// elsewhere.
     fn from_tty(tty: File, budget: Duration) -> Result<Self, RtError> {
-        let saved = enter_raw(&tty, true)?;
         Ok(Self {
-            tty,
-            saved,
+            raw: RawTty::enter(tty, true)?,
             // a budget overflowing the clock means a limit nobody reaches
             deadline: Instant::now()
                 .checked_add(budget)
@@ -135,20 +135,22 @@ impl TtyTransport {
     }
 }
 
-/// The terminal's size in columns and rows, asked of the controlling
-/// terminal, as the named [`katui_scene::CellSize`] the scene uses.
-pub fn size() -> Result<katui_scene::CellSize, RtError> {
+fn window_size() -> Result<Winsize, RtError> {
     let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
-    let winsize = tcgetwinsize(tty.as_fd())?;
+    Ok(tcgetwinsize(tty.as_fd())?)
+}
+
+/// The terminal's size in cells.
+pub fn size() -> Result<katui_scene::CellSize, RtError> {
+    let winsize = window_size()?;
     Ok(katui_scene::CellSize {
         columns: winsize.ws_col,
         rows: winsize.ws_row,
     })
 }
 
-/// The one probe every demo and binary runs: the standard 300 ms budget
-/// over the controlling terminal, falling back to the environment sniff
-/// when no terminal answers.
+/// The probe every demo and binary runs over the controlling terminal,
+/// falling back to the environment sniff when no terminal answers.
 pub fn probe_default() -> Capabilities {
     let mut caps = probe_terminal();
     if caps.multiplexed() {
@@ -200,12 +202,7 @@ fn probe_once(env: &Env, budget: Duration) -> Capabilities {
 /// The cell size the terminal driver reports, when it reports pixels.
 #[must_use]
 fn measured_cell() -> Option<CellPixels> {
-    let tty = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")
-        .ok()?;
-    let window = tcgetwinsize(tty.as_fd()).ok()?;
+    let window = window_size().ok()?;
     let area = CellPixels {
         width: window.ws_xpixel,
         height: window.ws_ypixel,
@@ -255,16 +252,6 @@ fn timespec(wait: Duration) -> Timespec {
     }
 }
 
-impl Drop for TtyTransport {
-    fn drop(&mut self) {
-        // replies that arrived after the budget stay queued on the device
-        // and would reach the parent shell as typed junk, so drain first;
-        // drop cannot report, so the restore itself is best effort
-        let _ = tcflush(self.tty.as_fd(), QueueSelector::IFlush);
-        let _ = tcsetattr(self.tty.as_fd(), OptionalActions::Now, &self.saved);
-    }
-}
-
 impl Transport for TtyTransport {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         let mut written = 0;
@@ -272,7 +259,7 @@ impl Transport for TtyTransport {
             if rest.is_empty() {
                 break;
             }
-            match rustix::io::write(self.tty.as_fd(), rest) {
+            match rustix::io::write(self.raw.tty.as_fd(), rest) {
                 Ok(0) => break,
                 Ok(n) => written += n,
                 Err(rustix::io::Errno::INTR) => {}
@@ -280,7 +267,7 @@ impl Transport for TtyTransport {
                 // kilobyte, so we wait on writability: a fixed sleep here
                 // caps the channel at a few hundred KB/s
                 Err(rustix::io::Errno::AGAIN) => {
-                    let mut fds = [PollFd::new(&self.tty, PollFlags::OUT)];
+                    let mut fds = [PollFd::new(&self.raw.tty, PollFlags::OUT)];
                     match poll(&mut fds, Some(&timespec(Duration::from_millis(100)))) {
                         Ok(_) | Err(rustix::io::Errno::INTR) => {}
                         Err(errno) => return Err(std::io::Error::from(errno)),
@@ -300,7 +287,7 @@ impl Transport for TtyTransport {
         let end = (start + wait).min(self.deadline);
         while Instant::now() < end {
             let timeout = timespec(end - Instant::now());
-            let mut fds = [PollFd::new(&self.tty, PollFlags::IN)];
+            let mut fds = [PollFd::new(&self.raw.tty, PollFlags::IN)];
             // a signal must not end the exchange, only the budget may
             let ready = loop {
                 match poll(&mut fds, Some(&timeout)) {
@@ -313,7 +300,7 @@ impl Transport for TtyTransport {
                 return None;
             }
             let mut buffer = [0u8; 4096];
-            match rustix::io::read(self.tty.as_fd(), &mut buffer) {
+            match rustix::io::read(self.raw.tty.as_fd(), &mut buffer) {
                 Ok(0) => return None,
                 Ok(n) => return buffer.get(..n).map(<[u8]>::to_vec),
                 // the poll reported readable but no byte arrived; the

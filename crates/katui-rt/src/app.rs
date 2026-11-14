@@ -4,9 +4,8 @@
 use std::io;
 use std::time::{Duration, Instant};
 
-use katui_present::{cells, session};
+use katui_present::session;
 use katui_proto::input::InputEvent;
-use katui_proto::kitty;
 use katui_proto::probe::Capabilities;
 use katui_scene::CellSize;
 
@@ -14,7 +13,7 @@ use crate::RtError;
 use crate::events::{EventPump, Signal, Waker};
 use crate::pacing::{Pacer, Pacing};
 use crate::pane::PaneView;
-use crate::session::{ResizeEvent, ResizeWatch};
+use crate::session::{ResizeEvent, ResizeWatch, Teardown};
 use crate::stop::StopRequest;
 
 /// How often an idle loop checks the terminal size.
@@ -123,10 +122,12 @@ impl<W: io::Write> Drop for RestoringTerminal<'_, W> {
 }
 
 fn restore<W: io::Write>(out: &mut W) -> io::Result<()> {
-    out.write_all(b"\x1b[?2026l\x1b[0m")?;
-    out.write_all(&kitty::Delete::AllVisible.encode())?;
+    Teardown {
+        graphics: true,
+        ..Teardown::default()
+    }
+    .finish(out)?;
     session::disable_input(out)?;
-    cells::show_cursor(out)?;
     session::leave(out)?;
     out.flush()
 }

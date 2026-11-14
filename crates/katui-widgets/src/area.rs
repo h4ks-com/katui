@@ -2,14 +2,13 @@
 //! whose arrows move between lines, and which shows a window of rows that
 //! follows the cursor.
 
-use katui_draw::Paint;
 use katui_proto::input::{InputEvent, Key, Mods};
 use katui_ui::{Align, Element, Length};
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::field::{Edit, TextField};
 use crate::theme::Theme;
-use crate::view::label;
+use crate::view::{cursor_bar, input_box, label};
 
 /// A multi-line text area's state: the text, the cursor, and which rows
 /// are in view.
@@ -31,7 +30,6 @@ impl TextArea {
         }
     }
 
-    /// The text.
     #[must_use]
     pub fn text(&self) -> &str {
         self.field.text()
@@ -180,7 +178,7 @@ pub fn text_area<M>(
                 let column = area.field.cursor - line_start;
                 caret_row(line, column, theme)
             } else {
-                Element::row(text_part(line, theme))
+                Element::row(label_unless_empty(line, theme))
             };
             row.align(Align::Center)
                 .height(Length::Px(line_height))
@@ -189,45 +187,33 @@ pub fn text_area<M>(
     let mut body: Vec<Element<M>> = rows.collect();
     if area.text().is_empty() && !focused {
         body = vec![
-            Element::row([label(placeholder.to_owned(), theme.body(), theme.muted)])
+            Element::row([label(placeholder, theme.body(), theme.muted)])
                 .height(Length::Px(line_height)),
         ];
     }
-    let border = if focused {
-        Paint::Solid(theme.accent)
-    } else {
-        theme.border.clone()
-    };
-    Element::column(body)
-        .padding_xy(theme.cell_width() * 1.5, theme.cell_height() * 0.4)
-        .height(Length::Px(
-            line_height * f32::from(u16::try_from(area.rows).unwrap_or(u16::MAX))
-                + theme.cell_height() * 0.8
-                + 2.0,
-        ))
-        .radius(theme.radius())
-        .background(theme.background.clone())
-        .border(1.0, border)
-        .width(Length::Fill)
+    let height = line_height * f32::from(u16::try_from(area.rows).unwrap_or(u16::MAX))
+        + theme.cell_height() * 0.8
+        + 2.0;
+    input_box(
+        Element::column(body).height(Length::Px(height)),
+        focused,
+        theme,
+    )
 }
 
-fn text_part<M>(text: &str, theme: &Theme) -> Vec<Element<M>> {
+fn label_unless_empty<M>(text: &str, theme: &Theme) -> Vec<Element<M>> {
     if text.is_empty() {
         Vec::new()
     } else {
-        vec![label(text.to_owned(), theme.body(), theme.text)]
+        vec![label(text, theme.body(), theme.text)]
     }
 }
 
 fn caret_row<M>(line: &str, column: usize, theme: &Theme) -> Element<M> {
     let (before, after) = line.split_at(column.min(line.len()));
-    let mut parts = text_part(before, theme);
-    parts.push(
-        Element::row([])
-            .size(Length::Px(2.0), Length::Px(theme.body()))
-            .background(Paint::Solid(theme.text)),
-    );
-    parts.extend(text_part(after, theme));
+    let mut parts = label_unless_empty(before, theme);
+    parts.push(cursor_bar(theme));
+    parts.extend(label_unless_empty(after, theme));
     Element::row(parts)
 }
 

@@ -1,7 +1,6 @@
 //! Image decode and fit: bytes in, `draw_image`-ready RGBA out, with a
-//! cache that decodes off the drawing thread. Scaling
-//! follows the readability policy of keeping small images crisp: pixel
-//! replication up, resampling down.
+//! cache that decodes off the drawing thread. Scaling keeps small images
+//! crisp: pixel replication up, resampling down.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -13,16 +12,35 @@ use katui_proto::probe::CellPixels;
 use katui_scene::placement::CellRect;
 
 type Finished<K> = (K, Option<Arc<DynamicImage>>);
+type Wake = Arc<dyn Fn() + Send + Sync>;
+type SizeKey<K> = (K, u16, u16, CellPixels, Fit);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Fit {
+    Stretch,
+    Contain,
+}
 
 /// Images keyed by the caller, decoded on worker threads once per key and
 /// fitted once per size, so a redraw never decodes or scales again.
-#[derive(Debug)]
 pub struct ImageCache<K> {
     sender: Sender<Finished<K>>,
     finished: Receiver<Finished<K>>,
+    wake: Option<Wake>,
     pending: HashSet<K>,
     decoded: HashMap<K, Option<Arc<DynamicImage>>>,
-    fitted: HashMap<(K, u16, u16, CellPixels), Arc<Vec<u8>>>,
+    fitted: HashMap<SizeKey<K>, Arc<Vec<u8>>>,
+}
+
+impl<K> std::fmt::Debug for ImageCache<K> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ImageCache")
+            .field("pending", &self.pending.len())
+            .field("decoded", &self.decoded.len())
+            .field("fitted", &self.fitted.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl<K: Eq + Hash + Clone + Send + 'static> Default for ImageCache<K> {
@@ -31,6 +49,7 @@ impl<K: Eq + Hash + Clone + Send + 'static> Default for ImageCache<K> {
         Self {
             sender,
             finished,
+            wake: None,
             pending: HashSet::new(),
             decoded: HashMap::new(),
             fitted: HashMap::new(),
@@ -39,6 +58,12 @@ impl<K: Eq + Hash + Clone + Send + 'static> Default for ImageCache<K> {
 }
 
 impl<K: Eq + Hash + Clone + Send + 'static> ImageCache<K> {
+    /// Call `wake` from the worker thread each time a decode finishes, for
+    /// example to send the app a message that makes it draw and `poll`.
+    pub fn on_ready(&mut self, wake: impl Fn() + Send + Sync + 'static) {
+        self.wake = Some(Arc::new(wake));
+    }
+
     /// Decode `bytes` under `key` on a worker thread, unless that key is
     /// already decoded or on its way.
     pub fn request(&mut self, key: K, bytes: Vec<u8>) {
@@ -46,11 +71,16 @@ impl<K: Eq + Hash + Clone + Send + 'static> ImageCache<K> {
             return;
         }
         let sender = self.sender.clone();
+        let wake = self.wake.clone();
         // we spawn one thread per new image; a caller showing hundreds at
         // once would want a bounded pool here
         std::thread::spawn(move || {
             let decoded = decode(&bytes).ok().map(Arc::new);
-            let _ = sender.send((key, decoded));
+            if sender.send((key, decoded)).is_ok()
+                && let Some(wake) = wake
+            {
+                wake();
+            }
         });
     }
 
@@ -74,12 +104,31 @@ impl<K: Eq + Hash + Clone + Send + 'static> ImageCache<K> {
     /// The RGBA bytes of `key` fitted to `area`, scaled once per size;
     /// `None` until its decode finished, or when it failed.
     pub fn fitted(&mut self, key: &K, area: CellRect, cell: CellPixels) -> Option<Arc<Vec<u8>>> {
-        let size_key = (key.clone(), area.columns, area.rows, cell);
+        self.scaled(key, area, cell, Fit::Stretch)
+    }
+
+    /// Like [`Self::fitted`], scaled with [`contain_in_area`] so the image
+    /// keeps its shape.
+    pub fn contained(&mut self, key: &K, area: CellRect, cell: CellPixels) -> Option<Arc<Vec<u8>>> {
+        self.scaled(key, area, cell, Fit::Contain)
+    }
+
+    fn scaled(
+        &mut self,
+        key: &K,
+        area: CellRect,
+        cell: CellPixels,
+        fit: Fit,
+    ) -> Option<Arc<Vec<u8>>> {
+        let size_key = (key.clone(), area.columns, area.rows, cell, fit);
         if let Some(bytes) = self.fitted.get(&size_key) {
             return Some(Arc::clone(bytes));
         }
         let decoded = self.decoded.get(key)?.as_ref()?;
-        let bytes = Arc::new(fit_to_area(decoded, area, cell));
+        let bytes = Arc::new(match fit {
+            Fit::Stretch => fit_to_area(decoded, area, cell),
+            Fit::Contain => contain_in_area(decoded, area, cell),
+        });
         self.fitted.insert(size_key, Arc::clone(&bytes));
         Some(bytes)
     }
@@ -90,7 +139,6 @@ pub fn decode(bytes: &[u8]) -> Result<DynamicImage, DecodeError> {
     image::load_from_memory(bytes).map_err(DecodeError)
 }
 
-/// A decode failure, wrapping the decoder's own error.
 #[derive(Debug, thiserror::Error)]
 #[error("decoding the image failed: {0}")]
 pub struct DecodeError(#[from] image::ImageError);
@@ -259,6 +307,13 @@ mod tests {
         let again = cache.fitted(&"logo", area(2, 1), cell()).expect("decoded");
         assert!(std::sync::Arc::ptr_eq(&first, &again), "one fit per size");
         assert_eq!(first.len(), 20 * 20 * 4);
+        let contained = cache
+            .contained(&"logo", area(2, 1), cell())
+            .expect("decoded");
+        assert!(
+            !std::sync::Arc::ptr_eq(&first, &contained),
+            "one fit per mode"
+        );
         cache.request("logo", png(2, 2));
         assert!(cache.poll().is_empty(), "a decoded key never decodes again");
     }

@@ -20,8 +20,5 @@ one, then pick whichever matches what you want to make.
 
 ## API reference
 
-The API reference lists every type and function, generated from the code:
-<https://matheusfillipe.github.io/katui/katui/>.
-
-To build it yourself, run `just api-docs` in a clone and open
-`target/doc/katui/index.html`.
+<https://matheusfillipe.github.io/katui/katui/>, or run `just api-docs` in
+a clone to build it.

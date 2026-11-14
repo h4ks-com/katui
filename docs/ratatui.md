@@ -110,7 +110,8 @@ new size.
 transparent bars on the sides, and `fit_to_area` stretches it to fill the
 area. `ImageCache` decodes on worker threads: you `request` a file's bytes
 under a key, `poll` each frame for the keys that finished, and take the
-fitted pixels with `fitted`.
+scaled pixels with `fitted` or `contained`. Pass `on_ready` a function
+that sends your app a message, so it draws again when a decode finishes.
 
 Images need a terminal with kitty graphics. Elsewhere your widgets still
 draw as usual and the image areas stay empty.

@@ -31,8 +31,8 @@ and mouse clicks back to you.
 ## Install
 
 katui needs Rust 1.90 or newer and runs on macOS and Linux. Start a project
-and add katui with the `app` feature, which brings in the app runner, the
-layout and the widgets:
+and add katui with the `app` feature, which brings in the app runner and
+the widgets:
 
 ```
 cargo new counter && cd counter
@@ -206,8 +206,8 @@ Clone the repository and run any of these with [just](https://github.com/casey/j
 | `just demo-html` | Every part of the HTML and CSS subset on one page |
 | `just demo-ratatui` | An image viewer made of ratatui widgets, with the picture beside them |
 | `just demo-video` | A video player for a file or URL, or a test pattern with a beep when you give it none |
-| `just demo-shardrift` | Drift through a nebula and split crystal rocks |
-| `just demo-lumenshaft` | Stack glowing blocks down a 3D shaft |
+| `just demo-shardrift` | An asteroids-style game |
+| `just demo-lumenshaft` | A falling-block game in a 3D shaft |
 | `just demo-cube` | A lit cube in software 3D that the arrow keys spin |
 | `just demo-plasma` | An interference plasma |
 
@@ -217,15 +217,9 @@ for the sound.
 
 ## Learn more
 
-The [guides](docs/README.md) walk you through each kind of program, one
-runnable example at a time: [getting started](docs/getting-started.md),
-[pixel UI apps](docs/ui-apps.md), [games](docs/games.md),
-[video](docs/video.md), [HTML and markdown](docs/html-and-markdown.md) and
-[images in ratatui apps](docs/ratatui.md). [How katui works](docs/architecture.md)
-explains the layers between your code and the terminal.
-
-The [API docs](https://matheusfillipe.github.io/katui/katui/) list every
-type and function. Run `just api-docs` to build them locally.
+The [guides](docs/README.md) walk you through each kind of program, and the
+[API docs](https://matheusfillipe.github.io/katui/katui/) list every type
+and function.
 
 ## Status
 

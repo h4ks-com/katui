@@ -9,15 +9,12 @@ const MAX_SPARKS: usize = 1600;
 /// A point or direction in world space.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct V3 {
-    /// Across.
     pub x: f32,
     /// Up or down, as the game chooses.
     pub y: f32,
-    /// Depth.
     pub z: f32,
 }
 
-/// A vector from its parts.
 #[must_use]
 pub const fn v3(x: f32, y: f32, z: f32) -> V3 {
     V3 { x, y, z }
@@ -137,13 +134,11 @@ impl Camera {
 pub struct Rng(u32);
 
 impl Rng {
-    /// A generator started from `seed`.
     #[must_use]
     pub fn new(seed: u32) -> Self {
         Self(seed | 1)
     }
 
-    /// The next raw value.
     pub fn next_u32(&mut self) -> u32 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 17;
@@ -177,7 +172,7 @@ pub struct Spark {
     pub color: Rgb,
     /// Seconds lived.
     pub age: f32,
-    /// Seconds it lasts.
+    /// Seconds lived when it dies.
     pub life: f32,
     /// Line width in pixels.
     pub width: f32,

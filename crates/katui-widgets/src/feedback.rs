@@ -16,7 +16,7 @@ const SPINNER_STEP: Duration = Duration::from_millis(250);
 const TOAST_TIME: Duration = Duration::from_secs(4);
 
 /// Three dots with one lit, moving on every quarter second of `elapsed`.
-/// Keep redrawing while it shows, with `Control::Animate` for one.
+/// Keep redrawing while it shows, for example with `Control::Animate`.
 pub fn spinner<M>(elapsed: Duration, theme: &Theme) -> Element<M> {
     let lit = elapsed.as_millis() / SPINNER_STEP.as_millis() % 3;
     let side = theme.body() * 0.45;
@@ -44,7 +44,7 @@ pub struct Toasts {
 }
 
 impl Toasts {
-    /// Show `text` for four seconds from `now`.
+    /// Show `text` for the default toast time from `now`.
     pub fn push(&mut self, text: impl Into<String>, now: Instant) {
         self.push_for(text, now, TOAST_TIME);
     }
@@ -54,14 +54,15 @@ impl Toasts {
         self.shown.push_back((text.into(), now + time));
     }
 
-    /// Drop the toasts whose time is up at `now`; `true` when any went.
+    /// Drop the toasts whose time is up at `now`. Returns whether any toast
+    /// expired.
     pub fn expire(&mut self, now: Instant) -> bool {
         let before = self.shown.len();
         self.shown.retain(|(_, until)| *until > now);
         self.shown.len() != before
     }
 
-    /// When the next toast goes, for an app that wakes itself up then.
+    /// When the next toast expires, so an app can wake up then.
     #[must_use]
     pub fn next_expiry(&self) -> Option<Instant> {
         self.shown.iter().map(|(_, until)| *until).min()
@@ -83,7 +84,7 @@ impl Toasts {
 /// in your root element.
 pub fn toasts<M>(toasts: &Toasts, theme: &Theme) -> Element<M> {
     let cards = toasts.texts().map(|text| {
-        Element::column([label(text.to_owned(), theme.body(), theme.text)])
+        Element::column([label(text, theme.body(), theme.text)])
             .padding_xy(theme.cell_width() * 1.5, theme.cell_height() * 0.5)
             .radius(theme.radius())
             .background(theme.raised.clone())
@@ -102,13 +103,12 @@ pub fn toasts<M>(toasts: &Toasts, theme: &Theme) -> Element<M> {
 /// does, like `("Ctrl+S", "save the file")`.
 pub fn key_hints<M>(hints: &[(&str, &str)], theme: &Theme) -> Element<M> {
     let pairs = hints.iter().map(|(key, action)| {
-        let cap =
-            Element::column([label((*key).to_owned(), theme.small(), theme.text).weight(700)])
-                .padding_xy(theme.cell_width() * 0.6, theme.cell_height() * 0.05)
-                .radius(theme.cell_height() * 0.25)
-                .background(theme.highlight.clone())
-                .border(1.0, theme.border.clone());
-        Element::row([cap, label((*action).to_owned(), theme.small(), theme.muted)])
+        let cap = Element::column([label(*key, theme.small(), theme.text).weight(700)])
+            .padding_xy(theme.cell_width() * 0.6, theme.cell_height() * 0.05)
+            .radius(theme.cell_height() * 0.25)
+            .background(theme.highlight.clone())
+            .border(1.0, theme.border.clone());
+        Element::row([cap, label(*action, theme.small(), theme.muted)])
             .gap(theme.cell_width() * 0.6)
             .align(Align::Center)
     });

@@ -1,5 +1,6 @@
-//! The newer widgets on two screens, each written to a PNG: the controls
-//! with their popups open, and a split screen under a dialog. The tests
+//! Two screens written to PNGs: the select, menu, radio, switch, slider,
+//! table and tooltip with their popups open, and a split screen of a tree
+//! and a scroll view under a dialog. The tests
 //! find each widget's messages on the rendered layout.
 #![allow(
     clippy::expect_used,
@@ -8,24 +9,19 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use std::path::PathBuf;
+mod common;
+
 use std::time::{Duration, Instant};
 
-use katui_draw::TextEngine;
+use common::{CELL, render_to_png, ui};
 use katui_proto::input::{InputEvent, Key, Mods};
-use katui_ui::{CellPixels, Element, Length, Ui, UiOptions};
+use katui_ui::{Element, Length, Ui};
 use katui_widgets::{
     Column, Emphasis, ListState, Orientation, Scroll, ScrollState, TextArea, Theme, Toasts,
     TreeNode, TreeState, button, dialog, key_hints, label, menu, panel, radio, scroll_view, select,
     slider, spinner, split, switch, table, text_area, toasts, tooltip, tree,
 };
 
-const TEXT_FONT: &[u8] =
-    include_bytes!("../../katui-draw/assets/AtkinsonHyperlegibleNext[wght].ttf");
-const CELL: CellPixels = CellPixels {
-    width: 9,
-    height: 19,
-};
 const SIZE: (u32, u32) = (9 * 110, 19 * 36);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,25 +42,6 @@ enum Message {
     Resize(f32),
     Dismiss,
     Confirm,
-}
-
-fn ui() -> Ui<Message> {
-    let engine = TextEngine::new(vec![TEXT_FONT.to_vec()]).expect("the font parses");
-    Ui::new(engine, UiOptions::default())
-}
-
-fn save(ui: &mut Ui<Message>, view: &Element<Message>, name: &str) {
-    let output = ui.render(view, SIZE, CELL);
-    let surface = output.flatten(CELL, SIZE).expect("whole pixels");
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../target/{name}.png"));
-    image::save_buffer(
-        &path,
-        surface.pixels(),
-        surface.width(),
-        surface.height(),
-        image::ExtendedColorType::Rgba8,
-    )
-    .expect("the target directory is writable");
 }
 
 /// Every point on a 4 pixel grid, top to bottom.
@@ -206,7 +183,12 @@ fn the_controls_render_with_their_popups_open_and_answer_clicks() {
     let mut ui = ui();
     let screen = |open| controls(open, &theme, &area, &scroll, &shown);
 
-    save(&mut ui, &screen(Open::Nothing), "katui-widgets-controls");
+    render_to_png(
+        &mut ui,
+        &screen(Open::Nothing),
+        SIZE,
+        "katui-widgets-controls",
+    );
     let found = clicks(&ui);
     for wanted in [
         Message::ToggleSelect,
@@ -221,7 +203,7 @@ fn the_controls_render_with_their_popups_open_and_answer_clicks() {
         );
     }
 
-    save(&mut ui, &screen(Open::Select), "katui-widgets-select");
+    render_to_png(&mut ui, &screen(Open::Select), SIZE, "katui-widgets-select");
     let found = clicks(&ui);
     assert!(found.contains(&Message::Choose(0)) && found.contains(&Message::Choose(3)));
     assert!(
@@ -229,7 +211,7 @@ fn the_controls_render_with_their_popups_open_and_answer_clicks() {
         "a click anywhere outside the open list closes it, found {found:?}"
     );
 
-    save(&mut ui, &screen(Open::Menu), "katui-widgets-menu");
+    render_to_png(&mut ui, &screen(Open::Menu), SIZE, "katui-widgets-menu");
     let found = clicks(&ui);
     assert!(found.contains(&Message::Menu(0)) && found.contains(&Message::Menu(2)));
 
@@ -301,9 +283,10 @@ fn a_split_tree_and_dialog_render_and_answer_presses() {
     tree_state.select(3);
     let mut ui = ui();
 
-    save(
+    render_to_png(
         &mut ui,
         &workspace(&theme, &tree_state, false),
+        SIZE,
         "katui-widgets-split",
     );
     let found = clicks(&ui);
@@ -329,9 +312,10 @@ fn a_split_tree_and_dialog_render_and_answer_presses() {
         "a pane is not the divider"
     );
 
-    save(
+    render_to_png(
         &mut ui,
         &workspace(&theme, &tree_state, true),
+        SIZE,
         "katui-widgets-dialog",
     );
     let confirm = where_clicks(&ui, &Message::Confirm).expect("the dialog's button");

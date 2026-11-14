@@ -1,20 +1,6 @@
-//! katui in one dependency: every layer of the engine under one name,
-//! the optional ones behind features.
-//!
-//! The protocol codecs, the scene, the presenters and the runtime are
-//! always here. `widgets` (with `ui` and `draw`) and `layout` come by
-//! default; `app`, `game`, `content`, `html` and `ratatui` are opt-in.
-//!
-//! The guides at <https://github.com/matheusfillipe/katui/tree/main/docs>
-//! walk through apps, games, video, documents and ratatui, one runnable
-//! example at a time.
-//!
-//! ```
-//! use katui::scene::CellSize;
-//!
-//! let size = CellSize { columns: 80, rows: 24 };
-//! assert_eq!(size.columns, 80);
-//! ```
+//! Every katui crate re-exported under one name, with the optional ones
+//! behind the features listed in `Cargo.toml`. The guides are in
+//! <https://github.com/matheusfillipe/katui/tree/main/docs>.
 
 pub use katui_present as present;
 pub use katui_proto as proto;

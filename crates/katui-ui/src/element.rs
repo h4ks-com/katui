@@ -203,7 +203,7 @@ impl<M> Element<M> {
     }
 
     /// The message [`crate::Hit`] carries for a click on the glyphs of span
-    /// `span` of a rich text, a link inside a paragraph for one.
+    /// `span` of a rich text, such as a link inside a paragraph.
     #[must_use]
     pub fn on_span_click(mut self, span: usize, message: M) -> Self {
         self.span_clicks.push((span, message));
@@ -245,7 +245,7 @@ impl<M> Element<M> {
     }
 
     /// Like [`Self::on_press`], but only a press on a descendant marked
-    /// [`Self::grip`] starts it, a divider between two panes for one.
+    /// [`Self::grip`] starts it, such as a divider between two panes.
     #[must_use]
     pub fn on_grip_press(mut self, message: impl Fn(f32, f32) -> M + 'static) -> Self {
         self.on_press = Some((Arc::new(message), true));
@@ -312,21 +312,20 @@ impl<M> Element<M> {
         self
     }
 
-    /// The width.
+    /// The width, [`Length::Content`] by default.
     #[must_use]
     pub fn width(mut self, width: Length) -> Self {
         self.style.width = width;
         self
     }
 
-    /// The height.
+    /// The height, [`Length::Content`] by default.
     #[must_use]
     pub fn height(mut self, height: Length) -> Self {
         self.style.height = height;
         self
     }
 
-    /// The width and height.
     #[must_use]
     pub fn size(self, width: Length, height: Length) -> Self {
         self.width(width).height(height)
@@ -376,7 +375,7 @@ impl<M> Element<M> {
         self
     }
 
-    /// The text color.
+    /// The text color, white by default.
     #[must_use]
     pub fn color(mut self, color: Rgba) -> Self {
         self.style.color = color;

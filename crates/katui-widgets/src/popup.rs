@@ -5,7 +5,7 @@ use katui_draw::{Paint, Rgba};
 use katui_ui::{Align, Element, Length};
 
 use crate::theme::Theme;
-use crate::view::{label, panel};
+use crate::view::{input_box, label, panel};
 
 /// The dimming behind a dialog.
 const SCRIM: Rgba = Rgba {
@@ -35,7 +35,7 @@ pub fn dialog<M>(
         .width(Length::Fill);
     let card = panel(
         [
-            label(title.to_owned(), theme.body() * 1.3, theme.text).weight(800),
+            label(title, theme.body() * 1.3, theme.text).weight(800),
             body,
             buttons,
         ],
@@ -65,23 +65,17 @@ pub fn select<M: Clone>(
     choose: impl Fn(usize) -> M,
 ) -> Element<M> {
     let current = options.get(selected).copied().unwrap_or_default();
-    let border = if open {
-        Paint::Solid(theme.accent)
-    } else {
-        theme.border.clone()
-    };
-    let field = Element::row([
-        label(current.to_owned(), theme.body(), theme.text),
-        Element::spacer(),
-        caret(theme),
-    ])
-    .align(Align::Center)
-    .gap(theme.cell_width())
-    .padding_xy(theme.cell_width() * 1.5, theme.cell_height() * 0.4)
-    .radius(theme.radius())
-    .background(theme.background.clone())
-    .border(1.0, border)
-    .width(Length::Fill)
+    let field = input_box(
+        Element::row([
+            label(current, theme.body(), theme.text),
+            Element::spacer(),
+            down_arrow(theme),
+        ])
+        .align(Align::Center)
+        .gap(theme.cell_width()),
+        open,
+        theme,
+    )
     .on_click(toggle.clone());
     let items = open.then(|| {
         options
@@ -105,7 +99,7 @@ pub fn menu<M: Clone>(
     toggle: M,
     choose: impl Fn(usize) -> M,
 ) -> Element<M> {
-    let mut anchor = Element::column([label(title.to_owned(), theme.body(), theme.text)])
+    let mut anchor = Element::column([label(title, theme.body(), theme.text)])
         .padding_xy(theme.cell_width() * 1.5, theme.cell_height() * 0.3)
         .radius(theme.radius())
         .on_click(toggle.clone());
@@ -133,7 +127,7 @@ pub fn tooltip<M>(
     theme: &Theme,
 ) -> Element<M> {
     let tip = shown.then(|| {
-        Element::column([label(text.to_owned(), theme.small(), theme.text)])
+        Element::column([label(text, theme.small(), theme.text)])
             .padding_xy(theme.cell_width(), theme.cell_height() * 0.25)
             .radius(theme.cell_height() * 0.3)
             .background(theme.highlight.clone())
@@ -183,7 +177,7 @@ fn dropdown<M>(
 }
 
 fn item<M>(text: &str, selected: bool, message: M, theme: &Theme) -> Element<M> {
-    let row = Element::row([label(text.to_owned(), theme.body(), theme.text)])
+    let row = Element::row([label(text, theme.body(), theme.text)])
         .padding_xy(theme.cell_width(), theme.cell_height() * 0.25)
         .radius(theme.cell_height() * 0.3)
         .width(Length::Fill)
@@ -197,7 +191,7 @@ fn item<M>(text: &str, selected: bool, message: M, theme: &Theme) -> Element<M> 
 
 /// A small downward triangle, drawn from shrinking bars since the bundled
 /// font has no arrow glyphs.
-fn caret<M>(theme: &Theme) -> Element<M> {
+fn down_arrow<M>(theme: &Theme) -> Element<M> {
     let unit = (theme.cell_height() * 0.12).max(1.0);
     let bars = [4.0, 3.0, 2.0, 1.0].map(|width| {
         Element::row([])

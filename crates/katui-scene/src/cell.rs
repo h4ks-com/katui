@@ -12,9 +12,7 @@ use crate::CellSize;
 /// top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
-    /// Column.
     pub x: u16,
-    /// Row.
     pub y: u16,
 }
 
@@ -26,7 +24,6 @@ pub enum Color {
     Reset,
     /// A palette index, the 16 ANSI colors plus the 256-color cube.
     Indexed(u8),
-    /// Direct RGB.
     Rgb(u8, u8, u8),
 }
 
@@ -35,25 +32,16 @@ pub enum Color {
 pub struct Attrs(u16);
 
 impl Attrs {
-    /// No attributes.
     pub const EMPTY: Self = Self(0);
-    /// Bold text.
     pub const BOLD: Self = Self(1 << 0);
-    /// Dim text.
     pub const DIM: Self = Self(1 << 1);
-    /// Italic text.
     pub const ITALIC: Self = Self(1 << 2);
-    /// Underlined text.
     pub const UNDERLINE: Self = Self(1 << 3);
-    /// Blinking text.
     pub const BLINK: Self = Self(1 << 4);
-    /// Rapidly blinking text.
     pub const RAPID_BLINK: Self = Self(1 << 5);
     /// Foreground and background swapped.
     pub const REVERSE: Self = Self(1 << 6);
-    /// Invisible text.
     pub const HIDDEN: Self = Self(1 << 7);
-    /// Struck-through text.
     pub const CROSSED: Self = Self(1 << 8);
 
     /// Both attribute sets at once.
@@ -79,11 +67,8 @@ pub struct Cell {
     /// The symbol shown, usually one grapheme. A blank cell holds a
     /// single space.
     pub symbol: String,
-    /// Foreground color.
     pub fg: Color,
-    /// Background color.
     pub bg: Color,
-    /// Text attributes.
     pub attrs: Attrs,
 }
 
@@ -115,7 +100,6 @@ impl Buffer {
         }
     }
 
-    /// The grid size.
     pub fn size(&self) -> CellSize {
         self.size
     }
@@ -199,7 +183,8 @@ pub fn diff<'a>(prev: &Buffer, next: &'a Buffer) -> Vec<(Position, &'a Cell)> {
     changed
 }
 
-fn all_cells(buffer: &Buffer) -> Vec<(Position, &Cell)> {
+/// Every cell of a buffer with its position, row-major.
+pub fn all_cells(buffer: &Buffer) -> Vec<(Position, &Cell)> {
     buffer
         .cells
         .iter()

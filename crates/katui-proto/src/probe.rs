@@ -36,17 +36,12 @@ pub trait Transport {
 /// this module touches beside its [`Transport`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Env {
-    /// `TERM`.
     pub term: Option<String>,
-    /// `TERM_PROGRAM`.
     pub term_program: Option<String>,
-    /// `COLORTERM`.
     pub colorterm: Option<String>,
-    /// `KITTY_WINDOW_ID`.
     pub kitty_window_id: Option<String>,
-    /// `TMUX`.
     pub tmux: Option<String>,
-    /// `RMUX`, set by the Rust rewrite alongside the tmux variables.
+    /// `RMUX`, set by rmux, a tmux rewrite, along with the tmux variables.
     pub rmux: Option<String>,
     /// `KATUI_GRAPHICS`: `kitty`, `sixel` or `blocks` overrides whatever
     /// the probe finds.
@@ -231,8 +226,6 @@ impl Capabilities {
     }
 }
 
-/// The query batch. DA1 comes last and acts as the barrier: a terminal
-/// that supports graphics answers the query before it.
 /// The image id the probe's query transmits under; answers naming it
 /// prove the kitty protocol listened.
 const PROBE_IMAGE_ID: u32 = 31;

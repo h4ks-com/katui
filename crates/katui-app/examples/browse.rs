@@ -78,7 +78,7 @@ impl Browser {
 }
 
 /// The local file `href` points at from `page`, for relative links. A
-/// link with a scheme, `https:` or `mailto:` for one, stays out.
+/// link with a scheme, such as `https:` or `mailto:`, stays out.
 fn local_target(page: &Path, href: &str) -> Option<PathBuf> {
     let path = href
         .split(['#', '?'])
@@ -180,14 +180,17 @@ impl UiApp for Browser {
 }
 
 #[cfg(test)]
+mod common;
+
+#[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use katui_app::UiApp as _;
-    use katui_draw::{TextEngine, bundled_fonts};
-    use katui_ui::{CellPixels, Ui, UiOptions};
+    use katui_ui::CellPixels;
     use katui_widgets::Theme;
 
+    use super::common::render_to_png;
     use super::{Browser, Message, local_target};
 
     const CELL: CellPixels = CellPixels {
@@ -200,23 +203,8 @@ mod tests {
         let start = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/pages/index.html");
         let mut browser = Browser::open(start);
         assert!(browser.source.is_ok(), "the bundled page opens");
-        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
-        let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());
-        let size = (9 * 100, 19 * 36);
-        let output = ui.render(&browser.view(&Theme::dark(CELL)), size, CELL);
-        let surface = output.flatten(CELL, size).expect("whole pixels");
-        let path = format!(
-            "{}/../../target/katui-browse.png",
-            env!("CARGO_MANIFEST_DIR")
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .expect("the target directory is writable");
+        let view = browser.view(&Theme::dark(CELL));
+        render_to_png(&view, (9 * 100, 19 * 36), CELL, "katui-browse");
         browser.update(Message::Link("about.html".to_owned()));
         assert!(browser.page.ends_with("about.html"));
         assert!(browser.source.is_ok(), "the linked page opens");
@@ -232,23 +220,8 @@ mod tests {
         let showcase = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/pages/showcase.html");
         let browser = Browser::open(showcase);
         assert!(browser.source.is_ok(), "the showcase opens");
-        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
-        let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());
-        let size = (9 * 110, 19 * 190);
-        let output = ui.render(&browser.view(&Theme::dark(CELL)), size, CELL);
-        let surface = output.flatten(CELL, size).expect("whole pixels");
-        let path = format!(
-            "{}/../../target/katui-html-showcase.png",
-            env!("CARGO_MANIFEST_DIR")
-        );
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .expect("the target directory is writable");
+        let view = browser.view(&Theme::dark(CELL));
+        render_to_png(&view, (9 * 110, 19 * 190), CELL, "katui-html-showcase");
         assert!(
             browser
                 .images

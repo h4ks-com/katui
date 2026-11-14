@@ -1,6 +1,5 @@
-//! The katui cube demo: a lit cube turning in software 3D, flat shaded
-//! with a glowing rim. Hold the arrow keys to steer its spin. Run with
-//! `just demo-cube`.
+//! A flat-shaded cube spinning in software 3D. Hold the arrow keys to
+//! steer its spin. Run with `just demo-cube`.
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss)]
 

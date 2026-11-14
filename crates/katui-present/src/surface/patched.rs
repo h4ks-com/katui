@@ -31,9 +31,7 @@ use crate::kitty::crop_rect;
 ///
 /// The default tile side is `cell.width * cell.height` pixels, a
 /// multiple of both cell axes, so every tile maps to whole cells and
-/// patch edges never tear. This is the bandwidth workhorse: a moving
-/// sprite on a static background costs a handful of small tile
-/// retransmits per frame.
+/// patch edges never tear.
 #[derive(Debug)]
 pub struct PatchedKitty {
     base: u32,

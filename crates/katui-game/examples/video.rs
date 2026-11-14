@@ -13,7 +13,7 @@ use std::io;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use katui_game::Key;
+use katui_game::{BASE_IMAGE, Key, MULTIPLEXED_SHRINK};
 use katui_present::surface::{PatchedKitty, PixelScreen};
 use katui_proto::input::InputEvent;
 use katui_proto::probe::{Capabilities, CellPixels};
@@ -26,9 +26,6 @@ use katui_scene::surface::Surface;
 const FRAMES_PER_SECOND: u32 = 30;
 const SEEK_SECONDS: f32 = 5.0;
 const MOST_PIXELS: (u32, u32) = (960, 540);
-/// A multiplexer carries graphics far more slowly than a terminal does.
-const MULTIPLEXED_SHRINK: u32 = 2;
-const BASE_IMAGE: u32 = 900;
 const OVERLAY_SECONDS: f32 = 2.0;
 const TEST_SECONDS: f32 = 60.0;
 

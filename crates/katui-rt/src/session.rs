@@ -62,7 +62,7 @@ pub struct Teardown {
 impl Teardown {
     /// Send the restore sequence: leave sync mode, reset styles, show
     /// the cursor, then whatever this teardown still owes.
-    fn finish<W: io::Write>(self, out: &mut W) -> io::Result<()> {
+    pub(crate) fn finish<W: io::Write>(self, out: &mut W) -> io::Result<()> {
         out.write_all(b"\x1b[?2026l\x1b[0m")?;
         cells::show_cursor(out)?;
         if self.graphics {

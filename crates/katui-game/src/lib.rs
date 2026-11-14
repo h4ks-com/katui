@@ -8,7 +8,7 @@ mod keys;
 mod light;
 mod space;
 
-pub use arcade::{Game, play};
+pub use arcade::{BASE_IMAGE, Game, MULTIPLEXED_SHRINK, play};
 pub use katui_proto::input::Key;
 pub use keys::HeldKeys;
 pub use light::{Blend, Light, P2, Rgb, lerp3, scaled, srgb};

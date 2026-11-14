@@ -10,11 +10,12 @@
 )]
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use katui_proto::input::{InputEvent, Key};
 use katui_proto::probe::CellPixels;
-use katui_ratatui::image::{contain_in_area, decode, pixel_area};
-use katui_ratatui::run::{Control, RatatuiApp, cell_rect, run};
+use katui_ratatui::image::{ImageCache, pixel_area};
+use katui_ratatui::run::{Control, RatatuiApp, Waker, cell_rect, run};
 use katui_ratatui::{ImageFrame, ImageId, ImageSlot, RgbaImage};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -48,14 +49,12 @@ impl Source {
     }
 }
 
-/// The picture on screen: what it shows, the area it was drawn for, and
-/// its pixels.
 struct Shown {
     key: (usize, Rect),
     id: ImageId,
     area: Rect,
     size: (u32, u32),
-    pixels: Vec<u8>,
+    pixels: Arc<Vec<u8>>,
 }
 
 struct Viewer {
@@ -64,7 +63,7 @@ struct Viewer {
     tab: usize,
     shown: Option<Shown>,
     next_id: u32,
-    error: Option<String>,
+    files: ImageCache<usize>,
 }
 
 impl Viewer {
@@ -77,7 +76,7 @@ impl Viewer {
             tab: 0,
             shown: None,
             next_id: 1,
-            error: None,
+            files: ImageCache::default(),
         }
     }
 
@@ -85,35 +84,32 @@ impl Viewer {
         self.list.selected().unwrap_or(0)
     }
 
+    fn failed(&self) -> bool {
+        self.files.failed(&self.selected())
+    }
+
     /// Draw the selected picture for `area` unless it is already drawn.
     fn prepare(&mut self, area: Rect, cell: CellPixels) {
+        self.files.poll();
         let key = (self.selected(), area);
         if self.shown.as_ref().is_some_and(|shown| shown.key == key) {
             return;
         }
         let size = pixel_area(cell_rect(area), cell);
         let pixels = match self.sources.get(self.selected()) {
-            Some(Source::Pattern(index)) => pattern(*index, size),
-            Some(Source::File(path)) => match std::fs::read(path)
-                .map_err(|error| error.to_string())
-                .and_then(|bytes| decode(&bytes).map_err(|error| error.to_string()))
-            {
-                Ok(decoded) => contain_in_area(&decoded, cell_rect(area), cell),
-                Err(error) => {
-                    self.error = Some(error);
-                    return;
-                }
-            },
-            None => return,
+            Some(Source::Pattern(index)) => Some(Arc::new(pattern(*index, size))),
+            Some(Source::File(_)) => self.files.contained(&key.0, cell_rect(area), cell),
+            None => None,
         };
-        self.error = None;
-        self.next_id += 1;
-        self.shown = Some(Shown {
-            key,
-            id: ImageId(self.next_id),
-            area,
-            size,
-            pixels,
+        self.shown = pixels.map(|pixels| {
+            self.next_id += 1;
+            Shown {
+                key,
+                id: ImageId(self.next_id),
+                area,
+                size,
+                pixels,
+            }
         });
     }
 
@@ -128,21 +124,6 @@ impl Viewer {
             }
         }
         bins
-    }
-
-    fn brightness(&self) -> f64 {
-        let bins = self.histogram();
-        let total: u64 = bins.iter().sum();
-        let weighted: u64 = bins
-            .iter()
-            .enumerate()
-            .map(|(index, count)| index as u64 * count)
-            .sum();
-        if total == 0 {
-            0.0
-        } else {
-            weighted as f64 / total as f64 / 31.0
-        }
     }
 
     fn sidebar(&mut self, frame: &mut Frame<'_>, area: Rect) {
@@ -171,6 +152,7 @@ impl Viewer {
         ])
         .areas(details);
         let size = self.shown.as_ref().map_or((0, 0), |shown| shown.size);
+        let light = self.histogram();
         frame.render_widget(
             Paragraph::new(format!("{} x {} pixels", size.0, size.1))
                 .block(Block::bordered().title(" Size ")),
@@ -180,14 +162,14 @@ impl Viewer {
             Gauge::default()
                 .block(Block::bordered().title(" Brightness "))
                 .gauge_style(Style::new().fg(ACCENT))
-                .ratio(self.brightness().clamp(0.0, 1.0)),
+                .ratio(brightness(&light).clamp(0.0, 1.0)),
             gauge,
         );
         frame.render_widget(
             Sparkline::default()
                 .block(Block::bordered().title(" Light "))
                 .style(Style::new().fg(ACCENT))
-                .data(self.histogram()),
+                .data(&light),
             spark,
         );
     }
@@ -195,6 +177,22 @@ impl Viewer {
 
 impl RatatuiApp for Viewer {
     type Message = ();
+
+    fn start(&mut self, waker: Waker<()>) {
+        self.files.on_ready(move || {
+            waker.send(());
+        });
+        for (index, source) in self.sources.iter().enumerate() {
+            if let Source::File(path) = source {
+                self.files
+                    .request(index, std::fs::read(path).unwrap_or_default());
+            }
+        }
+    }
+
+    fn update(&mut self, (): ()) -> Control {
+        Control::Redraw
+    }
 
     fn draw(&mut self, frame: &mut Frame<'_>, cell: CellPixels) {
         let [top, body, hints] = Layout::vertical([
@@ -222,13 +220,9 @@ impl RatatuiApp for Viewer {
         if self.tab == 1 {
             self.shown = None;
             frame.render_widget(
-                Paragraph::new(
-                    "Every widget here is ratatui's own. katui draws them as text cells, and the \
-                     picture on the Viewer tab as a real image through the kitty graphics protocol. \
-                     Pass image files to the demo to see them in the list.",
-                )
-                .wrap(ratatui::widgets::Wrap { trim: true })
-                .block(Block::bordered().title(" About ")),
+                Paragraph::new("Pass image files to the demo to add them to the list.")
+                    .wrap(ratatui::widgets::Wrap { trim: true })
+                    .block(Block::bordered().title(" About ")),
                 body,
             );
             return;
@@ -245,25 +239,22 @@ impl RatatuiApp for Viewer {
         let inner = frame_block.inner(picture);
         frame.render_widget(frame_block, picture);
         self.prepare(inner, cell);
-        match &self.error {
-            Some(error) => frame.render_widget(
-                Paragraph::new(format!("Pick another file, this one did not open: {error}")),
+        if self.failed() {
+            frame.render_widget(
+                Paragraph::new("Pick another file, this one did not open."),
                 inner,
-            ),
-            None => frame.render_widget(ImageSlot, inner),
+            );
+        } else {
+            frame.render_widget(ImageSlot, inner);
         }
         self.sidebar(frame, side);
     }
 
     fn images(&self) -> Vec<ImageFrame<'_>> {
-        let Some(shown) = self
-            .shown
-            .as_ref()
-            .filter(|_| self.tab == 0 && self.error.is_none())
-        else {
+        let Some(shown) = self.shown.as_ref().filter(|_| self.tab == 0) else {
             return Vec::new();
         };
-        RgbaImage::new(shown.size.0, shown.size.1, &shown.pixels)
+        RgbaImage::new(shown.size.0, shown.size.1, shown.pixels.as_slice())
             .map(|pixels| ImageFrame {
                 image: shown.id,
                 pixels,
@@ -286,6 +277,20 @@ impl RatatuiApp for Viewer {
             _ => return Control::Wait,
         }
         Control::Redraw
+    }
+}
+
+fn brightness(histogram: &[u64]) -> f64 {
+    let total: u64 = histogram.iter().sum();
+    let weighted: u64 = histogram
+        .iter()
+        .enumerate()
+        .map(|(index, count)| index as u64 * count)
+        .sum();
+    if total == 0 {
+        0.0
+    } else {
+        weighted as f64 / total as f64 / 31.0
     }
 }
 

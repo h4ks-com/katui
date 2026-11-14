@@ -34,7 +34,6 @@ impl TextField {
         Self { text, cursor }
     }
 
-    /// The text.
     #[must_use]
     pub fn text(&self) -> &str {
         &self.text

@@ -24,18 +24,13 @@ pub fn radio<M>(
                 .radius(side * 0.25)
                 .background(Paint::Solid(theme.accent))
         });
-        let border = if chosen {
-            Paint::Solid(theme.accent)
-        } else {
-            theme.border.clone()
-        };
         let ring = Element::column(dot)
             .size(Length::Px(side), Length::Px(side))
             .radius(side / 2.0)
-            .border(1.5, border)
+            .border(1.5, theme.outline(chosen))
             .align(Align::Center)
             .justify(Align::Center);
-        Element::row([ring, label((*option).to_owned(), theme.body(), theme.text)])
+        Element::row([ring, label(*option, theme.body(), theme.text)])
             .gap(theme.cell_width())
             .align(Align::Center)
             .on_click(choose(index))
@@ -63,7 +58,7 @@ pub fn switch<M>(text: &str, on: bool, message: M, theme: &Theme) -> Element<M> 
         .background(track)
         .align(Align::Center)
         .justify(justify);
-    Element::row([pill, label(text.to_owned(), theme.body(), theme.text)])
+    Element::row([pill, label(text, theme.body(), theme.text)])
         .gap(theme.cell_width())
         .align(Align::Center)
         .on_click(message)

@@ -31,7 +31,7 @@ pub fn button<M>(text: &str, message: M, emphasis: Emphasis, theme: &Theme) -> E
         Emphasis::Primary => (Paint::Solid(theme.accent), theme.on_accent),
         Emphasis::Plain => (theme.raised.clone(), theme.text),
     };
-    Element::column([label(text.to_owned(), theme.body(), color).weight(700)])
+    Element::column([label(text, theme.body(), color).weight(700)])
         .align(Align::Center)
         .padding_xy(theme.cell_width() * 2.0, theme.cell_height() * 0.4)
         .radius(theme.radius())
@@ -61,31 +61,34 @@ pub fn text_field<M>(
     let (before, after) = field.split();
     let mut parts = Vec::new();
     if !before.is_empty() {
-        parts.push(label(before.to_owned(), theme.body(), theme.text));
+        parts.push(label(before, theme.body(), theme.text));
     }
     if focused {
-        parts.push(
-            Element::row([])
-                .size(Length::Px(2.0), Length::Px(theme.body()))
-                .background(Paint::Solid(theme.text)),
-        );
+        parts.push(cursor_bar(theme));
     }
     if field.text().is_empty() {
-        parts.push(label(placeholder.to_owned(), theme.body(), theme.muted));
+        parts.push(label(placeholder, theme.body(), theme.muted));
     } else if !after.is_empty() {
-        parts.push(label(after.to_owned(), theme.body(), theme.text));
+        parts.push(label(after, theme.body(), theme.text));
     }
-    let border = if focused {
-        Paint::Solid(theme.accent)
-    } else {
-        theme.border.clone()
-    };
-    Element::row(parts)
-        .align(Align::Center)
+    input_box(Element::row(parts).align(Align::Center), focused, theme)
+}
+
+/// The text cursor: a thin bar one line of body text tall.
+pub(crate) fn cursor_bar<M>(theme: &Theme) -> Element<M> {
+    Element::row([])
+        .size(Length::Px(2.0), Length::Px(theme.body()))
+        .background(Paint::Solid(theme.text))
+}
+
+/// `content` framed as an input, outlined in the accent color while
+/// `active`.
+pub(crate) fn input_box<M>(content: Element<M>, active: bool, theme: &Theme) -> Element<M> {
+    content
         .padding_xy(theme.cell_width() * 1.5, theme.cell_height() * 0.4)
         .radius(theme.radius())
         .background(theme.background.clone())
-        .border(1.0, border)
+        .border(1.0, theme.outline(active))
         .width(Length::Fill)
 }
 
@@ -121,7 +124,7 @@ pub fn checkbox<M>(text: &str, checked: bool, message: M, theme: &Theme) -> Elem
     if checked {
         tick = tick.background(Paint::Solid(theme.accent));
     }
-    Element::row([tick, label(text.to_owned(), theme.body(), theme.text)])
+    Element::row([tick, label(text, theme.body(), theme.text)])
         .gap(theme.cell_width())
         .align(Align::Center)
         .on_click(message)
@@ -154,9 +157,11 @@ pub fn tabs<M>(
     let tabs = titles.iter().enumerate().map(|(index, title)| {
         let active = index == selected;
         let color = if active { theme.text } else { theme.muted };
-        let mut tab = Element::column([
-            label((*title).to_owned(), theme.body(), color).weight(if active { 700 } else { 400 })
-        ])
+        let mut tab = Element::column([label(*title, theme.body(), color).weight(if active {
+            700
+        } else {
+            400
+        })])
         .padding_xy(theme.cell_width() * 1.5, theme.cell_height() * 0.3)
         .radius(theme.radius())
         .on_click(message(index));

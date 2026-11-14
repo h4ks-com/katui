@@ -204,13 +204,9 @@ fn encode_chunks(head: &str, payload: &[u8], compressed: bool) -> std::io::Resul
 /// A rectangle of the source image, in pixels (the `x y w h` crop keys).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PixelRect {
-    /// Left edge of the crop.
     pub x: u32,
-    /// Top edge of the crop.
     pub y: u32,
-    /// Crop width.
     pub width: u32,
-    /// Crop height.
     pub height: u32,
 }
 

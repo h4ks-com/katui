@@ -15,7 +15,7 @@ pub(crate) fn to_f32(value: u32) -> f32 {
     value as f32
 }
 
-pub(crate) fn whole(value: f32) -> u32 {
+fn to_u32(value: f32) -> u32 {
     (value as i32).max(0).unsigned_abs()
 }
 
@@ -32,7 +32,7 @@ pub(crate) struct TextKey {
 impl TextKey {
     pub(crate) fn wrapped_at(&self, width: f32) -> Self {
         Self {
-            wrap: Some(whole(width.round())),
+            wrap: Some(to_u32(width.round())),
             ..self.clone()
         }
     }

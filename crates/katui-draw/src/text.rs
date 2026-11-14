@@ -442,7 +442,7 @@ mod tests {
                 );
             }
         }
-        save_png("text_measured.png", &surface);
+        save_png("text_measured", &surface);
     }
 
     #[test]
@@ -455,7 +455,7 @@ mod tests {
         assert!(narrow.line_count() > 2, "{}", narrow.line_count());
         assert!(narrow.size().0 <= 200.0);
         assert!(narrow.size().1 > wide.size().1);
-        save_png("text_wrapped.png", &draw(&narrow, 8, &Paint::Solid(WHITE)));
+        save_png("text_wrapped", &draw(&narrow, 8, &Paint::Solid(WHITE)));
     }
 
     #[test]
@@ -483,7 +483,7 @@ mod tests {
         );
         assert!(light_ink < regular_ink, "{light_ink} {regular_ink}");
         assert!(regular_ink * 5 < bold_ink * 4, "{regular_ink} {bold_ink}");
-        save_png("text_bold.png", &draw(&bold, 4, &paint));
+        save_png("text_bold", &draw(&bold, 4, &paint));
     }
 
     #[test]
@@ -500,7 +500,7 @@ mod tests {
             .count();
         assert!(colored > 200, "colored pixels: {colored}");
         assert!(layout.size().0 > 48.0, "the emoji advanced the line");
-        save_png("text_emoji.png", &surface);
+        save_png("text_emoji", &surface);
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
             .filter(|pixel| pixel[3] == 255 && pixel[2] > 180)
             .count();
         assert!(reddest > 0 && bluest == 0, "{reddest} {bluest}");
-        save_png("text_clipped.png", &surface);
+        save_png("text_clipped", &surface);
     }
 
     #[test]

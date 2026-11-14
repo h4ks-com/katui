@@ -283,8 +283,7 @@ impl KittyScreen {
     }
 }
 
-/// Scene crop rectangle to protocol crop rectangle: the one place the
-/// layer-parallel types meet, so presenters never field-copy.
+/// Convert a scene crop to a protocol crop.
 pub(crate) fn crop_rect(crop: PixelRect) -> kitty::PixelRect {
     kitty::PixelRect {
         x: crop.x,

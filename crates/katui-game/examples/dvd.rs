@@ -1,5 +1,5 @@
-//! The katui dvd demo: the bouncing logo over a starfield, speeding up
-//! with every corner hit. Run with `just demo-dvd`.
+//! The bouncing dvd logo over a starfield, speeding up on every corner
+//! hit. Run with `just demo-dvd`.
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(
     clippy::cast_possible_truncation,

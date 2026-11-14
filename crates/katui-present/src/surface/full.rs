@@ -13,9 +13,7 @@ use super::write_whole_image;
 /// The full-frame kitty surface presenter: every frame transmits the
 /// whole surface compressed under one of two alternating image ids and
 /// places it, deleting the previous frame's placement, so the terminal
-/// never shows a half-updated image. Patched tile presenters refine
-/// this with damage repaints; whole-frame stays the correctness
-/// baseline.
+/// never shows a half-updated image.
 #[derive(Debug)]
 pub struct KittySurface {
     base: u32,

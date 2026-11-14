@@ -1,9 +1,5 @@
-//! The ratatui compatibility backend: ratatui's cell changes flow into a
-//! katui scene buffer and out through the katui-present cell presenter,
-//! so a ratatui app runs on katui by swapping its backend generic. Pixel
-//! planes and image placements join on this same seam. The cursor is
-//! tracked, never queried: reading the terminal's answer belongs to the
-//! runtime's transport.
+//! A ratatui backend that draws through katui's cell presenter and places
+//! kitty images beside the cells.
 
 pub mod image;
 #[cfg(all(unix, feature = "run"))]
@@ -31,11 +27,8 @@ use ratatui::widgets::Widget;
 /// covers.
 #[derive(Debug, Clone, Copy)]
 pub struct ImageFrame<'a> {
-    /// The scene id; new pixels take a new id.
     pub image: ImageId,
-    /// The RGBA pixels.
     pub pixels: RgbaImage<'a>,
-    /// The cells the image covers.
     pub area: CellRect,
 }
 
@@ -91,7 +84,7 @@ impl<W: io::Write> KatuiBackend<W> {
         &self.screen
     }
 
-    /// The writer back.
+    /// Consume the backend and return its writer.
     pub fn into_inner(self) -> W {
         self.out
     }
@@ -126,8 +119,8 @@ impl<W: io::Write> KatuiBackend<W> {
     /// Show exactly `frames` this frame: the placement bookkeeping diffs
     /// against the previous frame, so an unchanged image costs nothing, a
     /// move re-places without re-transmitting, a new image id transmits
-    /// once and an image left out is removed. Returns the bytes written,
-    /// the frame budget's input. Render an [`ImageSlot`] over each area so
+    /// once and an image left out is removed. Returns the number of bytes
+    /// written. Render an [`ImageSlot`] over each area so
     /// ratatui leaves those cells to the image.
     pub fn draw_images(&mut self, frames: &[ImageFrame<'_>]) -> io::Result<usize> {
         let mut images = Images::default();

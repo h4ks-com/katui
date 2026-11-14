@@ -336,7 +336,7 @@ struct Scope {
 pub(crate) struct Resolved<M> {
     pub(crate) drafts: Vec<Draft>,
     pub(crate) regions: Vec<Region<M>>,
-    pub(crate) corrections: Vec<M>,
+    pub(crate) clamped_scrolls: Vec<M>,
 }
 
 /// The layer keys popups without their own key draw under, far above any
@@ -348,7 +348,7 @@ const WHEEL_LINES: f32 = 3.0;
 
 /// A popup waiting for the main walk to finish: the element, its parent's
 /// origin and the index of its layout node.
-type Lifted<'r, M> = (&'r Element<M>, Point, usize);
+type PendingPopup<'r, M> = (&'r Element<M>, Point, usize);
 
 struct Walker<'a, 'b, 'r, M> {
     laid: &'a Laid<'b>,
@@ -358,9 +358,9 @@ struct Walker<'a, 'b, 'r, M> {
     keys: HashSet<u64>,
     drafts: Vec<Draft>,
     regions: Vec<Region<M>>,
-    corrections: Vec<M>,
-    lifted: Vec<Lifted<'r, M>>,
-    lifting: bool,
+    clamped_scrolls: Vec<M>,
+    pending_popups: Vec<PendingPopup<'r, M>>,
+    in_popup: bool,
 }
 
 /// How many layout nodes `element` and its subtree occupy.
@@ -403,9 +403,9 @@ pub(crate) fn resolve<M: Clone + 'static>(
             inked: false,
         }],
         regions: Vec::new(),
-        corrections: Vec::new(),
-        lifted: Vec::new(),
-        lifting: false,
+        clamped_scrolls: Vec::new(),
+        pending_popups: Vec::new(),
+        in_popup: false,
     };
     let scope = Scope {
         layer: 0,
@@ -416,24 +416,24 @@ pub(crate) fn resolve<M: Clone + 'static>(
     };
     walker.walk(root, Point::default(), scope);
     let mut next = 0;
-    while let Some((element, parent, cursor)) = walker.lifted.get(next).copied() {
+    while let Some((element, parent, cursor)) = walker.pending_popups.get(next).copied() {
         next += 1;
         walker.cursor = cursor;
-        walker.lifting = true;
+        walker.in_popup = true;
         walker.walk(element, parent, scope);
     }
     Resolved {
         drafts: walker.drafts,
         regions: walker.regions,
-        corrections: walker.corrections,
+        clamped_scrolls: walker.clamped_scrolls,
     }
 }
 
 impl<'r, M: Clone + 'static> Walker<'_, '_, 'r, M> {
     fn walk(&mut self, element: &'r Element<M>, parent: Point, scope: Scope) {
-        let lifted = std::mem::take(&mut self.lifting);
-        if element.popup.is_some() && !lifted {
-            self.lifted.push((element, parent, self.cursor));
+        let in_popup = std::mem::take(&mut self.in_popup);
+        if element.popup.is_some() && !in_popup {
+            self.pending_popups.push((element, parent, self.cursor));
             self.cursor += node_count(element);
             return;
         }
@@ -446,7 +446,7 @@ impl<'r, M: Clone + 'static> Walker<'_, '_, 'r, M> {
         };
         let at = Point::new(parent.x + layout.location.x, parent.y + layout.location.y);
         let rect = Rect::new(at.x, at.y, layout.size.width, layout.size.height);
-        let forced = lifted.then(|| self.popup_key(element));
+        let forced = in_popup.then(|| self.popup_key(element));
         let (rect, painted, scope) = self.enter_layer(element, rect, scope, forced);
         self.paint_box(element, painted, scope);
         let scroll = self.scroll_of(element, node, rect);
@@ -459,7 +459,7 @@ impl<'r, M: Clone + 'static> Walker<'_, '_, 'r, M> {
     fn popup_key(&self, element: &Element<M>) -> u64 {
         element
             .layer
-            .unwrap_or(POPUP_KEYS + self.lifted.len() as u64)
+            .unwrap_or(POPUP_KEYS + self.pending_popups.len() as u64)
     }
 
     /// The clamped scroll position of a scrolling element, sending its
@@ -493,7 +493,7 @@ impl<'r, M: Clone + 'static> Walker<'_, '_, 'r, M> {
         if (requested - offset).abs() > 0.5
             && let Some(handler) = &element.on_scroll
         {
-            self.corrections.push(handler(Scroll { offset, max }));
+            self.clamped_scrolls.push(handler(Scroll { offset, max }));
         }
         Some(Scroll { offset, max })
     }

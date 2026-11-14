@@ -6,7 +6,6 @@
 )]
 
 use std::collections::HashSet;
-use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -510,10 +509,9 @@ fn writes_a_composed_chat_png() {
     let surface = output
         .flatten(CELL, size)
         .expect("the size holds whole pixels");
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/katui-ui");
-    fs::create_dir_all(&dir).expect("the target directory is writable");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/katui-ui-chat.png");
     image::save_buffer(
-        dir.join("chat.png"),
+        path,
         surface.pixels(),
         surface.width(),
         surface.height(),

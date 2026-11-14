@@ -4,21 +4,16 @@
 
 use crate::Sink;
 use std::io;
-use std::io::Write as _;
 
 use katui_scene::cell::{Attrs, Buffer, Color, Position};
 use katui_scene::surface::Surface;
 
 use super::BufferSurface;
-use crate::blocks::{Rgb, quarter, render_line};
+use crate::blocks::{Rgb, quarter};
 
 /// The stateful blocks presenter: renders a pixel surface as
 /// quarter-block cells once, then repaints only the cells whose pixels
-/// changed. This is the blocks path's answer to
-/// [`PatchedKitty`](crate::surface::PatchedKitty): a moving sprite on a static
-/// background costs a handful of cursor-addressed SGR cells per frame
-/// instead of a full-screen rewrite, which is what makes the fallback
-/// survivable inside multiplexers.
+/// changed.
 #[derive(Debug, Default)]
 pub struct BlocksSurface {
     cells: BufferSurface,
@@ -72,56 +67,9 @@ fn cells_for_surface(surface: &Surface) -> Buffer {
     buffer
 }
 
-/// Write a surface as quarter-block lines from the home cursor, the
-/// pixel path for terminals without a graphics protocol. Alpha is
-/// ignored: block glyphs carry no transparency.
-pub fn render_blocks<W: Sink>(out: &mut W, surface: &Surface) -> io::Result<usize> {
-    let mut bytes = Vec::new();
-    bytes.write_all(b"\x1b[H")?;
-    let mut y = 0;
-    while y + 1 < surface.height() {
-        let top = pixel_row(surface, y);
-        let bottom = pixel_row(surface, y + 1);
-        render_line(&mut bytes, &top, &bottom)?;
-        bytes.write_all(b"\x1b[K\r\n")?;
-        y += 2;
-    }
-    let written = bytes.len();
-    out.write_all(&bytes)?;
-    Ok(written)
-}
-
-fn pixel_row(surface: &Surface, y: u32) -> Vec<Rgb> {
-    (0..surface.width())
-        .filter_map(|x| {
-            surface
-                .get(katui_scene::surface::PixelPos::new(x, y))
-                .map(|pixel| Rgb {
-                    r: pixel.r,
-                    g: pixel.g,
-                    b: pixel.b,
-                })
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::render_blocks;
     use crate::surface::test_support::solid;
-    use katui_scene::surface::Rgba;
-
-    #[test]
-    fn blocks_render_a_solid_surface_as_full_cells() {
-        let surface = solid(4, 2, Rgba::solid(255, 0, 0));
-        let mut out = Vec::new();
-        render_blocks(&mut out, &surface).expect("writing to a Vec cannot fail");
-        let text = String::from_utf8_lossy(&out);
-        assert!(text.starts_with("\x1b[H"));
-        assert!(text.contains("\x1b[38;2;255;0;0m"));
-        assert!(text.contains('█'));
-        assert!(text.contains("\x1b[K\r\n"));
-    }
 
     mod diffed_blocks {
         use super::super::BlocksSurface;

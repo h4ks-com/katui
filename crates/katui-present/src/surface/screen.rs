@@ -1,6 +1,6 @@
-//! The composite pixel strategy: the patched kitty presenter when the
-//! terminal speaks kitty graphics, sixel tiles when it speaks sixel, the
-//! damage-tracked blocks otherwise.
+//! The composite pixel strategy: patched kitty tiles or terminal-side
+//! animation when the terminal speaks kitty graphics, sixel tiles when it
+//! speaks sixel, the damage-tracked blocks otherwise.
 
 use crate::Sink;
 use std::io;
@@ -24,13 +24,8 @@ pub(super) enum PixelStrategy {
     Sixel(SixelSurface),
 }
 
-/// The demo-grade pixel presenter for a terminal: one object that
-/// renders a pixel surface full-screen through whatever the terminal
-/// offers, so callers stop hand-picking strategies per capability. The
-/// kitty strategy comes pre-built by the caller (tiles and budget are
-/// policy); it is used only when the terminal speaks kitty graphics,
-/// sixel takes its cell size, and the blocks path carries every other
-/// terminal.
+/// Renders a pixel surface full-screen through the best strategy the
+/// terminal offers.
 #[derive(Debug, Default)]
 pub struct PixelScreen {
     graphics: Option<PixelStrategy>,
@@ -102,7 +97,7 @@ impl PixelScreen {
     }
 
     /// Send every graphics pixel again on the next frame, for when the
-    /// terminal may have lost its images, a window resize for one.
+    /// terminal may have lost its images, such as after a window resize.
     pub fn repaint(&mut self) {
         match &mut self.graphics {
             Some(PixelStrategy::Patched(patched)) => patched.repaint(),

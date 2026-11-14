@@ -115,6 +115,16 @@ impl Theme {
         self.cell_height() * 0.6
     }
 
+    /// The accent color while `active`, the border color otherwise.
+    #[must_use]
+    pub fn outline(&self, active: bool) -> Paint {
+        if active {
+            Paint::Solid(self.accent)
+        } else {
+            self.border.clone()
+        }
+    }
+
     /// `count` cells across.
     #[must_use]
     pub fn columns(&self, count: f32) -> Length {

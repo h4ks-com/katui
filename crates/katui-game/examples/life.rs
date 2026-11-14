@@ -1,11 +1,7 @@
-//! Life: Conway's game of life over a slowly breathing nebula, cells born
-//! white-hot cooling through gold and fire into ash that fades into the
-//! background. A stagnant universe reseeds itself with a fresh bloom. Run
-//! with `just demo-life`.
-#![cfg(unix)]
-// the runner drives /dev/tty through katui-rt's unix layer
-// We wrap torus coordinates inside the grid before indexing, so every index is in bounds.
+//! Conway's game of life over a nebula; a stalled board reseeds. Run with `just demo-life`.
+#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(
+    // We wrap torus coordinates inside the grid before indexing, so every index is in bounds.
     clippy::indexing_slicing,
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -131,7 +127,8 @@ impl Game for LifeDemo {
 struct Life {
     width: u32,
     height: u32,
-    /// Alive pixels, 0 or 1, with a one-ghost border for wraparound.
+    /// Alive pixels, 0 or 1, with a border one cell wide that mirrors the
+    /// opposite edges for wraparound.
     alive: Vec<u8>,
     /// Generations alive per pixel; zero is dead. Ages saturate.
     age: Vec<u8>,
@@ -166,8 +163,8 @@ impl Life {
         (y * self.width + x) as usize
     }
 
-    /// A fresh bloom: a few clouds of life at just under half density,
-    /// coherent enough to grow structures that spit gliders.
+    /// Seed a few round clouds of life at just under half density, which
+    /// grow into structures that emit gliders.
     fn reseed(&mut self) {
         self.age.fill(0);
         self.ash_heat.fill(0);
@@ -217,8 +214,8 @@ impl Life {
         self.alive[(height + 1) * stride + width + 1] = self.alive[stride + 1];
     }
 
-    /// One generation of B3/S23: the born light white-hot, survivors a
-    /// generation older, the dead handed ash that then fades.
+    /// Advance one generation of B3/S23. Births start at age one,
+    /// survivors age by one, and each death leaves ash that fades.
     fn step(&mut self) {
         let stride = (self.width + 2) as usize;
         self.ash_heat
@@ -265,9 +262,9 @@ impl Life {
         };
     }
 
-    /// The light of every cell: the nebula under additive heat. The glow
-    /// breathes in coarse steps so unchanged cells keep their bytes and
-    /// cost nothing to present.
+    /// The light of every cell: the nebula plus the heat of life and ash.
+    /// We change the brightness in coarse steps so unchanged cells keep
+    /// their bytes and cost nothing to present.
     fn shade(&self, pulse: f32) -> Vec<Rgb> {
         let breath = 0.85 + 0.15 * ((pulse * 16.0).floor() / 16.0);
         let scale = |delta: (u8, u8, u8)| -> (u8, u8, u8) {

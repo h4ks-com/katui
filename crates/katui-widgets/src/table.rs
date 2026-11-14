@@ -82,7 +82,7 @@ fn line<'a, M>(
         (theme.text, 400)
     };
     let parts = columns.iter().zip(cells).map(|(column, text)| {
-        let cell = Element::row([label(text.to_owned(), theme.body(), color).weight(weight)]);
+        let cell = Element::row([label(text, theme.body(), color).weight(weight)]);
         match column.cells {
             Some(cells) => cell.width(theme.columns(cells)),
             None => cell.width(Length::Fill),

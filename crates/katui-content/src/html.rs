@@ -467,7 +467,7 @@ impl Run {
         out
     }
 
-    fn take<M: Clone>(&mut self, style: &Style, host: &dyn HtmlHost<M>) -> Option<Element<M>> {
+    fn finish<M: Clone>(&mut self, style: &Style, host: &dyn HtmlHost<M>) -> Option<Element<M>> {
         let mut spans = std::mem::take(&mut self.spans);
         self.ends_in_space = false;
         if let Some((last, _)) = spans.last_mut() {
@@ -559,11 +559,11 @@ impl<M: Clone> Renderer<'_, M> {
                 _ => {}
             }
         }
-        children.extend(run.take(&style, self.host));
-        let boxed = boxed(children, &style);
+        children.extend(run.finish(&style, self.host));
+        let container = container(children, &style);
         Some(match href(element) {
-            Some(href) => boxed.on_click(self.host.link(href)),
-            None => boxed,
+            Some(href) => container.on_click(self.host.link(href)),
+            None => container,
         })
     }
 
@@ -580,12 +580,12 @@ impl<M: Clone> Renderer<'_, M> {
             (_, Display::Hidden) => {}
             ("br", _) => run.push_break(&child_style),
             ("img", _) => {
-                children.extend(run.take(style, self.host));
+                children.extend(run.finish(style, self.host));
                 children.extend(self.image(child, &child_style, run.link.as_deref()));
             }
             (_, Display::Inline) => self.inline(child, &child_style, run, style, children),
             _ => {
-                children.extend(run.take(style, self.host));
+                children.extend(run.finish(style, self.host));
                 let marker = marker.or(run.marker.take());
                 children.extend(self.block(child, style, marker));
             }
@@ -634,7 +634,7 @@ impl<M: Clone> Renderer<'_, M> {
             (_, Display::Hidden) => {}
             ("br", _) => run.push_break(&child_style),
             ("img", _) => {
-                children.extend(run.take(block, self.host));
+                children.extend(run.finish(block, self.host));
                 children.extend(self.image(child, &child_style, run.link.as_deref()));
             }
             _ => self.inline(child, &child_style, run, block, children),
@@ -677,7 +677,7 @@ fn href(element: ElementRef<'_>) -> Option<&str> {
         .flatten()
 }
 
-fn boxed<M>(children: Vec<Element<M>>, style: &Style) -> Element<M> {
+fn container<M>(children: Vec<Element<M>>, style: &Style) -> Element<M> {
     let container = if style.row {
         Element::row(children)
             .align(style.align)

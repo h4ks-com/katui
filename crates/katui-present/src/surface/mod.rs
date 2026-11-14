@@ -12,7 +12,7 @@ mod screen;
 mod sixel;
 
 pub use animated::AnimatedKitty;
-pub use blocks::{BlocksSurface, render_blocks};
+pub use blocks::BlocksSurface;
 pub use buffer::BufferSurface;
 pub use full::KittySurface;
 pub use patched::PatchedKitty;

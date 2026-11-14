@@ -19,12 +19,14 @@ use crate::light::Light;
 const FRAMES_PER_SECOND: u32 = 60;
 const STEP: Duration = Duration::from_micros(16_667);
 const MOST_STEPS_PER_FRAME: u32 = 6;
-const BASE_IMAGE: u32 = 900;
+/// The first kitty image id a full-screen pixel surface takes.
+pub const BASE_IMAGE: u32 = 900;
 const TILE_BUDGET: usize = 320;
 const MOST_PIXELS_ACROSS: u32 = 1100;
 const MOST_PIXELS_DOWN: u32 = 620;
-/// A multiplexer carries graphics far more slowly than a terminal does.
-const MULTIPLEXED_SHRINK: u32 = 2;
+/// How many times fewer pixels to send each way under a multiplexer, which
+/// carries graphics far more slowly than a terminal does.
+pub const MULTIPLEXED_SHRINK: u32 = 2;
 /// We keep each height at twice its width so a tile of three heights spans whole cells.
 const DENSITIES: [(u32, u32); 5] = [(10, 20), (8, 16), (5, 10), (4, 8), (2, 4)];
 const TILE_HEIGHTS: u32 = 3;

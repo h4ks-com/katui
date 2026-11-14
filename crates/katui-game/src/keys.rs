@@ -34,7 +34,6 @@ impl HeldKeys {
         self.down.push((key, now + lease));
     }
 
-    /// `key` came up.
     pub fn release(&mut self, key: Key) {
         self.reports_releases = true;
         self.down.retain(|(held, _)| *held != key);
@@ -45,7 +44,6 @@ impl HeldKeys {
         self.down.clear();
     }
 
-    /// Whether `key` is down.
     #[must_use]
     pub fn is_held(&self, key: Key) -> bool {
         self.down.iter().any(|(held, until)| {
@@ -53,7 +51,6 @@ impl HeldKeys {
         })
     }
 
-    /// Whether any of `keys` is down.
     #[must_use]
     pub fn any_held(&self, keys: &[Key]) -> bool {
         keys.iter().any(|key| self.is_held(*key))

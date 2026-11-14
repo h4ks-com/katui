@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use katui_proto::input::{InputEvent, InputParser};
 
+use crate::app::is_terminal_answer;
 use crate::pane::{self, PaneView};
 use crate::tty::RawInput;
 
@@ -132,7 +133,7 @@ impl<M: Send + 'static> EventPump<M> {
         {
             match signal {
                 Signal::Input(event) if wanted(&event) => return true,
-                Signal::Input(InputEvent::GraphicsAnswer(_) | InputEvent::DeviceAttributes) => {}
+                Signal::Input(event) if is_terminal_answer(&event) => {}
                 other => self.queued.push_back(other),
             }
         }

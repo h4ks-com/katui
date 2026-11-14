@@ -1,22 +1,16 @@
 //! Every widget on one screen, rendered through katui-ui and written to a
-//! PNG, plus the clicks each one answers.
+//! PNG, plus the message each widget sends when clicked.
 
-use std::path::PathBuf;
+mod common;
 
-use katui_draw::TextEngine;
+use common::{CELL, render_to_png, ui};
 use katui_proto::input::{InputEvent, Key, Mods};
-use katui_ui::{CellPixels, Element, Length, Ui, UiOptions};
+use katui_ui::{Element, Length, Ui};
 use katui_widgets::{
     Emphasis, Focus, ListState, TextField, Theme, button, checkbox, label, list, panel, progress,
     tabs, text_field,
 };
 
-const TEXT_FONT: &[u8] =
-    include_bytes!("../../katui-draw/assets/AtkinsonHyperlegibleNext[wght].ttf");
-const CELL: CellPixels = CellPixels {
-    width: 9,
-    height: 19,
-};
 const SIZE: (u32, u32) = (9 * 80, 19 * 30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,19 +94,9 @@ fn every_widget_renders_and_answers_its_clicks() {
     fruits.select(6);
     let focus = Focus::new(Control::Name, [Control::Fruit]);
 
-    let engine = TextEngine::new(vec![TEXT_FONT.to_vec()]).expect("the font parses");
-    let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());
-    let output = ui.render(&screen(&name, &fruits, &focus, &theme), SIZE, CELL);
-    let surface = output.flatten(CELL, SIZE).expect("whole pixels");
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/katui-widgets.png");
-    image::save_buffer(
-        &path,
-        surface.pixels(),
-        surface.width(),
-        surface.height(),
-        image::ExtendedColorType::Rgba8,
-    )
-    .expect("the target directory is writable");
+    let mut ui: Ui<Message> = ui();
+    let view = screen(&name, &fruits, &focus, &theme);
+    render_to_png(&mut ui, &view, SIZE, "katui-widgets");
 
     let click = |x: f32, y: f32| ui.hit_test(x, y).and_then(|hit| hit.on_click.clone());
     assert_eq!(click(168.0, 276.0), Some(Message::Save));

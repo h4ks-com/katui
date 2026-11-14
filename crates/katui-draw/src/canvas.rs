@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(pixel(&surface, 20, 0).a, 255);
         assert_eq!(pixel(&surface, 0, 20).a, 255);
         assert!(pixel(&surface, 4, 4).a > 200, "inside the arc");
-        save_png("canvas_round_rect.png", &surface);
+        save_png("canvas_round_rect", &surface);
     }
 
     #[test]
@@ -544,7 +544,7 @@ mod tests {
         assert!(near(pixel(&surface, 255, 1).r, 255, 2));
         let reds: Vec<u8> = (0..256).map(|x| pixel(&surface, x, 1).r).collect();
         assert!(reds.windows(2).all(|pair| pair[0] <= pair[1]), "monotonic");
-        save_png("canvas_gradient.png", &surface);
+        save_png("canvas_gradient", &surface);
     }
 
     #[test]
@@ -600,7 +600,7 @@ mod tests {
         let right = pixel(&surface, 37, 20);
         assert!(left.r > 200 && left.b < 55, "{left:?}");
         assert!(right.b > 200 && right.r < 55, "{right:?}");
-        save_png("canvas_image.png", &surface);
+        save_png("canvas_image", &surface);
     }
 
     #[test]

@@ -158,7 +158,7 @@ impl<A: UiApp> Runner<A> {
             if let Some(index) = hit.hover_target {
                 self.hovered = Some((index, hit.on_leave));
             }
-            control = merge(control, self.send(hit.on_hover));
+            control = more_urgent(control, self.send(hit.on_hover));
         }
         control
     }
@@ -180,9 +180,9 @@ impl<A: UiApp> Runner<A> {
     }
 }
 
-/// The more urgent of two answers: quitting beats animating, which beats
+/// The more urgent of two controls: quitting beats animating, which beats
 /// one redraw, which beats waiting.
-fn merge(first: Control, second: Control) -> Control {
+fn more_urgent(first: Control, second: Control) -> Control {
     let rank = |control: Control| match control {
         Control::Wait => 0,
         Control::Redraw => 1,
@@ -246,9 +246,9 @@ impl<A: UiApp> App for Runner<A> {
                 }
             }
         }
-        let corrections = self.ui.take_corrections();
-        let corrected = !corrections.is_empty();
-        for message in corrections {
+        let clamped_scrolls = self.ui.take_clamped_scrolls();
+        let corrected = !clamped_scrolls.is_empty();
+        for message in clamped_scrolls {
             self.app.update(message);
         }
         Ok(if corrected {

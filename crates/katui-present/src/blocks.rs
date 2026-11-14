@@ -8,11 +8,8 @@ use std::fmt::Write as _;
 /// An opaque color, the pixel the classifiers work with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb {
-    /// Red.
     pub r: u8,
-    /// Green.
     pub g: u8,
-    /// Blue.
     pub b: u8,
 }
 
@@ -34,9 +31,7 @@ impl Rgb {
 pub struct Block {
     /// The glyph, one of the half or quarter block characters.
     pub glyph: char,
-    /// The glyph's foreground color.
     pub fg: Rgb,
-    /// The glyph's background color.
     pub bg: Rgb,
 }
 
@@ -111,8 +106,8 @@ pub fn half(top: Rgb, bottom: Rgb) -> Block {
 
 /// Render one terminal line of a pixel image into `out`: every cell
 /// classifies the 2x2 pixel block under it, a trailing odd column becomes
-/// a half block. SGR truecolor only; palette degradation belongs to the
-/// fidelity ladders. Rows of different lengths stop at the shorter one.
+/// a half block, in SGR truecolor. Rows of different lengths stop at the
+/// shorter one.
 pub fn render_line<W: Sink>(out: &mut W, top: &[Rgb], bottom: &[Rgb]) -> std::io::Result<()> {
     let mut text = String::new();
     for (top_pair, bottom_pair) in top.chunks(2).zip(bottom.chunks(2)) {

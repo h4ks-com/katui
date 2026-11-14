@@ -4,8 +4,7 @@
 use crate::Sink;
 use std::io::{self, Write as _};
 
-use katui_scene::cell::diff;
-use katui_scene::cell::{Buffer, Position};
+use katui_scene::cell::{Buffer, all_cells, diff};
 
 /// The stateful cell-buffer presenter: writes a buffer's cells once,
 /// then per frame only the cells that changed, inside synchronized
@@ -30,52 +29,29 @@ impl BufferSurface {
     /// later frame repaints only the changed cells, inside synchronized
     /// output, with no clear that would erase the rest.
     pub fn render_frame<W: Sink>(&mut self, out: &mut W, next: Buffer) -> io::Result<usize> {
-        let (changed, full): (Vec<_>, bool) = match self.prev.as_ref() {
-            Some(prev) if prev.size() == next.size() => (
-                diff(prev, &next)
-                    .into_iter()
-                    .map(|(position, cell)| (position, cell.clone()))
-                    .collect(),
-                false,
-            ),
-            Some(_) | None => (
-                all_cells(&next)
-                    .into_iter()
-                    .map(|(position, cell)| (position, cell.clone()))
-                    .collect(),
-                true,
-            ),
+        let full = self
+            .prev
+            .as_ref()
+            .is_none_or(|prev| prev.size() != next.size());
+        let changed = match self.prev.as_ref() {
+            Some(prev) if !full => diff(prev, &next),
+            _ => all_cells(&next),
         };
-        self.prev = Some(next);
-        if changed.is_empty() {
-            return Ok(0);
-        }
         let mut bytes = Vec::new();
-        bytes.write_all(b"\x1b[?2026h")?;
-        if full {
-            bytes.write_all(b"\x1b[H\x1b[2J")?;
-        }
-        for (position, cell) in &changed {
-            crate::cells::render_cell(&mut bytes, *position, cell)?;
-        }
-        bytes.write_all(b"\x1b[0m\x1b[?2026l")?;
-        let written = bytes.len();
-        out.write_all(&bytes)?;
-        Ok(written)
-    }
-}
-
-/// Every cell of a buffer, row-major.
-fn all_cells(buffer: &Buffer) -> Vec<(Position, &katui_scene::cell::Cell)> {
-    let mut cells = Vec::new();
-    for row in 0..buffer.size().rows {
-        for column in 0..buffer.size().columns {
-            if let Some(cell) = buffer.get(Position { x: column, y: row }) {
-                cells.push((Position { x: column, y: row }, cell));
+        if !changed.is_empty() {
+            bytes.write_all(b"\x1b[?2026h")?;
+            if full {
+                bytes.write_all(b"\x1b[H\x1b[2J")?;
             }
+            for (position, cell) in changed {
+                crate::cells::render_cell(&mut bytes, position, cell)?;
+            }
+            bytes.write_all(b"\x1b[0m\x1b[?2026l")?;
         }
+        self.prev = Some(next);
+        out.write_all(&bytes)?;
+        Ok(bytes.len())
     }
-    cells
 }
 
 #[cfg(test)]

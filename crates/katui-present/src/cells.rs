@@ -1,7 +1,7 @@
 //! The cell presenter: scene cells as SGR sequences, plus the cursor and
 //! clear commands every presenter consumer needs. Every cell
 //! re-establishes its whole style because it cannot know what the cell
-//! before it left behind; run coalescing belongs to the frame presenter.
+//! before it left behind.
 
 use crate::Sink;
 use std::fmt::Write as _;
@@ -61,12 +61,10 @@ pub fn move_cursor<W: Sink>(out: &mut W, at: Position) -> std::io::Result<()> {
     out.write_all(text.as_bytes())
 }
 
-/// Hide the cursor.
 pub fn hide_cursor<W: Sink>(out: &mut W) -> std::io::Result<()> {
     out.write_all(b"\x1b[?25l")
 }
 
-/// Show the cursor.
 pub fn show_cursor<W: Sink>(out: &mut W) -> std::io::Result<()> {
     out.write_all(b"\x1b[?25h")
 }

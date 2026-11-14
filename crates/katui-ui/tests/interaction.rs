@@ -81,11 +81,14 @@ fn scrolling_past_the_end_is_corrected_and_the_wheel_moves_by_lines() {
     ui.render(&scrolled(9_000.0), SCREEN, CELL);
     let max = 400.0 - 120.0;
     assert_eq!(
-        ui.take_corrections(),
+        ui.take_clamped_scrolls(),
         vec![Message::Scrolled(Scroll { offset: max, max })]
     );
     ui.render(&scrolled(100.0), SCREEN, CELL);
-    assert!(ui.take_corrections().is_empty(), "an offset in range stays");
+    assert!(
+        ui.take_clamped_scrolls().is_empty(),
+        "an offset in range stays"
+    );
     let hit = ui
         .hit_test(50.0, 50.0)
         .expect("the list is under the pointer");

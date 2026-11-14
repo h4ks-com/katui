@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use katui_draw::{Canvas, TextEngine};
+use katui_draw::{Canvas, Rect, TextEngine};
 use katui_proto::probe::CellPixels;
 use katui_scene::placement::{CellRect, ImageId, PixelRect, Placement, PlacementId};
 use katui_scene::surface::Surface;
@@ -13,7 +13,6 @@ use taffy::prelude::Size;
 use crate::element::{Element, PressHandler};
 use crate::layout::{Leaf, TextCache, compute, to_f32};
 use crate::resolve::{CellBox, Draft, Hit, Op, Region, hit_test, press_target, resolve};
-use katui_draw::Rect;
 
 const PLACEMENT: PlacementId = PlacementId(1);
 
@@ -173,7 +172,7 @@ pub struct Ui<M> {
     layers: HashMap<Option<u64>, CachedLayer>,
     regions: Vec<Region<M>>,
     captured: Option<(Rect, PressHandler<M>)>,
-    corrections: Vec<M>,
+    clamped_scrolls: Vec<M>,
     next_image: u32,
     max_layer_cells: Option<(u32, u32)>,
 }
@@ -195,7 +194,7 @@ impl<M: Clone + 'static> Ui<M> {
             layers: HashMap::new(),
             regions: Vec::new(),
             captured: None,
-            corrections: Vec::new(),
+            clamped_scrolls: Vec::new(),
             next_image: options.first_image_id,
             max_layer_cells: options
                 .max_layer_cells
@@ -223,7 +222,7 @@ impl<M: Clone + 'static> Ui<M> {
         };
         let resolved = resolve(root, &laid, &mut self.text, surface, cell_f32);
         self.regions = resolved.regions;
-        self.corrections.extend(resolved.corrections);
+        self.clamped_scrolls.extend(resolved.clamped_scrolls);
         let output = self.present(&resolved.drafts, (cell_width, cell_height));
         self.text.end_render();
         output
@@ -259,8 +258,8 @@ impl<M: Clone + 'static> Ui<M> {
 
     /// The scroll positions the last renders clamped, as their handlers'
     /// messages, for the application to store.
-    pub fn take_corrections(&mut self) -> Vec<M> {
-        std::mem::take(&mut self.corrections)
+    pub fn take_clamped_scrolls(&mut self) -> Vec<M> {
+        std::mem::take(&mut self.clamped_scrolls)
     }
 
     /// The whole pixels of the layer `key` as last rendered, its tiles
@@ -319,7 +318,7 @@ impl<M: Clone + 'static> Ui<M> {
             return;
         };
         let tiles: Vec<Tile> = self
-            .cut(surface, draft, cell)
+            .tiles_for(surface, draft, cell)
             .into_iter()
             .map(|(region, surface)| Tile {
                 image: LayerImage {
@@ -397,7 +396,12 @@ impl<M: Clone + 'static> Ui<M> {
         }
     }
 
-    fn cut(&self, surface: Surface, draft: &Draft, cell: (u32, u32)) -> Vec<(CellArea, Surface)> {
+    fn tiles_for(
+        &self,
+        surface: Surface,
+        draft: &Draft,
+        cell: (u32, u32),
+    ) -> Vec<(CellArea, Surface)> {
         let layer = CellArea {
             column: 0,
             row: 0,
@@ -405,7 +409,7 @@ impl<M: Clone + 'static> Ui<M> {
             rows: draft.rows(),
         };
         match self.max_layer_cells {
-            Some(max) if layer.columns > max.0 || layer.rows > max.1 => split(&layer, max)
+            Some(max) if layer.columns > max.0 || layer.rows > max.1 => tile_grid(&layer, max)
                 .into_iter()
                 .filter_map(|tile| Some((tile, crop(&surface, &tile, cell)?)))
                 .collect(),
@@ -423,7 +427,7 @@ struct CellArea {
     rows: u32,
 }
 
-fn split(layer: &CellArea, max: (u32, u32)) -> Vec<CellArea> {
+fn tile_grid(layer: &CellArea, max: (u32, u32)) -> Vec<CellArea> {
     let mut tiles = Vec::new();
     for row in (0..layer.rows).step_by(max.1 as usize) {
         for column in (0..layer.columns).step_by(max.0 as usize) {
@@ -469,7 +473,7 @@ fn emit(layer: &CachedLayer, draft: &Draft, cell: (u32, u32), z: i32, output: &m
             image: tile.image.id,
             id: PLACEMENT,
             area: cell_rect(visible),
-            crop: (visible != area).then(|| crop_of(area, visible, cell)),
+            crop: (visible != area).then(|| crop_rect(area, visible, cell)),
             z,
         });
         output.images.push(tile.image.clone());
@@ -485,7 +489,7 @@ fn cell_rect(visible: CellBox) -> CellRect {
     }
 }
 
-fn crop_of(area: CellBox, visible: CellBox, cell: (u32, u32)) -> PixelRect {
+fn crop_rect(area: CellBox, visible: CellBox, cell: (u32, u32)) -> PixelRect {
     PixelRect {
         x: (visible.left - area.left).unsigned_abs() * cell.0,
         y: (visible.top - area.top).unsigned_abs() * cell.1,
@@ -496,17 +500,14 @@ fn crop_of(area: CellBox, visible: CellBox, cell: (u32, u32)) -> PixelRect {
 
 #[cfg(test)]
 mod tests {
-    use katui_draw::TextEngine;
+    use katui_draw::{TextEngine, bundled_fonts};
 
     use super::{CellPixels, Ui, UiOptions};
     use crate::element::{Element, Length};
 
-    const TEXT_FONT: &[u8] =
-        include_bytes!("../../katui-draw/assets/AtkinsonHyperlegibleNext[wght].ttf");
-
     #[test]
     fn a_second_render_shapes_no_text() {
-        let engine = TextEngine::new(vec![TEXT_FONT.to_vec()]).expect("the bundled font parses");
+        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
         let mut ui: Ui<u32> = Ui::new(engine, UiOptions::default());
         let root = Element::column([Element::text("message")]).width(Length::Fill);
         let cell = CellPixels {

@@ -1,9 +1,7 @@
 # How katui works
 
 This page explains what happens between your `view` and the pixels on
-screen, and which crate does each part. You don't need any of it to write
-an app, but it helps when you want to know why something looks or performs
-the way it does.
+screen, and which crate does each part.
 
 ## One frame
 
@@ -61,7 +59,7 @@ there: it waits for the terminal to confirm a batch before sending the next.
 
 Each crate depends only on crates below it in this table. Only `katui-rt`
 reads from or writes to the terminal; the other core crates work on plain
-data, which is why most of katui is tested without a terminal.
+data.
 
 | Crate | What it does |
 |---|---|

@@ -17,16 +17,12 @@ const KEYPAD_ENTER: u32 = 57414;
 /// Modifier keys held during a key or mouse event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Mods {
-    /// Shift.
     pub shift: bool,
-    /// Alt or Option.
     pub alt: bool,
-    /// Control.
     pub ctrl: bool,
 }
 
 impl Mods {
-    /// No modifiers.
     pub const NONE: Self = Self {
         shift: false,
         alt: false,
@@ -49,33 +45,19 @@ impl Mods {
 pub enum Key {
     /// A character, already shifted by the terminal.
     Char(char),
-    /// Enter.
     Enter,
-    /// Tab.
     Tab,
-    /// Backspace.
     Backspace,
-    /// Delete.
     Delete,
-    /// Insert.
     Insert,
-    /// Escape.
     Escape,
-    /// Up arrow.
     Up,
-    /// Down arrow.
     Down,
-    /// Left arrow.
     Left,
-    /// Right arrow.
     Right,
-    /// Home.
     Home,
-    /// End.
     End,
-    /// Page up.
     PageUp,
-    /// Page down.
     PageDown,
     /// A function key, 1-based.
     Function(u8),
@@ -84,11 +66,8 @@ pub enum Key {
 /// A mouse button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Button {
-    /// Left.
     Left,
-    /// Middle.
     Middle,
-    /// Right.
     Right,
 }
 

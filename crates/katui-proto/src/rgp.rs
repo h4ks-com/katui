@@ -1,9 +1,6 @@
 //! The Ratty Graphics Protocol codec: 3D objects as first-class inline
 //! terminal objects, per the ratty project's specification. Inside ratty
-//! the terminal renders the objects; everywhere else katui scenes fall
-//! back to images, so this codec costs nothing until a ratty answers.
-//! Command structs with `encode()` mirror the kitty codec's shape in the
-//! same crate.
+//! the terminal renders the objects.
 
 use std::fmt::Write as _;
 
@@ -21,7 +18,6 @@ pub struct Support {
 pub struct Features(u8);
 
 impl Features {
-    /// No features.
     pub const NONE: Self = Self(0);
     /// Payload-based registration, the ssh-friendly form.
     pub const PAYLOAD: Self = Self(1 << 0);
@@ -108,7 +104,6 @@ impl Format {
 pub struct Register<'a> {
     /// The object id the application chose.
     pub id: ObjectId,
-    /// The asset format.
     pub format: Format,
     /// The object path known to the ratty terminal.
     pub path: &'a str,

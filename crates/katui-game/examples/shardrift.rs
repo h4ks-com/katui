@@ -1,6 +1,5 @@
-//! Shardrift: fly an inertial dart through a nebula and split faceted
-//! crystal rocks into smaller and smaller shards. Run with
-//! `just demo-shardrift`.
+//! An asteroids-style game: fly a ship and shoot rocks into smaller
+//! pieces. Run with `just demo-shardrift`.
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
 

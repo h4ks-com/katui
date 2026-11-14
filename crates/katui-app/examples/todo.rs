@@ -1,5 +1,5 @@
-//! The katui to-do demo: a task list on the widgets crate, in about a
-//! hundred lines of app code. Run with `just demo-todo`.
+//! The katui to-do demo: a task list on the widgets crate. Run with
+//! `just demo-todo`.
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss)]
 
@@ -43,7 +43,7 @@ impl Todo {
             .collect()
     }
 
-    fn refresh(&mut self) {
+    fn resize_selection(&mut self) {
         let shown = self.shown().len();
         self.selection.resize(shown, VISIBLE_TASKS);
     }
@@ -57,7 +57,7 @@ impl Todo {
     fn remove_selected(&mut self) {
         if let Some(index) = self.shown().get(self.selection.selected()).copied() {
             self.tasks.remove(index);
-            self.refresh();
+            self.resize_selection();
         }
     }
 }
@@ -119,7 +119,7 @@ impl UiApp for Todo {
             }
             Message::Filter(filter) => self.filter = filter,
         }
-        self.refresh();
+        self.resize_selection();
         Control::Redraw
     }
 
@@ -136,7 +136,7 @@ impl UiApp for Todo {
                 Edit::Submitted if !self.draft.text().trim().is_empty() => {
                     let task = self.draft.take();
                     self.tasks.push((task.trim().to_owned(), false));
-                    self.refresh();
+                    self.resize_selection();
                 }
                 Edit::Ignored | Edit::Submitted => return Control::Wait,
                 Edit::Changed | Edit::Moved => {}
@@ -147,12 +147,15 @@ impl UiApp for Todo {
 }
 
 #[cfg(test)]
+mod common;
+
+#[cfg(test)]
 mod tests {
-    use katui_draw::{TextEngine, bundled_fonts};
     use katui_proto::input::{InputEvent, Key, Mods};
-    use katui_ui::{CellPixels, Ui, UiOptions};
+    use katui_ui::CellPixels;
     use katui_widgets::Theme;
 
+    use super::common::render_to_png;
     use super::{Message, Todo};
     use katui_app::UiApp as _;
 
@@ -186,21 +189,8 @@ mod tests {
         todo.update(Message::Filter(1));
         assert_eq!(todo.shown(), vec![0, 2], "active hides done tasks");
 
-        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
-        let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());
-        let size = (9 * 90, 19 * 22);
-        let theme = Theme::dark(CELL);
-        let output = ui.render(&todo.view(&theme), size, CELL);
-        let surface = output.flatten(CELL, size).expect("whole pixels");
-        let path = format!("{}/../../target/katui-todo.png", env!("CARGO_MANIFEST_DIR"));
-        image::save_buffer(
-            path,
-            surface.pixels(),
-            surface.width(),
-            surface.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .expect("the target directory is writable");
+        let view = todo.view(&Theme::dark(CELL));
+        render_to_png(&view, (9 * 90, 19 * 22), CELL, "katui-todo");
 
         todo.update(Message::Filter(0));
         press(&mut todo, Key::Delete);

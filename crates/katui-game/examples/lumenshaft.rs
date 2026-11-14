@@ -1,6 +1,5 @@
-//! Lumenshaft: stack glowing glass blocks down a shaft that recedes into
-//! the screen, with pieces of three to five cells. Run with
-//! `just demo-lumenshaft`.
+//! A falling-block game in a 3D shaft, with pieces of three to five
+//! cells. Run with `just demo-lumenshaft`.
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(
     clippy::cast_possible_wrap,

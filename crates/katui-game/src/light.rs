@@ -33,14 +33,11 @@ const DITHER: [f32; 16] = [
 /// A position on screen, in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct P2 {
-    /// From the left.
     pub x: f32,
-    /// From the top.
     pub y: f32,
 }
 
 impl P2 {
-    /// A position at (`x`, `y`).
     #[must_use]
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
@@ -106,12 +103,13 @@ impl Light {
     #[must_use]
     pub fn new(width: u32, height: u32, pixel_aspect: f32) -> Self {
         let (width, height) = (width.max(1) as usize, height.max(1) as usize);
+        let (bloom_width, bloom_height) = bloom_size(width, height);
         Self {
             width,
             height,
             pixel_aspect,
             pixels: vec![[0.0; 3]; width * height],
-            bloom: vec![[0.0; 3]; (width / BLOOM_STEP + 1) * (height / BLOOM_STEP + 1)],
+            bloom: vec![[0.0; 3]; bloom_width * bloom_height],
         }
     }
 
@@ -148,7 +146,7 @@ impl Light {
     /// Multiply all light by `factor`.
     pub fn dim(&mut self, factor: f32) {
         for pixel in &mut self.pixels {
-            *pixel = pixel.map(|channel| channel * factor);
+            *pixel = scaled(*pixel, factor);
         }
     }
 
@@ -319,12 +317,12 @@ impl Light {
         self.add_bloom(strength);
     }
 
-    fn bloom_size(&self) -> (usize, usize) {
-        (self.width / BLOOM_STEP + 1, self.height / BLOOM_STEP + 1)
+    fn bloom_width(&self) -> usize {
+        bloom_size(self.width, self.height).0
     }
 
     fn gather_bright(&mut self, threshold: f32) {
-        let (small_width, _) = self.bloom_size();
+        let small_width = self.bloom_width();
         let sampled = self.pixels.chunks_exact(self.width).step_by(BLOOM_STEP);
         for (small, row) in self.bloom.chunks_exact_mut(small_width).zip(sampled) {
             for (target, block) in small.iter_mut().zip(row.chunks(BLOOM_STEP)) {
@@ -337,7 +335,7 @@ impl Light {
     }
 
     fn blur_bloom(&mut self) {
-        let (small_width, _) = self.bloom_size();
+        let small_width = self.bloom_width();
         for row in self.bloom.chunks_exact_mut(small_width) {
             smooth_forward(row.iter_mut());
             smooth_forward(row.iter_mut().rev());
@@ -353,7 +351,7 @@ impl Light {
     }
 
     fn add_bloom(&mut self, strength: f32) {
-        let (small_width, _) = self.bloom_size();
+        let small_width = self.bloom_width();
         let bloom = &self.bloom;
         for (y, row) in self.pixels.chunks_exact_mut(self.width).enumerate() {
             let line = y / BLOOM_STEP * small_width;
@@ -415,25 +413,26 @@ fn bright(pixel: Rgb, threshold: f32) -> Rgb {
     pixel.map(|channel| (channel - threshold).max(0.0))
 }
 
+fn bloom_size(width: usize, height: usize) -> (usize, usize) {
+    (width / BLOOM_STEP + 1, height / BLOOM_STEP + 1)
+}
+
 fn smooth_forward<'a>(pixels: impl Iterator<Item = &'a mut Rgb>) {
     let mut carried = [0.0_f32; 3];
     for pixel in pixels {
-        carried = add3(
-            carried.map(|channel| channel * BLUR_KEEP),
-            pixel.map(|channel| channel * (1.0 - BLUR_KEEP)),
-        );
-        *pixel = carried;
+        blur_step(&mut carried, pixel);
     }
 }
 
 fn smooth_line(carried: &mut [Rgb], row: &mut [Rgb]) {
     for (held, pixel) in carried.iter_mut().zip(row) {
-        *held = add3(
-            held.map(|channel| channel * BLUR_KEEP),
-            pixel.map(|channel| channel * (1.0 - BLUR_KEEP)),
-        );
-        *pixel = *held;
+        blur_step(held, pixel);
     }
+}
+
+fn blur_step(carried: &mut Rgb, pixel: &mut Rgb) {
+    *carried = add3(scaled(*carried, BLUR_KEEP), scaled(*pixel, 1.0 - BLUR_KEEP));
+    *pixel = *carried;
 }
 
 fn add_block(block: &mut [Rgb], top: &[Rgb], bottom: &[Rgb], down: f32, strength: f32) {

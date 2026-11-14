@@ -1,6 +1,6 @@
-//! Presenters: layer 1 of the stack in ARCHITECTURE.md. A presenter is the
-//! only place that produces bytes; it consumes a scene diff and writes to a
-//! [`Sink`], which is stdout, a buffer, a socket or a test harness.
+//! Presenters: the only place that produces bytes. A presenter consumes a
+//! scene diff and writes to a [`Sink`], which is stdout, a buffer, a
+//! socket or a test harness.
 
 mod anchor;
 pub mod blocks;
@@ -10,11 +10,7 @@ pub mod select;
 pub mod session;
 pub mod surface;
 
-/// Where a presenter writes its output: the presenters' one output seam.
-/// Every presenter entry point in this crate bounds on [`Sink`], not on
-/// [`std::io::Write`] directly, so the write path always goes through
-/// this contract; a bare blanket impl keeps every writer a sink, so
-/// tests capture output in a `Vec<u8>` and stdout needs no wrapping.
+/// Where a presenter writes its output; every writer is a sink.
 pub trait Sink: std::io::Write {}
 
 impl<T: std::io::Write> Sink for T {}

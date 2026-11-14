@@ -1,7 +1,7 @@
 # Getting started
 
 In this guide you add katui to a project, run a small app, and see what
-katui does when it starts. It takes about five minutes.
+katui does when it starts.
 
 ## What you need
 
@@ -84,16 +84,9 @@ You never draw anything yourself. katui calls `view` again after each
 update, compares the result with the last frame, and sends the terminal
 only the parts that changed.
 
-When `run` starts, katui also asks the terminal what it can do. The answer
-decides how pixels reach the screen:
-
-| The terminal speaks | katui draws with |
-|---|---|
-| The kitty graphics protocol | Full-resolution images |
-| Sixel | Sixel images |
-| Neither | Quarter blocks, four pixels per cell |
-
-Your code stays the same in every case. To see what katui found in your
+When `run` starts, katui also asks the terminal what it can do and picks
+kitty graphics, sixel or quarter blocks from the answer. Your code stays
+the same in every case. To see what katui found in your
 terminal, run `just info` in a clone of the katui repository. To pick the
 backend yourself, set `KATUI_GRAPHICS` to `kitty`, `sixel` or `blocks`:
 

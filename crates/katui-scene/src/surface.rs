@@ -4,18 +4,14 @@
 /// One opaque or transparent pixel color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgba {
-    /// Red.
     pub r: u8,
-    /// Green.
     pub g: u8,
-    /// Blue.
     pub b: u8,
     /// Alpha, 255 opaque.
     pub a: u8,
 }
 
 impl Rgba {
-    /// A solid color.
     pub const fn solid(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
     }
@@ -26,9 +22,7 @@ impl Rgba {
 /// [`Position`](crate::cell::Position).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PixelPos {
-    /// Column.
     pub x: u32,
-    /// Row.
     pub y: u32,
 }
 
@@ -43,13 +37,9 @@ impl PixelPos {
 /// A rectangle of pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PixelRect {
-    /// Left edge.
     pub x: u32,
-    /// Top edge.
     pub y: u32,
-    /// Width.
     pub width: u32,
-    /// Height.
     pub height: u32,
 }
 

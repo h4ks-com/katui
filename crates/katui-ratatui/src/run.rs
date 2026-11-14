@@ -1,7 +1,4 @@
-//! A ratatui app on katui's event loop: implement [`RatatuiApp`] and hand
-//! it to [`run`]. The runner probes the terminal, draws your frames
-//! through [`KatuiBackend`], places the images you list, rebuilds the
-//! screen after a resize and passes keys, mouse and paste to your app.
+//! Run a ratatui app on katui's event loop: implement [`RatatuiApp`] and hand it to [`run`].
 
 use std::io;
 
@@ -18,6 +15,7 @@ use ratatui::{Frame, Terminal};
 pub use katui_rt::app::Control;
 pub use katui_rt::events::Waker;
 
+use crate::image::pixel_area;
 use crate::{ImageFrame, KatuiBackend};
 
 const FRAMES_PER_SECOND: u32 = 30;
@@ -90,9 +88,10 @@ impl<A: RatatuiApp> Runner<A> {
         out: &mut Vec<u8>,
     ) -> io::Result<Terminal<KatuiBackend<Vec<u8>>>> {
         let cell = katui_rt::tty::cell_size(&self.caps);
+        let (width, height) = pixel_area(cell_rect(Rect::new(0, 0, size.columns, size.rows)), cell);
         let pixels = Size::new(
-            size.columns.saturating_mul(cell.width),
-            size.rows.saturating_mul(cell.height),
+            u16::try_from(width).unwrap_or(u16::MAX),
+            u16::try_from(height).unwrap_or(u16::MAX),
         );
         if self.caps.kitty {
             out.extend_from_slice(&Delete::AllVisible.encode());
