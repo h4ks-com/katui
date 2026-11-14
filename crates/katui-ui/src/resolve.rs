@@ -225,6 +225,7 @@ pub(crate) struct Region<M> {
     on_wheel: Option<(M, M)>,
     press: Option<(PressHandler<M>, bool)>,
     grip: bool,
+    opaque: bool,
 }
 
 impl<M> Region<M> {
@@ -240,6 +241,7 @@ impl<M> Region<M> {
             on_wheel: None,
             press: None,
             grip: false,
+            opaque: false,
         }
     }
 }
@@ -290,7 +292,7 @@ pub(crate) fn hit_test<M: Clone>(regions: &[Region<M>], x: f32, y: f32) -> Optio
             hit.on_wheel_up = Some(up.clone());
             hit.on_wheel_down = Some(down.clone());
         }
-        cursor = region.parent;
+        cursor = if region.opaque { None } else { region.parent };
     }
     Some(hit)
 }
@@ -315,7 +317,7 @@ pub(crate) fn press_target<M>(
         {
             return Some((region.full, Arc::clone(handler)));
         }
-        cursor = region.parent;
+        cursor = if region.opaque { None } else { region.parent };
     }
     None
 }
@@ -615,6 +617,7 @@ impl<'r, M: Clone + 'static> Walker<'_, '_, 'r, M> {
             on_wheel,
             press: element.on_press.clone(),
             grip: element.grip,
+            opaque: element.opaque,
             ..Region::plain(visible, rect, scope.hit_parent)
         });
         Scope {

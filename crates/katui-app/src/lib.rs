@@ -266,7 +266,7 @@ mod tests {
     use katui_proto::probe::Capabilities;
     use katui_rt::headless::Headless;
     use katui_scene::CellSize;
-    use katui_ui::{CellPixels, Element, Length};
+    use katui_ui::{CellPixels, Element, Length, Scroll};
     use katui_widgets::{Emphasis, Theme, button, label};
 
     use super::{Control, Runner, UiApp};
@@ -358,6 +358,88 @@ mod tests {
         assert!(!next.is_empty(), "the new count goes out");
         driver.type_bytes(b"\x03");
         assert!(driver.quit(), "ctrl c quits");
+    }
+
+    #[derive(Default)]
+    struct Log {
+        scroll: Scroll,
+        hovered: bool,
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum LogMessage {
+        Scrolled(Scroll),
+        Enter,
+        Leave,
+    }
+
+    impl UiApp for Log {
+        type Message = LogMessage;
+
+        fn view(&self, theme: &Theme) -> Element<LogMessage> {
+            let lines = (0..40).map(|line| label(format!("line {line}"), theme.body(), theme.text));
+            Element::column([
+                Element::column(lines)
+                    .scroll(self.scroll.offset)
+                    .on_scroll(LogMessage::Scrolled)
+                    .size(Length::Fill, Length::Px(80.0)),
+                label("footer", theme.body(), theme.text)
+                    .on_hover(LogMessage::Enter)
+                    .on_leave(LogMessage::Leave),
+            ])
+            .size(Length::Fill, Length::Fill)
+        }
+
+        fn update(&mut self, message: LogMessage) -> Control {
+            match message {
+                LogMessage::Scrolled(scroll) => self.scroll = scroll,
+                LogMessage::Enter => self.hovered = true,
+                LogMessage::Leave => self.hovered = false,
+            }
+            Control::Redraw
+        }
+
+        fn input(&mut self, event: &InputEvent) -> Control {
+            if let InputEvent::Key(Key::End, _) = event {
+                self.scroll.offset = 1.0e6;
+                return Control::Redraw;
+            }
+            Control::Wait
+        }
+    }
+
+    #[test]
+    fn the_wheel_scrolls_an_overshoot_is_clamped_and_leaving_is_reported() {
+        let caps = Capabilities {
+            kitty: true,
+            ..Capabilities::default()
+        };
+        let runner = Runner::new(Log::default(), &caps, CELL).expect("the bundled fonts parse");
+        let mut driver = Headless::start(
+            runner,
+            CellSize {
+                columns: 40,
+                rows: 10,
+            },
+        );
+        driver.frame().expect("drawing works");
+        driver.input(mouse(MouseAction::WheelDown, 2, 1));
+        let after_wheel = driver.app().app.scroll;
+        assert!(after_wheel.offset > 0.0, "the wheel scrolls the log");
+        assert!(after_wheel.max > after_wheel.offset);
+
+        driver.type_bytes(b"\x1b[F");
+        driver.frame().expect("drawing works");
+        let clamped = driver.app().app.scroll;
+        assert_eq!(
+            clamped.offset, clamped.max,
+            "the overshoot comes back clamped"
+        );
+
+        driver.input(mouse(MouseAction::Move, 2, 5));
+        assert!(driver.app().app.hovered);
+        driver.input(mouse(MouseAction::Move, 2, 9));
+        assert!(!driver.app().app.hovered, "moving away reports the leave");
     }
 
     #[test]

@@ -21,8 +21,8 @@ pub enum Edit {
 /// sits on a grapheme boundary.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TextField {
-    text: String,
-    cursor: usize,
+    pub(crate) text: String,
+    pub(crate) cursor: usize,
 }
 
 impl TextField {
@@ -97,7 +97,7 @@ impl TextField {
         }
     }
 
-    fn insert(&mut self, text: &str) -> Edit {
+    pub(crate) fn insert(&mut self, text: &str) -> Edit {
         if text.is_empty() {
             return Edit::Ignored;
         }
@@ -106,7 +106,7 @@ impl TextField {
         Edit::Changed
     }
 
-    fn remove(&mut self, from: usize, to: usize) -> Edit {
+    pub(crate) fn remove(&mut self, from: usize, to: usize) -> Edit {
         if from >= to {
             return Edit::Ignored;
         }
@@ -115,7 +115,7 @@ impl TextField {
         Edit::Changed
     }
 
-    fn move_to(&mut self, at: usize) -> Edit {
+    pub(crate) fn move_to(&mut self, at: usize) -> Edit {
         if at == self.cursor {
             return Edit::Ignored;
         }

@@ -184,3 +184,33 @@ fn an_opaque_box_keeps_clicks_from_what_lies_under_it() {
     let beside = ui.hit_test(200.0, 10.0).expect("the box under");
     assert_eq!(beside.on_click, Some(Message::Under));
 }
+
+#[test]
+fn an_opaque_card_inside_a_clickable_backdrop_keeps_its_clicks() {
+    let mut ui = ui();
+    let view = Element::column([block(50.0).width(Length::Px(100.0)).opaque()])
+        .size(Length::Fill, Length::Fill)
+        .on_click(Message::Under);
+    ui.render(&view, SCREEN, CELL);
+    assert_eq!(ui.hit_test(10.0, 10.0).and_then(|hit| hit.on_click), None);
+    assert_eq!(
+        ui.hit_test(300.0, 200.0).and_then(|hit| hit.on_click),
+        Some(Message::Under)
+    );
+}
+
+#[test]
+fn a_fill_popup_spans_its_parent_only() {
+    let mut ui = ui();
+    let view = Element::column([Element::column([block(10.0)
+        .width(Length::Fill)
+        .on_click(Message::Popup)
+        .popup(0.0, 0.0)])
+    .size(Length::Px(100.0), Length::Px(0.0))]);
+    ui.render(&view, SCREEN, CELL);
+    assert!(
+        ui.hit_test(50.0, 5.0).is_some(),
+        "inside its parent's width"
+    );
+    assert!(ui.hit_test(150.0, 5.0).is_none(), "and not past it");
+}

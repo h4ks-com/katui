@@ -270,7 +270,8 @@ impl<M> Element<M> {
         self
     }
 
-    /// Stops clicks on this box from reaching what lies under it.
+    /// Stops clicks on this box from reaching what lies under it or the
+    /// handlers of its ancestors.
     #[must_use]
     pub fn opaque(mut self) -> Self {
         self.opaque = true;

@@ -344,6 +344,8 @@ fn style_of<M>(element: &Element<M>, parent: Parent, scrolled: bool) -> Style {
         .as_ref()
         .map_or(0.0, |(width, _)| *width);
     let mut style = Style {
+        // we position every box so a popup lands relative to its parent
+        position: Position::Relative,
         display: if is_stack {
             Display::Grid
         } else {
@@ -412,6 +414,11 @@ fn float<M>(style: &mut Style, element: &Element<M>, x: f32, y: f32) {
     style.flex_grow = 0.0;
     style.align_self = None;
     style.justify_self = None;
+    // we size a content popup to its natural width, since its parent is
+    // often an empty anchor too narrow to wrap its text in
+    if element.style.width == Length::Content {
+        style.size.width = Dimension::max_content();
+    }
 }
 
 fn apply_fill<M>(style: &mut Style, element: &Element<M>, parent: Parent) {
