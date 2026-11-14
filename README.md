@@ -14,7 +14,7 @@
   <a href="https://matheusfillipe.github.io/katui/katui/">API docs</a>
 </p>
 
-<p align="center"><img src="assets/demos/shardrift.gif" alt="Shardrift, a katui game: a ship firing through a nebula and splitting crystal rocks" width="800"></p>
+<p align="center"><img src="assets/demos/shardrift.webp" alt="Shardrift, a katui game: a ship firing through a nebula and splitting crystal rocks" width="800"></p>
 
 katui is a terminal UI library for Rust that draws real pixels. Apps, games
 and video show up as images through the [kitty graphics protocol][kitty],
@@ -92,7 +92,7 @@ tooltips, dialogs, toasts and split panes, laid out with flexbox and drawn
 with proportional fonts. Clicks, drags, the mouse wheel, typing and paste
 reach your app as messages.
 
-<img src="assets/demos/widgets.gif" alt="The widget tour: a file tree, a switch with a spinner, a slider, a table and a theme select switching to a light theme" width="800">
+<img src="assets/demos/widgets.webp" alt="The widget tour: a file tree, a switch with a spinner, a slider, a table and a theme select switching to a light theme" width="800">
 
 ### Games
 
@@ -127,7 +127,7 @@ fn main() -> Result<(), katui::rt::RtError> {
 
 Hold the arrow keys to move the ball.
 
-<img src="assets/demos/lumenshaft.gif" alt="Lumenshaft, a katui game: glowing blocks falling down a 3D shaft" width="800">
+<img src="assets/demos/lumenshaft.webp" alt="Lumenshaft, a katui game: glowing blocks falling down a 3D shaft" width="800">
 
 ### Video
 
@@ -136,7 +136,7 @@ RGBA frames, and gives you the frame that is due now. On a slow terminal it
 skips frames, so the picture keeps to real time. The video demo plays files
 and stream URLs at 30 frames a second, with pause, seek and mute.
 
-<img src="assets/demos/video.gif" alt="The video demo playing a test pattern with a timecode, pausing and seeking" width="800">
+<img src="assets/demos/video.webp" alt="The video demo playing a test pattern with a timecode, pausing and seeking" width="800">
 
 ### HTML and markdown
 
@@ -145,7 +145,7 @@ flex layout, styled text, colors, padding, borders, images and links.
 `katui::content::markdown_view` does the same for markdown. Enable them
 with the `html` feature.
 
-<img src="assets/demos/html.gif" alt="The HTML showcase page scrolling through headings, lists, flex layout and boxes" width="800">
+<img src="assets/demos/html.webp" alt="The HTML showcase page scrolling through headings, lists, flex layout and boxes" width="800">
 
 ### Images in ratatui apps
 
@@ -153,7 +153,7 @@ The `ratatui` feature adds `KatuiBackend`, a ratatui backend, and
 `katui::ratatui::run::run`, which runs a ratatui app on katui's event loop.
 Your existing widgets keep working, with real images placed next to them.
 
-<img src="assets/demos/ratatui.gif" alt="An image viewer made of ratatui widgets, stepping through generated pictures" width="800">
+<img src="assets/demos/ratatui.webp" alt="An image viewer made of ratatui widgets, stepping through generated pictures" width="800">
 
 ## Terminals
 
