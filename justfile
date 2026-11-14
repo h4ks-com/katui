@@ -82,6 +82,10 @@ demo-glow:
 demo-browse page="":
     cargo run --release -p katui-app --example browse -- {{page}}
 
+# every part of the html and css subset on one page, in the page viewer
+demo-html:
+    cargo run --release -p katui-app --example browse -- crates/katui-app/examples/pages/showcase.html
+
 # the cube demo: a lit cube turning in software 3D, arrow keys steer its spin
 demo-cube:
     cargo run --release -p katui-game --example cube

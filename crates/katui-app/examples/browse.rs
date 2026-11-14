@@ -1,6 +1,7 @@
 //! The katui page viewer: a local HTML file through the HTML and CSS
 //! subset, with scrolling and links between local pages. Run with
-//! `just demo-browse` for the bundled pages, or pass a path to a page.
+//! `just demo-browse` for the bundled pages, `just demo-html` for the page
+//! that shows every part of the subset, or pass a path to a page.
 #![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 
 use std::cell::RefCell;
@@ -14,10 +15,16 @@ use katui_content::{HtmlDefaults, HtmlHost, html};
 use katui_draw::Rgba;
 use katui_proto::input::{InputEvent, Key};
 use katui_scene::surface::Surface;
-use katui_ui::{Element, Length};
-use katui_widgets::{Theme, label};
+use katui_ui::{Element, Length, Scroll};
+use katui_widgets::{ScrollState, Theme, label};
 
 const SCROLL_STEP: f32 = 48.0;
+
+#[derive(Debug, Clone)]
+enum Message {
+    Link(String),
+    Scrolled(Scroll),
+}
 
 fn main() -> Result<(), katui_rt::RtError> {
     let page = std::env::args().nth(1).map_or_else(
@@ -36,7 +43,7 @@ struct Browser {
     page: PathBuf,
     source: io::Result<String>,
     images: RefCell<HashMap<String, Option<Arc<Surface>>>>,
-    scroll: f32,
+    scroll: ScrollState,
     history: Vec<PathBuf>,
 }
 
@@ -47,7 +54,7 @@ impl Browser {
             page,
             source,
             images: RefCell::default(),
-            scroll: 0.0,
+            scroll: ScrollState::default(),
             history: Vec::new(),
         }
     }
@@ -100,9 +107,9 @@ fn decode(path: &Path) -> Option<Arc<Surface>> {
     Surface::from_rgba(rgba.width(), rgba.height(), rgba.into_raw()).map(Arc::new)
 }
 
-impl HtmlHost<String> for Browser {
-    fn link(&self, href: &str) -> String {
-        href.to_owned()
+impl HtmlHost<Message> for Browser {
+    fn link(&self, href: &str) -> Message {
+        Message::Link(href.to_owned())
     }
 
     fn image(&self, src: &str) -> Option<Arc<Surface>> {
@@ -119,9 +126,9 @@ impl HtmlHost<String> for Browser {
 }
 
 impl UiApp for Browser {
-    type Message = String;
+    type Message = Message;
 
-    fn view(&self, theme: &Theme) -> Element<String> {
+    fn view(&self, theme: &Theme) -> Element<Message> {
         let defaults = HtmlDefaults {
             font_size: theme.body(),
             color: theme.text,
@@ -137,27 +144,33 @@ impl UiApp for Browser {
             ),
         };
         Element::column([page])
-            .scroll(self.scroll)
+            .scroll(self.scroll.offset())
+            .on_scroll(Message::Scrolled)
+            .scrollbar(theme.muted)
             .padding(theme.cell_height())
             .size(Length::Fill, Length::Fill)
             .background(theme.background.clone())
     }
 
-    fn update(&mut self, href: String) -> Control {
-        self.follow(&href);
+    fn update(&mut self, message: Message) -> Control {
+        match message {
+            Message::Link(href) => self.follow(&href),
+            Message::Scrolled(scroll) => self.scroll.apply(scroll),
+        }
         Control::Redraw
     }
 
     fn input(&mut self, event: &InputEvent) -> Control {
+        if self.scroll.handle(event, SCROLL_STEP) {
+            return Control::Redraw;
+        }
         let InputEvent::Key(key, _) = event else {
             return Control::Wait;
         };
         match key {
-            Key::Down | Key::Char('j') => self.scroll += SCROLL_STEP,
-            Key::Up | Key::Char('k') => self.scroll = (self.scroll - SCROLL_STEP).max(0.0),
-            Key::PageDown | Key::Char(' ') => self.scroll += SCROLL_STEP * 8.0,
-            Key::PageUp => self.scroll = (self.scroll - SCROLL_STEP * 8.0).max(0.0),
-            Key::Home => self.scroll = 0.0,
+            Key::Char('j') => self.scroll.scroll_by(SCROLL_STEP),
+            Key::Char('k') => self.scroll.scroll_by(-SCROLL_STEP),
+            Key::Char(' ') => self.scroll.scroll_by(SCROLL_STEP * 8.0),
             Key::Backspace | Key::Left => self.back(),
             Key::Char('q') => return Control::Quit,
             _ => return Control::Wait,
@@ -175,7 +188,7 @@ mod tests {
     use katui_ui::{CellPixels, Ui, UiOptions};
     use katui_widgets::Theme;
 
-    use super::{Browser, local_target};
+    use super::{Browser, Message, local_target};
 
     const CELL: CellPixels = CellPixels {
         width: 9,
@@ -188,7 +201,7 @@ mod tests {
         let mut browser = Browser::open(start);
         assert!(browser.source.is_ok(), "the bundled page opens");
         let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
-        let mut ui: Ui<String> = Ui::new(engine, UiOptions::default());
+        let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());
         let size = (9 * 100, 19 * 36);
         let output = ui.render(&browser.view(&Theme::dark(CELL)), size, CELL);
         let surface = output.flatten(CELL, size).expect("whole pixels");
@@ -204,13 +217,45 @@ mod tests {
             image::ExtendedColorType::Rgba8,
         )
         .expect("the target directory is writable");
-        browser.update("about.html".to_owned());
+        browser.update(Message::Link("about.html".to_owned()));
         assert!(browser.page.ends_with("about.html"));
         assert!(browser.source.is_ok(), "the linked page opens");
         browser.back();
         assert!(
             browser.page.ends_with("index.html"),
             "back returns to the start"
+        );
+    }
+
+    #[test]
+    fn the_showcase_page_renders_every_section_and_its_image() {
+        let showcase = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/pages/showcase.html");
+        let browser = Browser::open(showcase);
+        assert!(browser.source.is_ok(), "the showcase opens");
+        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
+        let mut ui: Ui<Message> = Ui::new(engine, UiOptions::default());
+        let size = (9 * 110, 19 * 190);
+        let output = ui.render(&browser.view(&Theme::dark(CELL)), size, CELL);
+        let surface = output.flatten(CELL, size).expect("whole pixels");
+        let path = format!(
+            "{}/../../target/katui-html-showcase.png",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        image::save_buffer(
+            path,
+            surface.pixels(),
+            surface.width(),
+            surface.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .expect("the target directory is writable");
+        assert!(
+            browser
+                .images
+                .borrow()
+                .get("planet.png")
+                .is_some_and(Option::is_some),
+            "the page's image loads beside it"
         );
     }
 

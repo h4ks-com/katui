@@ -156,6 +156,8 @@ enum Display {
     Block,
     Inline,
     Flex,
+    /// A child of a flex container: its own box, sized by its content.
+    Item,
     Hidden,
 }
 
@@ -439,6 +441,13 @@ impl Run {
         self.spans.push((span, self.link.clone()));
     }
 
+    /// A line break; whitespace right after it collapses away, the way it
+    /// does at the start of a line.
+    fn push_break(&mut self, style: &Style) {
+        self.push(style.span("\n".to_owned()), style);
+        self.ends_in_space = true;
+    }
+
     /// Whitespace collapsed the way a browser flows text: runs of it
     /// become one space, and none starts a line.
     fn collapse(&mut self, text: &str) -> String {
@@ -495,6 +504,11 @@ impl<M: Clone> Renderer<'_, M> {
         let mut style = parent.child(element.value().name());
         for declaration in self.cascade.declarations(element) {
             style.apply(&declaration);
+        }
+        if parent.display == Display::Flex
+            && matches!(style.display, Display::Inline | Display::Block)
+        {
+            style.display = Display::Item;
         }
         // we paint an inline element's background behind its glyphs,
         // because it has no box of its own
@@ -564,7 +578,7 @@ impl<M: Clone> Renderer<'_, M> {
         let child_style = self.style(child, style);
         match (child.value().name(), child_style.display) {
             (_, Display::Hidden) => {}
-            ("br", _) => run.push(child_style.span("\n".to_owned()), &child_style),
+            ("br", _) => run.push_break(&child_style),
             ("img", _) => {
                 children.extend(run.take(style, self.host));
                 children.extend(self.image(child, &child_style, run.link.as_deref()));
@@ -618,7 +632,7 @@ impl<M: Clone> Renderer<'_, M> {
         let child_style = self.style(child, style);
         match (child.value().name(), child_style.display) {
             (_, Display::Hidden) => {}
-            ("br", _) => run.push(child_style.span("\n".to_owned()), &child_style),
+            ("br", _) => run.push_break(&child_style),
             ("img", _) => {
                 children.extend(run.take(block, self.host));
                 children.extend(self.image(child, &child_style, run.link.as_deref()));
@@ -731,6 +745,38 @@ mod tests {
             link: Rgba::solid(0, 0, 200),
             tint: Rgba::solid(230, 230, 230),
         }
+    }
+
+    #[test]
+    fn the_children_of_a_flex_container_become_boxes_of_their_own() {
+        let document = Html::parse_document(
+            "<div style=\"display: flex\"><span>one</span><p>two</p></div><span>three</span>",
+        );
+        let renderer = Renderer {
+            cascade: Cascade::new(&document),
+            host: &Host as &dyn HtmlHost<String>,
+        };
+        let root = Style::root(&defaults());
+        let pick = |css: &str| {
+            let selector = Selector::parse(css).expect("a valid selector");
+            document
+                .select(&selector)
+                .next()
+                .expect("the element exists")
+        };
+        let flex = renderer.style(pick("div"), &root);
+        for child in ["div > span", "div > p"] {
+            assert_eq!(
+                renderer.style(pick(child), &flex).display,
+                super::Display::Item,
+                "{child} is a flex item"
+            );
+        }
+        assert_eq!(
+            renderer.style(pick("body > span"), &root).display,
+            super::Display::Inline,
+            "a span in normal flow stays inline"
+        );
     }
 
     #[test]
