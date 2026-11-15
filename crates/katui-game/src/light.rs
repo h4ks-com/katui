@@ -1,3 +1,5 @@
+// pixel sizes stay far below 2^24, and float-to-integer casts saturate, so
+// a coordinate left of or above the buffer becomes index 0
 #![allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
 
 use katui_scene::surface::Surface;

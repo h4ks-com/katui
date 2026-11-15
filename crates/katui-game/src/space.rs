@@ -1,3 +1,4 @@
+// pixel sizes and counts stay far below 2^24, so we convert them to f32 exactly
 #![allow(clippy::cast_precision_loss)]
 
 use std::ops::{Add, Mul, Sub};
