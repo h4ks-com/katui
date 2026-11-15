@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.svg" alt="" width="128"></p>
+
 <h1 align="center">katui</h1>
 
 <p align="center">

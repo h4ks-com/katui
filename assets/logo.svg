@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>katui</title>
+  <g fill="#4a4170" stroke="#4a4170" stroke-width="20" stroke-linejoin="round">
+    <path d="M40 104 L58 30 L110 74 L146 74 L198 30 L216 104 L216 196 Q216 222 190 222 L66 222 Q40 222 40 196 Z"/>
+  </g>
+  <g fill="#1d1a29" stroke="#1d1a29" stroke-width="12" stroke-linejoin="round">
+    <path d="M40 104 L58 30 L110 74 L146 74 L198 30 L216 104 L216 196 Q216 222 190 222 L66 222 Q40 222 40 196 Z"/>
+  </g>
+  <g fill="#3a3352">
+    <path d="M62 52 L66 86 L92 74 Z"/>
+    <path d="M194 52 L190 86 L164 74 Z"/>
+  </g>
+  <g fill="#82aaff">
+    <rect x="70" y="122" width="14" height="14"/>
+    <rect x="84" y="136" width="14" height="14"/>
+    <rect x="98" y="150" width="14" height="14"/>
+    <rect x="84" y="164" width="14" height="14"/>
+    <rect x="70" y="178" width="14" height="14"/>
+  </g>
+  <g fill="#e0559b">
+    <rect x="128" y="178" width="14" height="14"/>
+    <rect x="142" y="178" width="14" height="14" opacity="0.85"/>
+    <rect x="156" y="178" width="14" height="14" opacity="0.65"/>
+    <rect x="170" y="178" width="14" height="14" opacity="0.45"/>
+  </g>
+</svg>
