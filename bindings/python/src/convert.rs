@@ -1,14 +1,26 @@
-//! Python values to katui ones: colors, lengths and alignments.
+//! Python values to katui ones: colors, lengths and alignments, plus the
+//! exception each shared error raises.
 
+use katui_bindings::{Error, ErrorKind, names};
 use katui_draw::{Paint, Rgba};
 use katui_ui::{Align, Length};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+
+/// `error` as the Python exception of its kind.
+pub(crate) fn raise(error: Error) -> PyErr {
+    let message = error.to_string();
+    match error.kind() {
+        ErrorKind::Argument => PyValueError::new_err(message),
+        ErrorKind::Io => PyOSError::new_err(message),
+        ErrorKind::Runtime => PyRuntimeError::new_err(message),
+    }
+}
 
 /// A color from `(r, g, b)`, `(r, g, b, a)` or `"#rrggbb"` / `"#rrggbbaa"`.
 pub(crate) fn color(value: &Bound<'_, PyAny>) -> PyResult<Rgba> {
     if let Ok(text) = value.extract::<String>() {
-        return hex(&text);
+        return names::hex(&text).map_err(raise);
     }
     if let Ok((r, g, b, a)) = value.extract::<(u8, u8, u8, u8)>() {
         return Ok(Rgba { r, g, b, a });
@@ -17,11 +29,6 @@ pub(crate) fn color(value: &Bound<'_, PyAny>) -> PyResult<Rgba> {
         PyValueError::new_err("give a color as (r, g, b), (r, g, b, a) or \"#rrggbb\"")
     })?;
     Ok(Rgba::solid(r, g, b))
-}
-
-fn hex(text: &str) -> PyResult<Rgba> {
-    Rgba::from_hex(text)
-        .ok_or_else(|| PyValueError::new_err(format!("write the color {text:?} as \"#rrggbb\"")))
 }
 
 pub(crate) fn paint(value: &Bound<'_, PyAny>) -> PyResult<Paint> {
@@ -45,22 +52,9 @@ pub(crate) fn length(value: &Bound<'_, PyAny>) -> PyResult<Length> {
     if let Ok(pixels) = value.extract::<f32>() {
         return Ok(Length::Px(pixels));
     }
-    match value.extract::<String>()?.as_str() {
-        "fill" => Ok(Length::Fill),
-        "content" => Ok(Length::Content),
-        other => Err(PyValueError::new_err(format!(
-            "give a length in pixels, \"fill\" or \"content\", not {other:?}"
-        ))),
-    }
+    names::length(&value.extract::<String>()?).map_err(raise)
 }
 
 pub(crate) fn align(value: &str) -> PyResult<Align> {
-    match value {
-        "start" => Ok(Align::Start),
-        "center" => Ok(Align::Center),
-        "end" => Ok(Align::End),
-        other => Err(PyValueError::new_err(format!(
-            "align to \"start\", \"center\" or \"end\", not {other:?}"
-        ))),
-    }
+    names::align(value).map_err(raise)
 }

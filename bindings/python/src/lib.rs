@@ -9,6 +9,7 @@
 mod app;
 mod convert;
 mod element;
+mod event;
 mod game;
 mod html;
 mod message;
@@ -44,7 +45,7 @@ fn _katui(module: &Bound<'_, PyModule>) -> PyResult<()> {
         element::PyImage,
         element::PySpan,
         theme::PyTheme,
-        state::PyEvent,
+        event::PyEvent,
         state::PyEdit,
         state::PyScroll,
         state::PyTextField,

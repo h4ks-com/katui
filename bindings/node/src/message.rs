@@ -8,9 +8,9 @@
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use katui_ui::Scroll;
 use napi::bindgen_prelude::{
-    FnArgs, FromNapiValue, Function, JsObjectValue, Object, ObjectRef, Unknown, ValidateNapiValue,
+    FnArgs, FromNapiValue, Function, JsObjectValue, JsValuesTupleIntoVec, Object, ObjectRef,
+    Unknown, ValidateNapiValue,
 };
 use napi::{Env, JsValue, Result};
 
@@ -107,42 +107,40 @@ pub(crate) fn unknown<'env>(env: &'env Env, held: &Held) -> Result<Unknown<'env>
     fetch(env, held)
 }
 
-#[derive(Clone)]
-pub(crate) enum Msg {
-    Value(Obj),
-    Index(Obj, u32),
-    Id(Obj, u32),
-    Float(Obj, f64),
-    Point(Obj, f64, f64),
-    Scroll(Obj, Scroll),
-    Link(Obj, String),
-    Href(String),
-    /// JavaScript threw while we drew, so the app has to end.
-    Stop,
+pub(crate) type Msg = katui_bindings::Msg<Obj>;
+
+pub(crate) fn value(env: &Env, message: Unknown<'_>) -> Result<Msg> {
+    hold(env, message).map(Msg::Value)
 }
 
-impl Msg {
-    /// The message as the app's `update` receives it; `None` for [`Msg::Stop`].
-    pub(crate) fn resolve<'env>(&self, env: &'env Env) -> Result<Option<Unknown<'env>>> {
-        let called = match self {
-            Self::Value(value) => return unknown(env, value).map(Some),
-            Self::Stop => return Ok(None),
-            Self::Href(href) => return Ok(Some(env.create_string(href)?.to_unknown())),
-            Self::Index(make, index) | Self::Id(make, index) => {
-                fetch::<Make<'_, u32>>(env, make)?.call(*index)
-            }
-            Self::Float(make, value) => fetch::<Make<'_, f64>>(env, make)?.call(*value),
-            Self::Point(make, x, y) => {
-                fetch::<Make<'_, FnArgs<(f64, f64)>>>(env, make)?.call((*x, *y).into())
-            }
-            Self::Scroll(make, scroll) => {
-                fetch::<Make<'_, ScrollPosition>>(env, make)?.call((*scroll).into())
-            }
-            Self::Link(make, href) => fetch::<Make<'_, String>>(env, make)?.call(href.clone()),
-        };
-        called.map(Some)
+/// An index as JavaScript numbers it.
+pub(crate) fn index(index: usize) -> u32 {
+    u32::try_from(index).unwrap_or(u32::MAX)
+}
+
+/// The message as the app's `update` receives it; `None` for [`Msg::Stop`].
+pub(crate) fn resolve<'env>(env: &'env Env, message: &Msg) -> Result<Option<Unknown<'env>>> {
+    match message {
+        Msg::Stop => Ok(None),
+        Msg::Value(value) => unknown(env, value).map(Some),
+        Msg::Href(href) => env.create_string(href).map(|href| Some(href.to_unknown())),
+        Msg::Index(make, at) => call(env, make, index(*at)),
+        Msg::Id(make, id) => call(env, make, *id as u32),
+        Msg::Float(make, value) => call(env, make, f64::from(*value)),
+        Msg::Point(make, x, y) => call(env, make, FnArgs::from((f64::from(*x), f64::from(*y)))),
+        Msg::Scroll(make, scroll) => call(env, make, ScrollPosition::from(*scroll)),
+        Msg::Link(make, href) => call(env, make, href.clone()),
     }
 }
 
-/// A function that makes a message from what a widget reports.
-type Make<'env, Args> = Function<'env, Args, Unknown<'env>>;
+/// Call `make`, the function that makes a message from what a widget
+/// reports, with `args`.
+fn call<'env, Args: JsValuesTupleIntoVec>(
+    env: &'env Env,
+    make: &Held,
+    args: Args,
+) -> Result<Option<Unknown<'env>>> {
+    fetch::<Function<'_, Args, Unknown<'_>>>(env, make)?
+        .call(args)
+        .map(Some)
+}

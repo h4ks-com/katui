@@ -1,18 +1,17 @@
 //! Arcade games: a C game drawn into a `KatuiLight` buffer at a fixed step.
 
-use std::cell::RefCell;
 use std::ffi::{CString, c_char, c_void};
-use std::time::Instant;
+use std::sync::Arc;
 
-use katui_game::{Blend, Camera, Game, HeldKeys, Light, P2, Rgb, Rng, Spark, Sparks, V3, v3};
+use katui_bindings::game::{Frame, GameHost, held};
+use katui_game::{Blend, Camera, HeldKeys, Light, P2, Rgb, Rng, Spark, Sparks, V3, v3};
 use katui_proto::input::Key;
 
 use crate::element::{KatuiImage, image};
+use crate::event::key;
 use crate::ffi::{
-    Error, KatuiStatus, borrow, borrow_mut, free, guard, owned, owned_or_null, slice, status, text,
-    texts,
+    Error, KatuiStatus, guard, owned, owned_or_null, raise, slice, status, text, texts,
 };
-use crate::state::key;
 
 /// The first kitty image id games use.
 pub const KATUI_BASE_IMAGE: u32 = 900;
@@ -120,41 +119,42 @@ pub extern "C" fn katui_light_new(width: u32, height: u32, pixel_aspect: f32) ->
 
 /// Free a light the caller made. NULL does nothing.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_free(light: *mut KatuiLight) {
-    unsafe { free(light) };
+pub extern "C" fn katui_light_free(light: Option<Box<KatuiLight>>) {
+    drop(light);
 }
 
-/// # Safety
-/// `light` is NULL or a live light nothing else uses now.
-unsafe fn draw(light: *mut KatuiLight, paint: impl FnOnce(&mut Light)) {
-    if let Some(light) = unsafe { borrow_mut(light) } {
+fn draw(light: Option<&mut KatuiLight>, paint: impl FnOnce(&mut Light)) {
+    if let Some(light) = light {
         paint(&mut light.0);
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_width(light: *const KatuiLight) -> u32 {
-    unsafe { borrow(light) }.map_or(0, |light| light.0.width())
+pub extern "C" fn katui_light_width(light: Option<&KatuiLight>) -> u32 {
+    light.map_or(0, |light| light.0.width())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_height(light: *const KatuiLight) -> u32 {
-    unsafe { borrow(light) }.map_or(0, |light| light.0.height())
+pub extern "C" fn katui_light_height(light: Option<&KatuiLight>) -> u32 {
+    light.map_or(0, |light| light.0.height())
 }
 
 /// One pixel's width over its height.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_pixel_aspect(light: *const KatuiLight) -> f32 {
-    unsafe { borrow(light) }.map_or(1.0, |light| light.0.pixel_aspect())
+pub extern "C" fn katui_light_pixel_aspect(light: Option<&KatuiLight>) -> f32 {
+    light.map_or(1.0, |light| light.0.pixel_aspect())
 }
 
 /// Copy the pixels of `other`, a light of the same size, into `light`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_copy_from(light: *mut KatuiLight, other: *const KatuiLight) {
-    let Some(other) = (unsafe { borrow(other) }) else {
+pub extern "C" fn katui_light_copy_from(
+    light: Option<&mut KatuiLight>,
+    other: Option<&KatuiLight>,
+) {
+    let Some(other) = other else {
         return;
     };
-    unsafe { draw(light, |light| light.copy_from(&other.0)) }
+    draw(light, |light| light.copy_from(&other.0));
 }
 
 /// The light of the pixel at `x`, `y`.
@@ -164,157 +164,153 @@ pub type KatuiShade =
 /// Fill every pixel with `shade(user, x, y)`, for backdrops baked once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_light_paint(
-    light: *mut KatuiLight,
+    light: Option<&mut KatuiLight>,
     shade: KatuiShade,
     user: *mut c_void,
 ) {
     let Some(shade) = shade else {
         return;
     };
-    unsafe { draw(light, |light| light.paint(|x, y| rgb(shade(user, x, y)))) }
+    draw(light, |light| {
+        // SAFETY: our caller promises that `shade` takes `user`.
+        light.paint(|x, y| rgb(unsafe { shade(user, x, y) }));
+    });
 }
 
 /// Fade the last frame by `factor`, 0 for black and 1 to keep it.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_dim(light: *mut KatuiLight, factor: f32) {
-    unsafe { draw(light, |light| light.dim(factor)) }
+pub extern "C" fn katui_light_dim(light: Option<&mut KatuiLight>, factor: f32) {
+    draw(light, |light| light.dim(factor));
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_rect(
-    light: *mut KatuiLight,
+pub extern "C" fn katui_light_rect(
+    light: Option<&mut KatuiLight>,
     at: KatuiPoint,
     width: f32,
     height: f32,
     color: KatuiRgb,
     mode: KatuiBlend,
 ) {
-    unsafe {
-        draw(light, |light| {
-            light.rect(p2(at), width, height, rgb(color), blend(mode));
-        });
-    }
+    draw(light, |light| {
+        light.rect(p2(at), width, height, rgb(color), blend(mode));
+    });
 }
 
 /// A filled polygon through `count` points.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_light_polygon(
-    light: *mut KatuiLight,
+    light: Option<&mut KatuiLight>,
     points: *const KatuiPoint,
     count: usize,
     color: KatuiRgb,
     mode: KatuiBlend,
 ) {
+    // SAFETY: the header requires `points` to hold `count` values.
     let points: Vec<P2> = unsafe { slice(points, count) }
         .iter()
         .copied()
         .map(p2)
         .collect();
-    unsafe {
-        draw(light, |light| {
-            light.polygon(&points, rgb(color), blend(mode));
-        });
-    }
+    draw(light, |light| {
+        light.polygon(&points, rgb(color), blend(mode));
+    });
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_line(
-    light: *mut KatuiLight,
+pub extern "C" fn katui_light_line(
+    light: Option<&mut KatuiLight>,
     from: KatuiPoint,
     to: KatuiPoint,
     width: f32,
     color: KatuiRgb,
 ) {
-    unsafe {
-        draw(light, |light| {
-            light.line(p2(from), p2(to), width, rgb(color));
-        });
-    }
+    draw(light, |light| {
+        light.line(p2(from), p2(to), width, rgb(color));
+    });
 }
 
 /// A soft disc of light that fades out at `radius`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_glow(
-    light: *mut KatuiLight,
+pub extern "C" fn katui_light_glow(
+    light: Option<&mut KatuiLight>,
     center: KatuiPoint,
     radius: f32,
     color: KatuiRgb,
 ) {
-    unsafe { draw(light, |light| light.glow(p2(center), radius, rgb(color))) }
+    draw(light, |light| light.glow(p2(center), radius, rgb(color)));
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_ring(
-    light: *mut KatuiLight,
+pub extern "C" fn katui_light_ring(
+    light: Option<&mut KatuiLight>,
     center: KatuiPoint,
     radius: f32,
     width: f32,
     color: KatuiRgb,
 ) {
-    unsafe {
-        draw(light, |light| {
-            light.ring(p2(center), radius, width, rgb(color));
-        });
-    }
+    draw(light, |light| {
+        light.ring(p2(center), radius, width, rgb(color));
+    });
 }
 
 /// Pixel-font text with its top left at `at`, each font pixel `scale`
 /// pixels wide.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_light_text(
-    light: *mut KatuiLight,
+    light: Option<&mut KatuiLight>,
     at: KatuiPoint,
     text: *const c_char,
     scale: u32,
     color: KatuiRgb,
 ) {
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
     let text = unsafe { self::text(text) };
-    unsafe { draw(light, |light| light.text(p2(at), &text, scale, rgb(color))) }
+    draw(light, |light| light.text(p2(at), &text, scale, rgb(color)));
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_light_blended_text(
-    light: *mut KatuiLight,
+    light: Option<&mut KatuiLight>,
     at: KatuiPoint,
     text: *const c_char,
     scale: u32,
     color: KatuiRgb,
     mode: KatuiBlend,
 ) {
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
     let text = unsafe { self::text(text) };
-    unsafe {
-        draw(light, |light| {
-            light.blended_text(p2(at), &text, scale, rgb(color), blend(mode));
-        });
-    }
+    draw(light, |light| {
+        light.blended_text(p2(at), &text, scale, rgb(color), blend(mode));
+    });
 }
 
 /// Pixel-font text centered on `center_x`, its top at `y`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_light_centered_text(
-    light: *mut KatuiLight,
+    light: Option<&mut KatuiLight>,
     center_x: f32,
     y: f32,
     text: *const c_char,
     scale: u32,
     color: KatuiRgb,
 ) {
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
     let text = unsafe { self::text(text) };
-    unsafe {
-        draw(light, |light| {
-            light.centered_text(center_x, y, &text, scale, rgb(color));
-        });
-    }
+    draw(light, |light| {
+        light.centered_text(center_x, y, &text, scale, rgb(color));
+    });
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_light_text_width(
-    light: *const KatuiLight,
+    light: Option<&KatuiLight>,
     text: *const c_char,
     scale: u32,
 ) -> f32 {
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
     let text = unsafe { self::text(text) };
-    unsafe { borrow(light) }.map_or(0.0, |light| light.0.text_width(&text, scale))
+    light.map_or(0.0, |light| light.0.text_width(&text, scale))
 }
 
 #[unsafe(no_mangle)]
@@ -324,14 +320,14 @@ pub extern "C" fn katui_light_text_height(scale: u32) -> f32 {
 
 /// Spread light above `threshold` into a glow of `strength`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_bloom(light: *mut KatuiLight, threshold: f32, strength: f32) {
-    unsafe { draw(light, |light| light.bloom(threshold, strength)) }
+pub extern "C" fn katui_light_bloom(light: Option<&mut KatuiLight>, threshold: f32, strength: f32) {
+    draw(light, |light| light.bloom(threshold, strength));
 }
 
 /// The buffer tone-mapped into an image the caller owns.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_light_to_image(light: *const KatuiLight) -> *mut KatuiImage {
-    unsafe { borrow(light) }.map_or(std::ptr::null_mut(), |light| image(light.0.to_surface()))
+pub extern "C" fn katui_light_to_image(light: Option<&KatuiLight>) -> *mut KatuiImage {
+    light.map_or(std::ptr::null_mut(), |light| image(light.0.to_surface()))
 }
 
 /// The keys held down right now.
@@ -339,25 +335,27 @@ pub struct KatuiKeys(HeldKeys);
 
 /// Whether the key named `name`, like `"left"` or `"a"`, is held.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_keys_is_held(keys: *const KatuiKeys, name: *const c_char) -> bool {
+pub unsafe extern "C" fn katui_keys_is_held(keys: Option<&KatuiKeys>, name: *const c_char) -> bool {
+    // SAFETY: the header requires `name` to be NULL or NUL-terminated.
     let Ok(key) = key(&unsafe { text(name) }) else {
         return false;
     };
-    unsafe { borrow(keys) }.is_some_and(|keys| keys.0.is_held(key))
+    keys.is_some_and(|keys| keys.0.is_held(key))
 }
 
 /// Whether any of the `count` keys at `names` is held.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_keys_any_held(
-    keys: *const KatuiKeys,
+    keys: Option<&KatuiKeys>,
     names: *const *const c_char,
     count: usize,
 ) -> bool {
+    // SAFETY: the header requires `names` to hold `count` strings, each NULL or NUL-terminated.
     let wanted: Vec<Key> = unsafe { texts(names, count) }
         .iter()
         .filter_map(|name| key(name).ok())
         .collect();
-    unsafe { borrow(keys) }.is_some_and(|keys| keys.0.any_held(&wanted))
+    keys.is_some_and(|keys| keys.0.any_held(&wanted))
 }
 
 #[unsafe(no_mangle)]
@@ -427,13 +425,13 @@ pub struct KatuiCamera {
 /// Write where `at` lands on screen into `on_screen`, and how many pixels
 /// one world unit spans there into `scale`. False behind the eye.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_camera_project(
-    camera: *const KatuiCamera,
+pub extern "C" fn katui_camera_project(
+    camera: Option<&KatuiCamera>,
     at: KatuiV3,
-    on_screen: *mut KatuiPoint,
-    scale: *mut f32,
+    on_screen: Option<&mut KatuiPoint>,
+    scale: Option<&mut f32>,
 ) -> bool {
-    let Some(camera) = (unsafe { borrow(camera) }) else {
+    let Some(camera) = camera else {
         return false;
     };
     let camera = Camera {
@@ -445,13 +443,13 @@ pub unsafe extern "C" fn katui_camera_project(
     let Some((point, size)) = camera.project(at.into()) else {
         return false;
     };
-    if let Some(on_screen) = unsafe { borrow_mut(on_screen) } {
+    if let Some(on_screen) = on_screen {
         *on_screen = KatuiPoint {
             x: point.x,
             y: point.y,
         };
     }
-    if let Some(scale) = unsafe { borrow_mut(scale) } {
+    if let Some(scale) = scale {
         *scale = size;
     }
     true
@@ -466,25 +464,25 @@ pub extern "C" fn katui_rng_new(seed: u32) -> *mut KatuiRng {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_rng_free(rng: *mut KatuiRng) {
-    unsafe { free(rng) };
+pub extern "C" fn katui_rng_free(rng: Option<Box<KatuiRng>>) {
+    drop(rng);
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_rng_next_u32(rng: *mut KatuiRng) -> u32 {
-    unsafe { borrow_mut(rng) }.map_or(0, |rng| rng.0.next_u32())
+pub extern "C" fn katui_rng_next_u32(rng: Option<&mut KatuiRng>) -> u32 {
+    rng.map_or(0, |rng| rng.0.next_u32())
 }
 
 /// A value from `low` up to `high`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_rng_range(rng: *mut KatuiRng, low: f32, high: f32) -> f32 {
-    unsafe { borrow_mut(rng) }.map_or(low, |rng| rng.0.range(low, high))
+pub extern "C" fn katui_rng_range(rng: Option<&mut KatuiRng>, low: f32, high: f32) -> f32 {
+    rng.map_or(low, |rng| rng.0.range(low, high))
 }
 
 /// A random direction of unit length.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_rng_direction(rng: *mut KatuiRng) -> KatuiV3 {
-    unsafe { borrow_mut(rng) }.map_or_else(KatuiV3::default, |rng| rng.0.direction().into())
+pub extern "C" fn katui_rng_direction(rng: Option<&mut KatuiRng>) -> KatuiV3 {
+    rng.map_or_else(KatuiV3::default, |rng| rng.0.direction().into())
 }
 
 /// One glowing particle.
@@ -512,13 +510,13 @@ pub extern "C" fn katui_sparks_new() -> *mut KatuiSparks {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_sparks_free(sparks: *mut KatuiSparks) {
-    unsafe { free(sparks) };
+pub extern "C" fn katui_sparks_free(sparks: Option<Box<KatuiSparks>>) {
+    drop(sparks);
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_sparks_add(sparks: *mut KatuiSparks, spark: KatuiSpark) {
-    if let Some(sparks) = unsafe { borrow_mut(sparks) } {
+pub extern "C" fn katui_sparks_add(sparks: Option<&mut KatuiSparks>, spark: KatuiSpark) {
+    if let Some(sparks) = sparks {
         sparks.0.add(Spark {
             at: spark.at.into(),
             velocity: spark.velocity.into(),
@@ -532,8 +530,8 @@ pub unsafe extern "C" fn katui_sparks_add(sparks: *mut KatuiSparks, spark: Katui
 
 /// Age and move every spark by `dt` seconds under `gravity`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_sparks_step(sparks: *mut KatuiSparks, dt: f32, gravity: KatuiV3) {
-    if let Some(sparks) = unsafe { borrow_mut(sparks) } {
+pub extern "C" fn katui_sparks_step(sparks: Option<&mut KatuiSparks>, dt: f32, gravity: KatuiV3) {
+    if let Some(sparks) = sparks {
         sparks.0.step(dt, gravity.into());
     }
 }
@@ -547,32 +545,32 @@ pub type KatuiPlace = Option<
 /// Draw every spark as a fading streak, placed by `place(user, at, out)`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_sparks_draw(
-    sparks: *const KatuiSparks,
-    light: *mut KatuiLight,
+    sparks: Option<&KatuiSparks>,
+    light: Option<&mut KatuiLight>,
     place: KatuiPlace,
     user: *mut c_void,
 ) {
-    let (Some(sparks), Some(place)) = (unsafe { borrow(sparks) }, place) else {
+    let (Some(sparks), Some(place)) = (sparks, place) else {
         return;
     };
-    unsafe {
-        draw(light, |light| {
-            sparks.0.draw(light, |at| {
-                let mut spot = KatuiPoint::default();
-                place(user, at.into(), &raw mut spot).then(|| p2(spot))
-            });
+    draw(light, |light| {
+        sparks.0.draw(light, |at| {
+            let mut spot = KatuiPoint::default();
+            // SAFETY: our caller promises that `place` takes `user`.
+            let placed = unsafe { place(user, at.into(), &raw mut spot) };
+            placed.then(|| p2(spot))
         });
-    }
+    });
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_sparks_len(sparks: *const KatuiSparks) -> usize {
-    unsafe { borrow(sparks) }.map_or(0, |sparks| sparks.0.len())
+pub extern "C" fn katui_sparks_len(sparks: Option<&KatuiSparks>) -> usize {
+    sparks.map_or(0, |sparks| sparks.0.len())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_sparks_is_empty(sparks: *const KatuiSparks) -> bool {
-    unsafe { borrow(sparks) }.is_none_or(|sparks| sparks.0.is_empty())
+pub extern "C" fn katui_sparks_is_empty(sparks: Option<&KatuiSparks>) -> bool {
+    sparks.is_none_or(|sparks| sparks.0.is_empty())
 }
 
 /// A game as function pointers over your state at `user`. `step` and
@@ -598,14 +596,16 @@ pub struct KatuiGame {
     pub finished: Option<unsafe extern "C" fn(user: *mut c_void) -> bool>,
 }
 
-/// A C game, as the arcade loop sees it.
-struct GameBridge {
+/// A C game, as the shared bridge calls it.
+struct CGame {
     game: KatuiGame,
-    light: RefCell<KatuiLight>,
+    light: KatuiLight,
 }
 
-impl GameBridge {
-    fn new(game: &KatuiGame) -> Result<Self, Error> {
+impl CGame {
+    /// # Safety
+    /// Every callback of `game` takes its `user`, which outlives the result.
+    unsafe fn new(game: &KatuiGame) -> Result<Self, Error> {
         if game.step.is_none() {
             return Err(Error::Null("step callback"));
         }
@@ -614,7 +614,7 @@ impl GameBridge {
         }
         Ok(Self {
             game: *game,
-            light: RefCell::new(KatuiLight(Light::new(1, 1, 1.0))),
+            light: KatuiLight(Light::new(1, 1, 1.0)),
         })
     }
 
@@ -622,61 +622,76 @@ impl GameBridge {
         let (Some(call), Ok(name)) = (call, CString::new(key.name())) else {
             return;
         };
+        // SAFETY: `CGame::new` requires `call` to take `user`, which outlives us.
         unsafe { call(self.game.user, name.as_ptr()) };
     }
 
     /// Lend `light` to `call` through our own `KatuiLight`, then take it back.
-    fn with_light(&self, light: &mut Light, call: impl FnOnce(*mut KatuiLight)) {
-        let mut ours = self.light.borrow_mut();
-        std::mem::swap(&mut ours.0, light);
-        call(&raw mut *ours);
-        std::mem::swap(&mut ours.0, light);
+    fn with_light(&mut self, light: &mut Light, call: impl FnOnce(*mut c_void, *mut KatuiLight)) {
+        std::mem::swap(&mut self.light.0, light);
+        call(self.game.user, &raw mut self.light);
+        std::mem::swap(&mut self.light.0, light);
     }
 }
 
-impl Game for GameBridge {
-    fn press(&mut self, key: Key) {
+impl GameHost for CGame {
+    type Error = Error;
+
+    fn refused(error: katui_bindings::Error) -> Error {
+        raise(error)
+    }
+
+    fn press(&mut self, key: Key) -> Result<(), Error> {
         self.key(self.game.press, key);
+        Ok(())
     }
 
-    fn repeat(&mut self, key: Key) {
+    fn repeat(&mut self, key: Key) -> Result<(), Error> {
         self.key(self.game.repeat, key);
+        Ok(())
     }
 
-    fn resize(&mut self, light: &Light) {
+    fn resize(&mut self, light: &mut Light) -> Result<(), Error> {
         if let Some(resize) = self.game.resize {
-            let mut copy = light.clone();
-            self.with_light(&mut copy, |light| unsafe { resize(self.game.user, light) });
+            // SAFETY: `CGame::new` requires `resize` to take `user`, which outlives us.
+            self.with_light(light, |user, light| unsafe { resize(user, light) });
         }
+        Ok(())
     }
 
-    fn step(&mut self, keys: &HeldKeys, dt: f32) {
+    fn step(&mut self, keys: &HeldKeys, dt: f32) -> Result<(), Error> {
         if let Some(step) = self.game.step {
             let keys = KatuiKeys(keys.clone());
+            // SAFETY: `CGame::new` requires `step` to take `user`, which outlives us.
             unsafe { step(self.game.user, &raw const keys, dt) };
         }
+        Ok(())
     }
 
-    fn render(&mut self, light: &mut Light) {
+    fn render(&mut self, light: &mut Light) -> Result<(), Error> {
         if let Some(render) = self.game.render {
-            self.with_light(light, |light| unsafe { render(self.game.user, light) });
+            // SAFETY: `CGame::new` requires `render` to take `user`, which outlives us.
+            self.with_light(light, |user, light| unsafe { render(user, light) });
         }
+        Ok(())
     }
 
-    fn finished(&self) -> bool {
-        self.game
-            .finished
-            .is_some_and(|finished| unsafe { finished(self.game.user) })
+    fn finished(&self) -> Result<bool, Error> {
+        let user = self.game.user;
+        // SAFETY: `CGame::new` requires `finished` to take `user`, which outlives us.
+        let over = |finished: unsafe extern "C" fn(*mut c_void) -> bool| unsafe { finished(user) };
+        Ok(self.game.finished.is_some_and(over))
     }
 }
 
 /// Run `game` on the terminal until the player quits or it finishes.
 /// `game` is copied; `user` has to live until this returns.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_play(game: *const KatuiGame) -> KatuiStatus {
+pub unsafe extern "C" fn katui_play(game: Option<&KatuiGame>) -> KatuiStatus {
     let played = guard(|| {
-        let game = unsafe { borrow(game) }.ok_or(Error::Null("game"))?;
-        katui_game::play(GameBridge::new(game)?).map_err(|error| Error::Io(error.to_string()))
+        let game = game.ok_or(Error::Null("game"))?;
+        // SAFETY: the header requires `user` to live until `katui_play` returns.
+        katui_bindings::game::play(unsafe { CGame::new(game) }?)
     });
     status(played)
 }
@@ -686,7 +701,7 @@ pub unsafe extern "C" fn katui_play(game: *const KatuiGame) -> KatuiStatus {
 /// tests and screenshots. The caller owns the image; NULL on failure.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_frame(
-    game: *const KatuiGame,
+    game: Option<&KatuiGame>,
     width: u32,
     height: u32,
     steps: u32,
@@ -694,22 +709,21 @@ pub unsafe extern "C" fn katui_frame(
     held_count: usize,
     dt: f32,
 ) -> *mut KatuiImage {
+    // SAFETY: the header requires `held` to hold `held_count` strings, each NULL or NUL-terminated.
     let held = unsafe { texts(held, held_count) };
     let drawn = guard(|| {
-        let game = unsafe { borrow(game) }.ok_or(Error::Null("game"))?;
-        let mut bridge = GameBridge::new(game)?;
-        let mut keys = HeldKeys::default();
-        let now = Instant::now();
-        for name in &held {
-            keys.press(key(name)?, now);
-        }
-        let mut light = Light::new(width, height, 1.0);
-        bridge.resize(&light);
-        for _ in 0..steps {
-            bridge.step(&keys, dt);
-        }
-        bridge.render(&mut light);
-        Ok(KatuiImage(std::sync::Arc::new(light.to_surface())))
+        let game = game.ok_or(Error::Null("game"))?;
+        // SAFETY: the header requires `user` to live until `katui_frame` returns.
+        let host = unsafe { CGame::new(game) }?;
+        let frame = Frame {
+            width,
+            height,
+            steps,
+            held: self::held(&held).map_err(raise)?,
+            dt,
+        };
+        let surface = katui_bindings::game::frame(host, &frame)?;
+        Ok(KatuiImage(Arc::new(surface)))
     });
     owned_or_null(drawn)
 }

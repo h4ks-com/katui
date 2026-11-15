@@ -1,147 +1,17 @@
 //! The state widgets keep between frames: fields, lists, scrolling, trees,
-//! focus and toasts, plus the input events that change them.
+//! focus and toasts.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use katui_proto::input::{Button, InputEvent, Key, Mods};
+use katui_bindings::state::{Focus, next_expiry, push_toast};
 use katui_ui::Scroll;
 use katui_widgets::{
-    Edit, Focus, ListState, ScrollState, TextArea, TextField, Toasts, TreeNode, TreeState,
+    Edit, ListState, ScrollState, TextArea, TextField, Toasts, TreeNode, TreeState,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-/// A key press, a release, a mouse event, a paste or a focus change.
-#[pyclass(name = "Event", module = "katui", frozen)]
-pub(crate) struct PyEvent {
-    pub(crate) inner: InputEvent,
-}
-
-/// The key named `name`: one character, `"enter"`, `"up"`, `"f1"` and so on.
-pub(crate) fn key(name: &str) -> PyResult<Key> {
-    Key::from_name(name).ok_or_else(|| PyValueError::new_err(format!("name a key, not {name:?}")))
-}
-
-const fn mods(ctrl: bool, alt: bool, shift: bool) -> Mods {
-    Mods { shift, alt, ctrl }
-}
-
-#[pymethods]
-impl PyEvent {
-    /// A press of the key `name`, for tests and for handing keys to widgets.
-    #[staticmethod]
-    #[pyo3(signature = (name, ctrl=false, alt=false, shift=false))]
-    #[allow(clippy::fn_params_excessive_bools)]
-    fn press(name: &str, ctrl: bool, alt: bool, shift: bool) -> PyResult<Self> {
-        Ok(Self {
-            inner: InputEvent::Key(key(name)?, mods(ctrl, alt, shift)),
-        })
-    }
-
-    #[staticmethod]
-    fn paste(text: String) -> Self {
-        Self {
-            inner: InputEvent::Paste(text),
-        }
-    }
-
-    /// `"key"`, `"key_up"`, `"mouse"`, `"paste"`, `"focus"` or `"other"`.
-    #[getter]
-    fn kind(&self) -> &'static str {
-        match self.inner {
-            InputEvent::Key(..) => "key",
-            InputEvent::KeyUp(..) => "key_up",
-            InputEvent::Mouse(_) => "mouse",
-            InputEvent::Paste(_) => "paste",
-            InputEvent::Focus(_) => "focus",
-            _ => "other",
-        }
-    }
-
-    /// The key's name: one character, `"enter"`, `"up"`, `"f1"` and so on.
-    #[getter(key)]
-    fn key_of(&self) -> Option<String> {
-        match self.inner {
-            InputEvent::Key(key, _) | InputEvent::KeyUp(key, _) => Some(key.name()),
-            _ => None,
-        }
-    }
-
-    #[getter]
-    fn ctrl(&self) -> bool {
-        self.mods().ctrl
-    }
-
-    #[getter]
-    fn alt(&self) -> bool {
-        self.mods().alt
-    }
-
-    #[getter]
-    fn shift(&self) -> bool {
-        self.mods().shift
-    }
-
-    /// The pasted text.
-    #[getter]
-    fn text(&self) -> Option<String> {
-        match &self.inner {
-            InputEvent::Paste(text) => Some(text.clone()),
-            _ => None,
-        }
-    }
-
-    /// Whether the window has the focus, for a focus event.
-    #[getter]
-    fn focused(&self) -> Option<bool> {
-        match self.inner {
-            InputEvent::Focus(focused) => Some(focused),
-            _ => None,
-        }
-    }
-
-    /// The cell under the pointer, `(column, row)`, for a mouse event.
-    #[getter]
-    fn position(&self) -> Option<(u32, u32)> {
-        match &self.inner {
-            InputEvent::Mouse(mouse) => Some((mouse.x, mouse.y)),
-            _ => None,
-        }
-    }
-
-    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"` or
-    /// `"wheel_down"`, for a mouse event.
-    #[getter]
-    fn action(&self) -> Option<&'static str> {
-        match &self.inner {
-            InputEvent::Mouse(mouse) => Some(mouse.action.name()),
-            _ => None,
-        }
-    }
-
-    /// `"left"`, `"middle"` or `"right"`, for a press, release or drag.
-    #[getter]
-    fn button(&self) -> Option<&'static str> {
-        match &self.inner {
-            InputEvent::Mouse(mouse) => mouse.action.button().map(Button::name),
-            _ => None,
-        }
-    }
-
-    fn __repr__(&self) -> String {
-        format!("Event({:?})", self.inner)
-    }
-}
-
-impl PyEvent {
-    fn mods(&self) -> Mods {
-        match &self.inner {
-            InputEvent::Key(_, mods) | InputEvent::KeyUp(_, mods) => *mods,
-            InputEvent::Mouse(mouse) => mouse.mods,
-            _ => Mods::NONE,
-        }
-    }
-}
+use crate::event::PyEvent;
 
 /// What an event did to a text field.
 #[pyclass(name = "Edit", module = "katui", eq, eq_int, frozen)]
@@ -440,19 +310,7 @@ impl PyTreeState {
 /// Which of several controls has the keyboard; Tab and Shift+Tab move it.
 #[pyclass(name = "Focus", module = "katui")]
 pub(crate) struct PyFocus {
-    controls: Vec<Py<PyAny>>,
-    inner: Focus<usize>,
-}
-
-impl PyFocus {
-    fn position(&self, control: &Bound<'_, PyAny>) -> PyResult<Option<usize>> {
-        for (index, known) in self.controls.iter().enumerate() {
-            if known.bind(control.py()).eq(control)? {
-                return Ok(Some(index));
-            }
-        }
-        Ok(None)
-    }
+    inner: Focus<Py<PyAny>>,
 }
 
 #[pymethods]
@@ -460,29 +318,22 @@ impl PyFocus {
     /// Focus over `controls`, the first one focused.
     #[new]
     fn new(controls: Vec<Py<PyAny>>) -> PyResult<Self> {
-        if controls.is_empty() {
-            return Err(PyValueError::new_err("give Focus at least one control"));
-        }
-        let inner = Focus::new(0, 1..controls.len());
-        Ok(Self { controls, inner })
+        let inner = Focus::new(controls)
+            .ok_or_else(|| PyValueError::new_err("give Focus at least one control"))?;
+        Ok(Self { inner })
     }
 
     fn current(&self, py: Python<'_>) -> Option<Py<PyAny>> {
-        self.controls
-            .get(self.inner.current())
-            .map(|control| control.clone_ref(py))
+        self.inner.current().map(|control| control.clone_ref(py))
     }
 
     #[pyo3(name = "is_")]
     fn is(&self, control: &Bound<'_, PyAny>) -> PyResult<bool> {
-        Ok(self.position(control)? == Some(self.inner.current()))
+        self.inner.is(|known| known.bind(control.py()).eq(control))
     }
 
     fn set(&mut self, control: &Bound<'_, PyAny>) -> PyResult<bool> {
-        Ok(match self.position(control)? {
-            Some(index) => self.inner.set(index),
-            None => false,
-        })
+        self.inner.set(|known| known.bind(control.py()).eq(control))
     }
 
     fn next(&mut self) {
@@ -515,16 +366,7 @@ impl PyToasts {
     /// Show `text`, for `seconds` or the default time.
     #[pyo3(signature = (text, seconds=None))]
     fn push(&mut self, text: String, seconds: Option<f64>) {
-        match seconds {
-            Some(seconds) => {
-                self.inner.push_for(
-                    text,
-                    Instant::now(),
-                    Duration::from_secs_f64(seconds.max(0.0)),
-                );
-            }
-            None => self.inner.push(text, Instant::now()),
-        }
+        push_toast(&mut self.inner, text, seconds);
     }
 
     /// Drop the toasts whose time is up. Returns whether any left.
@@ -534,9 +376,7 @@ impl PyToasts {
 
     /// Seconds until the next toast leaves.
     fn next_expiry(&self) -> Option<f64> {
-        self.inner
-            .next_expiry()
-            .map(|at| at.saturating_duration_since(Instant::now()).as_secs_f64())
+        next_expiry(&self.inner)
     }
 
     fn is_empty(&self) -> bool {

@@ -3,28 +3,24 @@
 //! parameter named like `choose` takes a function that makes the message
 //! from what was picked.
 
-use std::cell::RefCell;
-use std::sync::Arc;
-use std::time::Duration;
-
+use katui_bindings::message::{float, id, index, scroll};
+use katui_bindings::names;
+use katui_bindings::state::duration;
+use katui_bindings::widgets::{hints, list, strs};
 use katui_widgets as w;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
+use crate::convert::raise;
 use crate::element::{Node, PyElement, children, children_of, node};
-use crate::message::{Msg, obj};
+use crate::event::PyEvent;
+use crate::message::{obj, value};
 use crate::state::{
-    PyEvent, PyListState, PyScrollState, PyTextArea, PyTextField, PyToasts, PyTreeNode,
-    PyTreeState, roots,
+    PyListState, PyScrollState, PyTextArea, PyTextField, PyToasts, PyTreeNode, PyTreeState, roots,
 };
 
 fn element(inner: Node) -> PyElement {
     PyElement::new(inner)
-}
-
-fn value(message: &Bound<'_, PyAny>) -> Msg {
-    Msg::Value(obj(message))
 }
 
 #[pyfunction]
@@ -84,20 +80,10 @@ pub(crate) fn text_area(area: &PyTextArea, placeholder: &str, focused: bool) -> 
 /// The rows of `state` in view, each built by `row(index, selected)`.
 #[pyfunction]
 pub(crate) fn list_view(state: &PyListState, row: &Bound<'_, PyAny>) -> PyResult<PyElement> {
-    let failed = RefCell::new(None);
-    let built = w::list(&state.inner, |index, selected| {
-        match row.call1((index, selected)).and_then(|made| node(&made)) {
-            Ok(made) => made,
-            Err(error) => {
-                failed.borrow_mut().get_or_insert(error);
-                katui_ui::Element::spacer()
-            }
-        }
-    });
-    match failed.into_inner() {
-        Some(error) => Err(error),
-        None => Ok(element(built)),
-    }
+    list(&state.inner, |index, selected| {
+        node(&row.call1((index, selected))?)
+    })
+    .map(element)
 }
 
 #[pyfunction]
@@ -117,29 +103,18 @@ pub(crate) fn progress(fraction: f32) -> PyElement {
 
 #[pyfunction]
 pub(crate) fn tabs(titles: Vec<String>, selected: usize, choose: &Bound<'_, PyAny>) -> PyElement {
-    let titles: Vec<&str> = titles.iter().map(String::as_str).collect();
-    let make = obj(choose);
-    element(w::tabs(&titles, selected, |index| {
-        Msg::Index(Arc::clone(&make), index)
-    }))
+    element(w::tabs(&strs(&titles), selected, index(obj(choose))))
 }
 
 #[pyfunction]
 pub(crate) fn radio(options: Vec<String>, selected: usize, choose: &Bound<'_, PyAny>) -> PyElement {
-    let options: Vec<&str> = options.iter().map(String::as_str).collect();
-    let make = obj(choose);
-    element(w::radio(&options, selected, |index| {
-        Msg::Index(Arc::clone(&make), index)
-    }))
+    element(w::radio(&strs(&options), selected, index(obj(choose))))
 }
 
 /// A slider at `value`; `change(value)` makes the message for each new one.
 #[pyfunction]
 pub(crate) fn slider(value: f32, change: &Bound<'_, PyAny>) -> PyElement {
-    let make = obj(change);
-    element(w::slider(value, move |at| {
-        Msg::Float(Arc::clone(&make), at)
-    }))
+    element(w::slider(value, float(obj(change))))
 }
 
 #[pyfunction]
@@ -150,7 +125,7 @@ pub(crate) fn nudge(value: f32, event: &PyEvent, step: f32) -> Option<f32> {
 /// Three dots with one lit, moving every quarter second of `elapsed` seconds.
 #[pyfunction]
 pub(crate) fn spinner(elapsed: f64) -> PyElement {
-    element(w::spinner(Duration::from_secs_f64(elapsed.max(0.0))))
+    element(w::spinner(duration(elapsed)))
 }
 
 #[pyfunction]
@@ -160,11 +135,7 @@ pub(crate) fn toasts(toasts: &PyToasts) -> PyElement {
 
 #[pyfunction]
 pub(crate) fn key_hints(hints: Vec<(String, String)>) -> PyElement {
-    let hints: Vec<(&str, &str)> = hints
-        .iter()
-        .map(|(key, action)| (key.as_str(), action.as_str()))
-        .collect();
-    element(w::key_hints(&hints))
+    element(w::key_hints(&self::hints(&hints)))
 }
 
 #[pyfunction]
@@ -190,14 +161,12 @@ pub(crate) fn select(
     toggle: &Bound<'_, PyAny>,
     choose: &Bound<'_, PyAny>,
 ) -> PyElement {
-    let options: Vec<&str> = options.iter().map(String::as_str).collect();
-    let make = obj(choose);
     element(w::select(
-        &options,
+        &strs(&options),
         selected,
         open,
         value(toggle),
-        |index| Msg::Index(Arc::clone(&make), index),
+        index(obj(choose)),
     ))
 }
 
@@ -209,11 +178,13 @@ pub(crate) fn menu(
     toggle: &Bound<'_, PyAny>,
     choose: &Bound<'_, PyAny>,
 ) -> PyElement {
-    let items: Vec<&str> = items.iter().map(String::as_str).collect();
-    let make = obj(choose);
-    element(w::menu(title, &items, open, value(toggle), |index| {
-        Msg::Index(Arc::clone(&make), index)
-    }))
+    element(w::menu(
+        title,
+        &strs(&items),
+        open,
+        value(toggle),
+        index(obj(choose)),
+    ))
 }
 
 #[pyfunction]
@@ -241,22 +212,11 @@ pub(crate) fn scroll_view(
     content: &Bound<'_, PyAny>,
     moved: &Bound<'_, PyAny>,
 ) -> PyResult<PyElement> {
-    let make = obj(moved);
     Ok(element(w::scroll_view(
         &state.inner,
         children_of(content)?,
-        move |scroll| Msg::Scroll(Arc::clone(&make), scroll),
+        scroll(obj(moved)),
     )))
-}
-
-fn orientation(name: &str) -> PyResult<w::Orientation> {
-    match name {
-        "horizontal" => Ok(w::Orientation::Horizontal),
-        "vertical" => Ok(w::Orientation::Vertical),
-        other => Err(PyValueError::new_err(format!(
-            "split \"horizontal\" or \"vertical\", not {other:?}"
-        ))),
-    }
 }
 
 /// Two panes and a divider; `resize(fraction)` makes the message as it moves.
@@ -274,8 +234,8 @@ pub(crate) fn split(
         node(first)?,
         node(second)?,
         fraction,
-        self::orientation(orientation)?,
-        move |at| Msg::Float(Arc::clone(&make), at),
+        names::orientation(orientation).map_err(raise)?,
+        float(make),
     )))
 }
 
@@ -310,10 +270,7 @@ pub(crate) fn table(
             cells: column.cells,
         })
         .collect();
-    let make = obj(pick);
-    element(w::table(&columns, &rows, &state.inner, |index| {
-        Msg::Index(Arc::clone(&make), index)
-    }))
+    element(w::table(&columns, &rows, &state.inner, index(obj(pick))))
 }
 
 #[pyfunction]
@@ -323,11 +280,10 @@ pub(crate) fn tree(
     toggle: &Bound<'_, PyAny>,
     select: &Bound<'_, PyAny>,
 ) -> PyElement {
-    let (toggle, select) = (obj(toggle), obj(select));
     element(w::tree(
         &self::roots(&roots),
         &state.inner,
-        |id| Msg::Id(Arc::clone(&toggle), id),
-        |id| Msg::Id(Arc::clone(&select), id),
+        id(obj(toggle)),
+        id(obj(select)),
     ))
 }

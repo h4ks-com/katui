@@ -1,20 +1,19 @@
 //! Arcade games: a Python `Game` drawn into a `Light` buffer at a fixed step.
 
-use std::cell::RefCell;
-use std::sync::Arc;
-use std::time::Instant;
-
+use katui_bindings::failure::catching;
+use katui_bindings::game::{Frame, GameHost, held};
+use katui_bindings::names;
 use katui_game::{
-    BASE_IMAGE, Blend, Camera, Game, HeldKeys, Light, MULTIPLEXED_SHRINK, P2, Rgb, Rng, Spark,
-    Sparks, V3, v3,
+    BASE_IMAGE, Blend, Camera, HeldKeys, Light, MULTIPLEXED_SHRINK, P2, Rgb, Rng, Spark, Sparks,
+    V3, v3,
 };
 use katui_proto::input::Key;
-use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 
-use crate::app::{Failure, call_optional, keep, take};
+use crate::app::call_optional;
+use crate::convert::raise;
 use crate::element::PyImage;
-use crate::state::key;
+use crate::event::key;
 
 type Color = (f32, f32, f32);
 type Point = (f32, f32);
@@ -32,13 +31,7 @@ fn p2((x, y): Point) -> P2 {
 }
 
 fn blend(name: &str) -> PyResult<Blend> {
-    match name {
-        "over" => Ok(Blend::Over),
-        "add" => Ok(Blend::Add),
-        other => Err(PyValueError::new_err(format!(
-            "blend \"over\" or \"add\", not {other:?}"
-        ))),
-    }
+    names::blend(name).map_err(raise)
 }
 
 /// The light that shows as the sRGB color `red`, `green`, `blue`.
@@ -96,17 +89,12 @@ impl PyLight {
 
     /// Fill every pixel with `shade(x, y)`, for backdrops baked once.
     fn paint(&mut self, shade: &Bound<'_, PyAny>) -> PyResult<()> {
-        let failed = RefCell::new(None);
-        self.inner.paint(|x, y| {
-            match shade.call1((x, y)).and_then(|made| made.extract::<Color>()) {
-                Ok(color) => rgb(color),
-                Err(error) => {
-                    failed.borrow_mut().get_or_insert(error);
-                    [0.0; 3]
-                }
-            }
-        });
-        failed.into_inner().map_or(Ok(()), Err)
+        catching(|catch| {
+            self.inner.paint(|x, y| {
+                let shaded = shade.call1((x, y)).and_then(|made| made.extract::<Color>());
+                catch.or(shaded.map(rgb), || [0.0; 3])
+            });
+        })
     }
 
     fn dim(&mut self, factor: f32) {
@@ -430,20 +418,14 @@ impl PySparks {
     /// Draw every spark as a fading streak; `place(at)` gives its spot on
     /// screen, or `None` to skip it.
     fn draw(&self, light: &mut PyLight, place: &Bound<'_, PyAny>) -> PyResult<()> {
-        let failed = RefCell::new(None);
-        self.inner.draw(&mut light.inner, |at| {
-            let placed = place
-                .call1((PyV3::from(at),))
-                .and_then(|spot| spot.extract::<Option<Point>>());
-            match placed {
-                Ok(spot) => spot.map(p2),
-                Err(error) => {
-                    failed.borrow_mut().get_or_insert(error);
-                    None
-                }
-            }
-        });
-        failed.into_inner().map_or(Ok(()), Err)
+        catching(|catch| {
+            self.inner.draw(&mut light.inner, |at| {
+                let placed = place
+                    .call1((PyV3::from(at),))
+                    .and_then(|spot| spot.extract::<Option<Point>>());
+                catch.or(placed, || None).map(p2)
+            });
+        })
     }
 
     fn __len__(&self) -> usize {
@@ -455,92 +437,80 @@ impl PySparks {
     }
 }
 
-/// A Python game, as the arcade loop sees it.
-struct GameBridge {
+/// A Python game, as the shared bridge calls it.
+struct PyGame {
     game: Py<PyAny>,
     light: Py<PyLight>,
-    failure: Failure,
 }
 
-impl GameBridge {
-    fn new(py: Python<'_>, game: Py<PyAny>, failure: Failure) -> PyResult<Self> {
+impl PyGame {
+    fn new(py: Python<'_>, game: Py<PyAny>) -> PyResult<Self> {
         Ok(Self {
             game,
             light: Py::new(py, PyLight::new(1, 1, 1.0))?,
-            failure,
         })
     }
 
-    fn call<A: for<'py> pyo3::call::PyCallArgs<'py>>(&self, name: &str, args: A) {
-        Python::attach(|py| {
-            if let Err(error) = call_optional(self.game.bind(py), name, args) {
-                keep(&self.failure, error);
-            }
-        });
+    fn call<A: for<'py> pyo3::call::PyCallArgs<'py>>(&self, name: &str, args: A) -> PyResult<()> {
+        Python::attach(|py| call_optional(self.game.bind(py), name, args).map(drop))
     }
 
-    fn call_with_light(&self, name: &str, light: &mut Light) {
+    /// Lend `light` to the game's `name` through our own `Light`.
+    fn call_with_light(&self, name: &str, light: &mut Light) -> PyResult<()> {
         Python::attach(|py| {
             std::mem::swap(&mut self.light.borrow_mut(py).inner, light);
             let called = call_optional(self.game.bind(py), name, (self.light.clone_ref(py),));
             std::mem::swap(&mut self.light.borrow_mut(py).inner, light);
-            if let Err(error) = called {
-                keep(&self.failure, error);
-            }
-        });
+            called.map(drop)
+        })
     }
 }
 
-impl Game for GameBridge {
-    fn press(&mut self, key: Key) {
-        self.call("press", (key.name(),));
+impl GameHost for PyGame {
+    type Error = PyErr;
+
+    fn refused(error: katui_bindings::Error) -> PyErr {
+        raise(error)
     }
 
-    fn repeat(&mut self, key: Key) {
-        self.call("repeat", (key.name(),));
+    fn press(&mut self, key: Key) -> PyResult<()> {
+        self.call("press", (key.name(),))
     }
 
-    fn resize(&mut self, light: &Light) {
-        let mut copy = light.clone();
-        self.call_with_light("resize", &mut copy);
+    fn repeat(&mut self, key: Key) -> PyResult<()> {
+        self.call("repeat", (key.name(),))
     }
 
-    fn step(&mut self, keys: &HeldKeys, dt: f32) {
+    fn resize(&mut self, light: &mut Light) -> PyResult<()> {
+        self.call_with_light("resize", light)
+    }
+
+    fn step(&mut self, keys: &HeldKeys, dt: f32) -> PyResult<()> {
         let keys = PyKeys {
             inner: keys.clone(),
         };
-        self.call("step", (keys, dt));
+        self.call("step", (keys, dt))
     }
 
-    fn render(&mut self, light: &mut Light) {
-        self.call_with_light("render", light);
+    fn render(&mut self, light: &mut Light) -> PyResult<()> {
+        self.call_with_light("render", light)
     }
 
-    fn finished(&self) -> bool {
-        let failed = self
-            .failure
-            .lock()
-            .map_or(true, |failure| failure.is_some());
-        failed
-            || Python::attach(|py| {
-                call_optional(self.game.bind(py), "finished", ())
-                    .ok()
-                    .flatten()
-                    .is_some_and(|over| over.is_truthy().unwrap_or(false))
-            })
+    fn finished(&self) -> PyResult<bool> {
+        Python::attach(
+            |py| match call_optional(self.game.bind(py), "finished", ())? {
+                Some(over) => over.is_truthy(),
+                None => Ok(false),
+            },
+        )
     }
 }
 
 /// Run `game` on the terminal until the player quits or it finishes.
 #[pyfunction]
 pub(crate) fn play(py: Python<'_>, game: Py<PyAny>) -> PyResult<()> {
-    let failure = Failure::default();
-    let bridge = GameBridge::new(py, game, Arc::clone(&failure))?;
-    let finished = py.detach(|| katui_game::play(bridge));
-    if let Some(error) = take(&failure) {
-        return Err(error);
-    }
-    finished.map_err(|error| PyOSError::new_err(error.to_string()))
+    let host = PyGame::new(py, game)?;
+    py.detach(|| katui_bindings::game::play(host))
 }
 
 /// `game` drawn off-terminal at `width` by `height` after `steps` steps of
@@ -556,23 +526,14 @@ pub(crate) fn frame(
     held: Vec<String>,
     dt: f32,
 ) -> PyResult<PyImage> {
-    let failure = Failure::default();
-    let mut bridge = GameBridge::new(py, game, Arc::clone(&failure))?;
-    let mut light = Light::new(width, height, 1.0);
-    let mut keys = HeldKeys::default();
-    let now = Instant::now();
-    for name in &held {
-        keys.press(key(name)?, now);
-    }
-    bridge.resize(&light);
-    for _ in 0..steps {
-        bridge.step(&keys, dt);
-    }
-    bridge.render(&mut light);
-    if let Some(error) = take(&failure) {
-        return Err(error);
-    }
-    Ok(PyImage::new(light.to_surface()))
+    let frame = Frame {
+        width,
+        height,
+        steps,
+        held: self::held(&held).map_err(raise)?,
+        dt,
+    };
+    katui_bindings::game::frame(PyGame::new(py, game)?, &frame).map(PyImage::new)
 }
 
 /// The first kitty image id games use, and how much smaller they draw

@@ -17,8 +17,8 @@ doctest = false
 doc = false
 
 [dependencies]
-image.workspace = true
 katui-app.workspace = true
+katui-bindings.workspace = true
 katui-content = { workspace = true, features = ["html"] }
 katui-draw.workspace = true
 katui-game.workspace = true

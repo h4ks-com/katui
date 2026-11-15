@@ -1,168 +1,20 @@
 //! The state widgets keep between frames: fields, lists, scrolling, trees,
-//! focus and toasts, plus the input events that change them.
+//! focus and toasts.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use katui_proto::input::{Button, InputEvent, Key, Mods};
+use katui_bindings::state::{Focus as UiFocus, next_expiry, push_toast};
 use katui_ui::Scroll;
 use katui_widgets::{
-    Edit as UiEdit, Focus as UiFocus, ListState as UiListState, ScrollState as UiScrollState,
-    TextArea as UiTextArea, TextField as UiTextField, Toasts as UiToasts, TreeNode as UiTreeNode,
-    TreeState as UiTreeState,
+    Edit as UiEdit, ListState as UiListState, ScrollState as UiScrollState, TextArea as UiTextArea,
+    TextField as UiTextField, Toasts as UiToasts, TreeNode as UiTreeNode, TreeState as UiTreeState,
 };
 use napi::bindgen_prelude::Unknown;
 use napi::{Env, Result};
 
 use crate::convert::invalid;
+use crate::event::Event;
 use crate::message::{Obj, hold, unknown};
-
-/// The key named `name`: one character, `"enter"`, `"up"`, `"f1"` and so on.
-pub(crate) fn key(name: &str) -> Result<Key> {
-    Key::from_name(name).ok_or_else(|| invalid(format!("name a key, not {name:?}")))
-}
-
-/// The modifiers held with a key press.
-#[napi(object)]
-#[derive(Default)]
-pub struct Modifiers {
-    pub ctrl: Option<bool>,
-    pub alt: Option<bool>,
-    pub shift: Option<bool>,
-}
-
-/// A key press, a release, a mouse event, a paste or a focus change.
-#[napi]
-pub struct Event {
-    pub(crate) inner: InputEvent,
-}
-
-impl Event {
-    pub(crate) fn new(inner: InputEvent) -> Self {
-        Self { inner }
-    }
-
-    fn mods(&self) -> Mods {
-        match &self.inner {
-            InputEvent::Key(_, mods) | InputEvent::KeyUp(_, mods) => *mods,
-            InputEvent::Mouse(mouse) => mouse.mods,
-            _ => Mods::NONE,
-        }
-    }
-}
-
-#[napi]
-impl Event {
-    /// A press of the key `name`, for tests and for handing keys to widgets.
-    #[napi(factory)]
-    pub fn press(name: String, modifiers: Option<Modifiers>) -> Result<Self> {
-        let modifiers = modifiers.unwrap_or_default();
-        let mods = Mods {
-            shift: modifiers.shift.unwrap_or(false),
-            alt: modifiers.alt.unwrap_or(false),
-            ctrl: modifiers.ctrl.unwrap_or(false),
-        };
-        Ok(Self::new(InputEvent::Key(key(&name)?, mods)))
-    }
-
-    #[napi(factory)]
-    pub fn paste(text: String) -> Self {
-        Self::new(InputEvent::Paste(text))
-    }
-
-    /// `"key"`, `"key_up"`, `"mouse"`, `"paste"`, `"focus"` or `"other"`.
-    #[napi(
-        getter,
-        ts_return_type = "'key' | 'key_up' | 'mouse' | 'paste' | 'focus' | 'other'"
-    )]
-    pub fn kind(&self) -> &'static str {
-        match self.inner {
-            InputEvent::Key(..) => "key",
-            InputEvent::KeyUp(..) => "key_up",
-            InputEvent::Mouse(_) => "mouse",
-            InputEvent::Paste(_) => "paste",
-            InputEvent::Focus(_) => "focus",
-            _ => "other",
-        }
-    }
-
-    /// The key's name: one character, `"enter"`, `"up"`, `"f1"` and so on.
-    #[napi(getter)]
-    pub fn key(&self) -> Option<String> {
-        match self.inner {
-            InputEvent::Key(key, _) | InputEvent::KeyUp(key, _) => Some(key.name()),
-            _ => None,
-        }
-    }
-
-    #[napi(getter)]
-    pub fn ctrl(&self) -> bool {
-        self.mods().ctrl
-    }
-
-    #[napi(getter)]
-    pub fn alt(&self) -> bool {
-        self.mods().alt
-    }
-
-    #[napi(getter)]
-    pub fn shift(&self) -> bool {
-        self.mods().shift
-    }
-
-    /// The pasted text.
-    #[napi(getter)]
-    pub fn text(&self) -> Option<String> {
-        match &self.inner {
-            InputEvent::Paste(text) => Some(text.clone()),
-            _ => None,
-        }
-    }
-
-    /// Whether the window has the focus, for a focus event.
-    #[napi(getter)]
-    pub fn focused(&self) -> Option<bool> {
-        match self.inner {
-            InputEvent::Focus(focused) => Some(focused),
-            _ => None,
-        }
-    }
-
-    /// The cell under the pointer, `[column, row]`, for a mouse event.
-    #[napi(getter)]
-    pub fn position(&self) -> Option<(u32, u32)> {
-        match &self.inner {
-            InputEvent::Mouse(mouse) => Some((mouse.x, mouse.y)),
-            _ => None,
-        }
-    }
-
-    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"` or
-    /// `"wheel_down"`, for a mouse event.
-    #[napi(
-        getter,
-        ts_return_type = "'press' | 'release' | 'drag' | 'move' | 'wheel_up' | 'wheel_down' | null"
-    )]
-    pub fn action(&self) -> Option<&'static str> {
-        match &self.inner {
-            InputEvent::Mouse(mouse) => Some(mouse.action.name()),
-            _ => None,
-        }
-    }
-
-    /// `"left"`, `"middle"` or `"right"`, for a press, release or drag.
-    #[napi(getter, ts_return_type = "'left' | 'middle' | 'right' | null")]
-    pub fn button(&self) -> Option<&'static str> {
-        match &self.inner {
-            InputEvent::Mouse(mouse) => mouse.action.button().map(Button::name),
-            _ => None,
-        }
-    }
-
-    #[napi(js_name = "toString")]
-    pub fn describe(&self) -> String {
-        format!("Event({:?})", self.inner)
-    }
-}
 
 /// What an event did to a text field.
 #[napi]
@@ -463,56 +315,42 @@ impl TreeState {
 /// Which of several controls has the keyboard; Tab and Shift+Tab move it.
 #[napi]
 pub struct Focus {
-    controls: Vec<Obj>,
-    inner: UiFocus<usize>,
+    inner: UiFocus<Obj>,
 }
 
-impl Focus {
-    fn position(&self, env: &Env, control: Unknown<'_>) -> Result<Option<usize>> {
-        for (index, known) in self.controls.iter().enumerate() {
-            if env.strict_equals(unknown(env, known)?, control)? {
-                return Ok(Some(index));
-            }
-        }
-        Ok(None)
-    }
-}
+const NO_CONTROLS: &str = "give Focus at least one control";
 
 #[napi]
 impl Focus {
     /// Focus over `controls`, the first one focused.
     #[napi(constructor)]
     pub fn new(env: Env, controls: Vec<Unknown<'_>>) -> Result<Self> {
-        if controls.is_empty() {
-            return Err(invalid("give Focus at least one control"));
-        }
-        let inner = UiFocus::new(0, 1..controls.len());
         let controls = controls
             .into_iter()
             .map(|control| hold(&env, control))
             .collect::<Result<Vec<Obj>>>()?;
-        Ok(Self { controls, inner })
+        let inner = UiFocus::new(controls).ok_or_else(|| invalid(NO_CONTROLS))?;
+        Ok(Self { inner })
     }
 
     #[napi]
     pub fn current<'env>(&self, env: &'env Env) -> Result<Unknown<'env>> {
-        match self.controls.get(self.inner.current()) {
+        match self.inner.current() {
             Some(control) => unknown(env, control),
-            None => Err(invalid("give Focus at least one control")),
+            None => Err(invalid(NO_CONTROLS)),
         }
     }
 
     #[napi]
     pub fn is(&self, env: Env, control: Unknown<'_>) -> Result<bool> {
-        Ok(self.position(&env, control)? == Some(self.inner.current()))
+        self.inner
+            .is(|known| env.strict_equals(unknown(&env, known)?, control))
     }
 
     #[napi]
     pub fn set(&mut self, env: Env, control: Unknown<'_>) -> Result<bool> {
-        Ok(match self.position(&env, control)? {
-            Some(index) => self.inner.set(index),
-            None => false,
-        })
+        self.inner
+            .set(|known| env.strict_equals(unknown(&env, known)?, control))
     }
 
     #[napi]
@@ -548,16 +386,7 @@ impl Toasts {
     /// Show `text`, for `seconds` or the default time.
     #[napi]
     pub fn push(&mut self, text: String, seconds: Option<f64>) {
-        match seconds {
-            Some(seconds) => {
-                self.inner.push_for(
-                    text,
-                    Instant::now(),
-                    Duration::from_secs_f64(seconds.max(0.0)),
-                );
-            }
-            None => self.inner.push(text, Instant::now()),
-        }
+        push_toast(&mut self.inner, text, seconds);
     }
 
     /// Drop the toasts whose time is up. Returns whether any left.
@@ -569,9 +398,7 @@ impl Toasts {
     /// Seconds until the next toast leaves.
     #[napi]
     pub fn next_expiry(&self) -> Option<f64> {
-        self.inner
-            .next_expiry()
-            .map(|at| at.saturating_duration_since(Instant::now()).as_secs_f64())
+        next_expiry(&self.inner)
     }
 
     #[napi]

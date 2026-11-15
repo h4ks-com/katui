@@ -15,6 +15,7 @@ extern crate napi_derive;
 pub mod app;
 mod convert;
 pub mod element;
+pub mod event;
 pub mod game;
 pub mod html;
 mod message;

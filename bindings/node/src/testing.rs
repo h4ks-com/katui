@@ -1,64 +1,18 @@
 //! `Screen`: an app drawn off-terminal, for tests and screenshots.
 
-use std::rc::Rc;
-
-use katui_app::Control as UiControl;
-use katui_draw::{TextEngine, bundled_fonts};
-use katui_proto::input::{InputEvent, Key, Mods};
-use katui_ui::{CellPixels, Hover, Ui, UiOptions};
+use katui_bindings::screen::Screen as UiScreen;
 use napi::bindgen_prelude::Object;
 use napi::{Env, Result};
 
-use crate::app::{Bridge, Failure, take};
+use crate::app::NodeApp;
 use crate::element::Image;
-use crate::message::Msg;
-use crate::state::Event;
+use crate::event::Event;
 use crate::theme::cell;
 
 /// An app drawn into pixels, with clicks and keys sent by hand.
 #[napi]
 pub struct Screen {
-    bridge: Bridge,
-    failure: Failure,
-    ui: Ui<Msg>,
-    size: (u32, u32),
-    cell: CellPixels,
-    rendered: bool,
-    quit: bool,
-    hover: Hover<Msg>,
-}
-
-impl Screen {
-    fn checked(&mut self, control: UiControl) -> Result<()> {
-        if let Some(error) = take(&self.failure) {
-            return Err(error);
-        }
-        if control == UiControl::Quit {
-            self.quit = true;
-        }
-        Ok(())
-    }
-
-    fn deliver(&mut self, message: Option<Msg>) -> Result<()> {
-        let Some(message) = message else {
-            return Ok(());
-        };
-        let control = self.bridge.deliver(&message);
-        self.checked(control)
-    }
-
-    fn ensure_rendered(&mut self) -> Result<()> {
-        if self.rendered {
-            Ok(())
-        } else {
-            self.render().map(drop)
-        }
-    }
-
-    fn send_event(&mut self, event: &InputEvent) -> Result<()> {
-        let control = self.bridge.react(event);
-        self.checked(control)
-    }
+    inner: UiScreen<NodeApp>,
 }
 
 #[napi]
@@ -75,107 +29,68 @@ impl Screen {
         height: Option<u32>,
         cell: Option<(u16, u16)>,
     ) -> Result<Self> {
-        let engine = TextEngine::new(bundled_fonts())
-            .map_err(|error| napi::Error::from_reason(format!("load the fonts: {error}")))?;
-        let failure = Failure::default();
-        Ok(Self {
-            bridge: Bridge::new(env, app, Rc::clone(&failure))?,
-            failure,
-            ui: Ui::new(engine, UiOptions::default()),
-            size: (width.unwrap_or(960), height.unwrap_or(540)),
-            cell: self::cell(cell),
-            rendered: false,
-            quit: false,
-            hover: Hover::default(),
-        })
+        let size = (width.unwrap_or(960), height.unwrap_or(540));
+        let inner = UiScreen::new(NodeApp::new(env, app)?, size, self::cell(cell))?;
+        Ok(Self { inner })
     }
 
     /// Draw the app's view and return the picture.
     #[napi]
     pub fn render(&mut self) -> Result<Image> {
-        let root = self
-            .bridge
-            .theme_for(self.cell)
-            .scope(|_| self.bridge.render());
-        self.checked(UiControl::Wait)?;
-        let output = self.ui.render(&root, self.size, self.cell);
-        self.rendered = true;
-        for message in self.ui.take_clamped_scrolls() {
-            self.deliver(Some(message))?;
-        }
-        let picture = output
-            .flatten(self.cell, self.size)
-            .ok_or_else(|| napi::Error::from_reason("draw a screen of at least one pixel"))?;
-        Ok(Image::new(picture))
+        self.inner.render().map(Image::new)
     }
 
     /// Click at `x`, `y` pixels and deliver what the click sends.
     #[napi]
     pub fn click(&mut self, x: f64, y: f64) -> Result<()> {
-        self.press(x, y)?;
-        self.ui.release();
-        Ok(())
+        self.inner.click(x as f32, y as f32)
     }
 
     /// Press at `x`, `y` and keep holding, for a drag.
     #[napi]
     pub fn press(&mut self, x: f64, y: f64) -> Result<()> {
-        self.ensure_rendered()?;
-        let (x, y) = (x as f32, y as f32);
-        let message = self.ui.click(x, y);
-        self.deliver(message)
+        self.inner.press(x as f32, y as f32)
     }
 
     /// Turn the wheel once at `x`, `y`, down or up.
     #[napi]
     pub fn wheel(&mut self, x: f64, y: f64, down: Option<bool>) -> Result<()> {
-        self.ensure_rendered()?;
-        let down = down.unwrap_or(true);
-        let message = self.ui.wheel(x as f32, y as f32, down);
-        self.deliver(message)
+        self.inner.wheel(x as f32, y as f32, down.unwrap_or(true))
     }
 
     /// Move the pointer to `x`, `y`: the element it left gets its leave
     /// message, the one it entered its hover message.
     #[napi]
     pub fn hover(&mut self, x: f64, y: f64) -> Result<()> {
-        self.ensure_rendered()?;
-        for message in self.hover.moved(&self.ui, x as f32, y as f32) {
-            self.deliver(Some(message))?;
-        }
-        Ok(())
+        self.inner.hover(x as f32, y as f32)
     }
 
     /// Move a held press to `x`, `y`.
     #[napi]
     pub fn drag(&mut self, x: f64, y: f64) -> Result<()> {
-        let message = self.ui.drag(x as f32, y as f32);
-        self.deliver(message)
+        self.inner.drag(x as f32, y as f32)
     }
 
     #[napi]
     pub fn release(&mut self) {
-        self.ui.release();
+        self.inner.release();
     }
 
     /// Hand `event` to the app's `input`.
     #[napi]
     pub fn send(&mut self, event: &Event) -> Result<()> {
-        self.send_event(&event.inner)
+        self.inner.send(&event.inner)
     }
 
     /// Type `text`, one key press per character.
     #[napi]
     pub fn type_text(&mut self, text: String) -> Result<()> {
-        for character in text.chars() {
-            self.send_event(&InputEvent::Key(Key::Char(character), Mods::NONE))?;
-        }
-        Ok(())
+        self.inner.type_text(&text)
     }
 
     /// Whether the app asked to quit.
     #[napi(getter)]
     pub fn quit(&self) -> bool {
-        self.quit
+        self.inner.quit()
     }
 }

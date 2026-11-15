@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "bindings/c",
+    "bindings/core",
     "bindings/node",
     "bindings/python",
     "crates/katui",
@@ -36,6 +37,7 @@ cosmic-text = "0.19"
 flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 katui-app = { path = "crates/katui-app", version = "0.1.0" }
+katui-bindings = { path = "bindings/core" }
 katui-content = { path = "crates/katui-content", version = "0.1.0" }
 katui-draw = { path = "crates/katui-draw", version = "0.1.0" }
 katui-game = { path = "crates/katui-game", version = "0.1.0" }

@@ -614,11 +614,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "katui-c"
+name = "katui-bindings"
 version = "0.1.0"
 dependencies = [
  "image",
  "katui-app",
+ "katui-content",
+ "katui-draw",
+ "katui-game",
+ "katui-proto",
+ "katui-scene",
+ "katui-ui",
+ "katui-widgets",
+ "thiserror",
+]
+
+[[package]]
+name = "katui-c"
+version = "0.1.0"
+dependencies = [
+ "katui-app",
+ "katui-bindings",
  "katui-content",
  "katui-draw",
  "katui-game",
@@ -675,13 +691,12 @@ dependencies = [
 name = "katui-node"
 version = "0.1.0"
 dependencies = [
- "image",
  "katui-app",
+ "katui-bindings",
  "katui-content",
  "katui-draw",
  "katui-game",
  "katui-proto",
- "katui-rt",
  "katui-scene",
  "katui-ui",
  "katui-widgets",
@@ -710,8 +725,8 @@ dependencies = [
 name = "katui-python"
 version = "0.1.0"
 dependencies = [
- "image",
  "katui-app",
+ "katui-bindings",
  "katui-content",
  "katui-draw",
  "katui-game",

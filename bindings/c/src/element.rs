@@ -2,16 +2,17 @@
 //! text spans it uses.
 
 use std::ffi::c_char;
+use std::path::Path;
 use std::sync::Arc;
 
+use katui_bindings::message::{point, scroll};
+use katui_bindings::picture;
 use katui_draw::{Paint, Rgba, TextSpan};
 use katui_scene::surface::Surface;
-use katui_ui::{Align, Element, Length, Scroll};
+use katui_ui::{Align, Element, Length};
 
-use crate::ffi::{
-    Error, KatuiStatus, borrow, borrow_mut, free, owned, owned_or_null, slice, status, take, text,
-};
-use crate::message::{Msg, Payload, plain};
+use crate::ffi::{Error, KatuiStatus, owned, owned_or_null, raise, slice, status, take, text};
+use crate::message::Msg;
 
 pub(crate) type Node = Element<Msg>;
 
@@ -149,28 +150,24 @@ pub(crate) fn element(node: Node) -> *mut KatuiElement {
     owned(KatuiElement(node))
 }
 
-/// # Safety
-/// `element` is NULL or an element from katui that is not used again.
-pub(crate) unsafe fn node(element: *mut KatuiElement) -> Option<Node> {
-    unsafe { take(element) }.map(|element| element.0)
-}
-
 /// The elements of `children`, each one taken over, NULL ones left out.
 ///
 /// # Safety
 /// `children` is NULL or points at `count` elements, each NULL or from
 /// katui and not used again.
 pub(crate) unsafe fn children(children: *const *mut KatuiElement, count: usize) -> Vec<Node> {
-    unsafe { slice(children, count) }
+    // SAFETY: our caller hands us the `count` elements at `children` to own.
+    let taken = unsafe { slice(children, count) }
         .iter()
-        .filter_map(|&child| unsafe { node(child) })
-        .collect()
+        .filter_map(|&child| unsafe { take(child) });
+    taken.map(|child| child.0).collect()
 }
 
-/// # Safety
-/// `element` is NULL or a live element.
-unsafe fn change(element: *mut KatuiElement, edit: impl FnOnce(Node) -> Node) -> *mut KatuiElement {
-    if let Some(element) = unsafe { borrow_mut(element) } {
+fn change(
+    mut element: Option<&mut KatuiElement>,
+    edit: impl FnOnce(Node) -> Node,
+) -> Option<&mut KatuiElement> {
+    if let Some(element) = element.as_deref_mut() {
         let node = std::mem::replace(&mut element.0, Element::spacer());
         element.0 = edit(node);
     }
@@ -179,8 +176,8 @@ unsafe fn change(element: *mut KatuiElement, edit: impl FnOnce(Node) -> Node) ->
 
 /// Free an element katui did not take over. NULL does nothing.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_free(element: *mut KatuiElement) {
-    unsafe { free(element) };
+pub extern "C" fn katui_element_free(element: Option<Box<KatuiElement>>) {
+    drop(element);
 }
 
 /// Children side by side. Takes over every child; NULL ones are left out.
@@ -189,6 +186,7 @@ pub unsafe extern "C" fn katui_row(
     children: *const *mut KatuiElement,
     count: usize,
 ) -> *mut KatuiElement {
+    // SAFETY: the header hands us the `count` elements at `children` to own.
     element(Element::row(unsafe { self::children(children, count) }))
 }
 
@@ -198,6 +196,7 @@ pub unsafe extern "C" fn katui_column(
     children: *const *mut KatuiElement,
     count: usize,
 ) -> *mut KatuiElement {
+    // SAFETY: the header hands us the `count` elements at `children` to own.
     element(Element::column(unsafe { self::children(children, count) }))
 }
 
@@ -208,21 +207,25 @@ pub unsafe extern "C" fn katui_stack(
     children: *const *mut KatuiElement,
     count: usize,
 ) -> *mut KatuiElement {
+    // SAFETY: the header hands us the `count` elements at `children` to own.
     element(Element::stack(unsafe { self::children(children, count) }))
 }
 
 /// A line of text in the current theme's look.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_text(text: *const c_char) -> *mut KatuiElement {
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
     element(Element::text(unsafe { self::text(text) }.as_ref()))
 }
 
 /// Text made of `count` spans, each with its own look.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_rich(spans: *const KatuiSpan, count: usize) -> *mut KatuiElement {
+    // SAFETY: the header requires `spans` to hold `count` values.
     let spans = unsafe { slice(spans, count) }
         .iter()
         .map(|span| TextSpan {
+            // SAFETY: the header requires `span.text` to be NULL or NUL-terminated.
             text: unsafe { text(span.text) }.into_owned(),
             color: visible(span.color),
             background: visible(span.background),
@@ -238,8 +241,8 @@ pub unsafe extern "C" fn katui_rich(spans: *const KatuiSpan, count: usize) -> *m
 /// An element that shows `image`. The image stays the caller's; the
 /// element keeps its own reference to the pixels.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_image(image: *const KatuiImage) -> *mut KatuiElement {
-    match unsafe { borrow(image) } {
+pub extern "C" fn katui_image(image: Option<&KatuiImage>) -> *mut KatuiElement {
+    match image {
         Some(image) => element(Element::image(Arc::clone(&image.0))),
         None => element(Element::spacer()),
     }
@@ -253,267 +256,259 @@ pub extern "C" fn katui_spacer() -> *mut KatuiElement {
 
 /// Draw this subtree into its own layer, kept under `key` between frames.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_layer(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_layer(
+    element: Option<&mut KatuiElement>,
     key: u64,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.layer(key)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.layer(key))
 }
 
 /// Scroll the children by `offset` pixels.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_scroll(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_scroll(
+    element: Option<&mut KatuiElement>,
     offset: f32,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.scroll(offset)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.scroll(offset))
 }
 
 /// A click sends `key`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_on_click(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_on_click(
+    element: Option<&mut KatuiElement>,
     key: u64,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.on_click(plain(key))) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.on_click(Msg::Value(key)))
 }
 
 /// A click on the span at `span` of a rich text sends `key`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_on_span_click(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_on_span_click(
+    element: Option<&mut KatuiElement>,
     span: usize,
     key: u64,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.on_span_click(span, plain(key))) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.on_span_click(span, Msg::Value(key)))
 }
 
 /// The pointer entering sends `key`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_on_hover(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_on_hover(
+    element: Option<&mut KatuiElement>,
     key: u64,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.on_hover(plain(key))) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.on_hover(Msg::Value(key)))
 }
 
 /// The pointer leaving sends `key`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_on_leave(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_on_leave(
+    element: Option<&mut KatuiElement>,
     key: u64,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.on_leave(plain(key))) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.on_leave(Msg::Value(key)))
 }
 
 /// Each new scroll position sends `key` with a scroll payload.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_on_scroll(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_on_scroll(
+    element: Option<&mut KatuiElement>,
     key: u64,
-) -> *mut KatuiElement {
-    unsafe {
-        change(element, |e| {
-            e.on_scroll(move |scroll: Scroll| Msg::User(key, Payload::Scroll(scroll)))
-        })
-    }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.on_scroll(scroll(key)))
 }
 
 /// The press and each move until the release send `key` with a point
 /// payload, as fractions of the element's box.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_on_press(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_on_press(
+    element: Option<&mut KatuiElement>,
     key: u64,
-) -> *mut KatuiElement {
-    unsafe {
-        change(element, |e| {
-            e.on_press(move |x, y| Msg::User(key, Payload::Point(x, y)))
-        })
-    }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.on_press(point(key)))
 }
 
 /// Like `on_press`, for presses on a child marked with `grip`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_on_grip_press(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_on_grip_press(
+    element: Option<&mut KatuiElement>,
     key: u64,
-) -> *mut KatuiElement {
-    unsafe {
-        change(element, |e| {
-            e.on_grip_press(move |x, y| Msg::User(key, Payload::Point(x, y)))
-        })
-    }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.on_grip_press(point(key)))
 }
 
 /// Mark this element as the handle of its parent's `on_grip_press`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_grip(element: *mut KatuiElement) -> *mut KatuiElement {
-    unsafe { change(element, Element::grip) }
+pub extern "C" fn katui_element_grip(
+    element: Option<&mut KatuiElement>,
+) -> Option<&mut KatuiElement> {
+    change(element, Element::grip)
 }
 
 /// Draw above everything, at `x`, `y` pixels from its parent's corner.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_popup(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_popup(
+    element: Option<&mut KatuiElement>,
     x: f32,
     y: f32,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.popup(x, y)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.popup(x, y))
 }
 
 /// Catch clicks over its whole box.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_opaque(element: *mut KatuiElement) -> *mut KatuiElement {
-    unsafe { change(element, Element::opaque) }
+pub extern "C" fn katui_element_opaque(
+    element: Option<&mut KatuiElement>,
+) -> Option<&mut KatuiElement> {
+    change(element, Element::opaque)
 }
 
 /// Show a scrollbar in `color`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_scrollbar(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_scrollbar(
+    element: Option<&mut KatuiElement>,
     color: KatuiColor,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.scrollbar(color.into())) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.scrollbar(color.into()))
 }
 
 /// Name the element, so it keeps its state when the tree changes around it.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_id(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_id(
+    element: Option<&mut KatuiElement>,
     id: u64,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.id(id)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.id(id))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_padding(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_padding(
+    element: Option<&mut KatuiElement>,
     all: f32,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.padding(all)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.padding(all))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_padding_xy(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_padding_xy(
+    element: Option<&mut KatuiElement>,
     x: f32,
     y: f32,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.padding_xy(x, y)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.padding_xy(x, y))
 }
 
 /// Space between children, in pixels.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_gap(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_gap(
+    element: Option<&mut KatuiElement>,
     gap: f32,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.gap(gap)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.gap(gap))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_width(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_width(
+    element: Option<&mut KatuiElement>,
     width: KatuiLength,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.width(width.into())) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.width(width.into()))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_height(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_height(
+    element: Option<&mut KatuiElement>,
     height: KatuiLength,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.height(height.into())) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.height(height.into()))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_size(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_size(
+    element: Option<&mut KatuiElement>,
     width: KatuiLength,
     height: KatuiLength,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.size(width.into(), height.into())) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.size(width.into(), height.into()))
 }
 
 /// How much of the free space this element takes, against its siblings.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_grow(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_grow(
+    element: Option<&mut KatuiElement>,
     grow: f32,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.grow(grow)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.grow(grow))
 }
 
 /// Where the children sit across the main axis.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_align(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_align(
+    element: Option<&mut KatuiElement>,
     to: KatuiAlign,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.align(align(to))) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.align(align(to)))
 }
 
 /// Where the children sit along the main axis.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_justify(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_justify(
+    element: Option<&mut KatuiElement>,
     to: KatuiAlign,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.justify(align(to))) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.justify(align(to)))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_background(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_background(
+    element: Option<&mut KatuiElement>,
     color: KatuiColor,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.background(Paint::Solid(color.into()))) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.background(Paint::Solid(color.into())))
 }
 
 /// Round the corners by `radius` pixels.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_radius(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_radius(
+    element: Option<&mut KatuiElement>,
     radius: f32,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.radius(radius)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.radius(radius))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_border(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_border(
+    element: Option<&mut KatuiElement>,
     width: f32,
     color: KatuiColor,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.border(width, Paint::Solid(color.into()))) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.border(width, Paint::Solid(color.into())))
 }
 
 /// The text color.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_color(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_color(
+    element: Option<&mut KatuiElement>,
     color: KatuiColor,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.color(color.into())) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.color(color.into()))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_font_size(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_font_size(
+    element: Option<&mut KatuiElement>,
     size: f32,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.font_size(size)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.font_size(size))
 }
 
 /// The font weight, from 100 to 900; 400 is regular and 700 bold.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_element_weight(
-    element: *mut KatuiElement,
+pub extern "C" fn katui_element_weight(
+    element: Option<&mut KatuiElement>,
     weight: u16,
-) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.weight(weight)) }
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.weight(weight))
 }
 
 /// Pixels to show, decoded once and shared, so an unchanged image costs
@@ -524,18 +519,12 @@ pub(crate) fn image(surface: Surface) -> *mut KatuiImage {
     owned(KatuiImage(Arc::new(surface)))
 }
 
-fn from_rgba(width: u32, height: u32, pixels: Vec<u8>) -> Result<KatuiImage, Error> {
-    Surface::from_rgba(width, height, pixels)
-        .map(|surface| KatuiImage(Arc::new(surface)))
-        .ok_or_else(|| Error::Invalid(format!("give exactly {width} x {height} x 4 bytes of RGBA")))
-}
-
-fn decode(data: &[u8]) -> Result<KatuiImage, Error> {
-    let decoded = image::load_from_memory(data)
-        .map_err(|error| Error::Invalid(format!("decode the image: {error}")))?
-        .into_rgba8();
-    let (width, height) = decoded.dimensions();
-    from_rgba(width, height, decoded.into_raw())
+fn made(surface: Result<Surface, katui_bindings::Error>) -> *mut KatuiImage {
+    owned_or_null(
+        surface
+            .map(|surface| KatuiImage(Arc::new(surface)))
+            .map_err(raise),
+    )
 }
 
 /// An image from `length` bytes of straight-alpha RGBA, four per pixel,
@@ -547,57 +536,54 @@ pub unsafe extern "C" fn katui_image_from_rgba(
     pixels: *const u8,
     length: usize,
 ) -> *mut KatuiImage {
-    owned_or_null(from_rgba(
-        width,
-        height,
-        unsafe { slice(pixels, length) }.to_vec(),
-    ))
+    // SAFETY: the header requires `pixels` to hold `length` values.
+    let pixels = unsafe { slice(pixels, length) }.to_vec();
+    made(picture::from_rgba(width, height, pixels))
 }
 
 /// An image decoded from `length` bytes of PNG, JPEG, GIF or WebP. NULL
 /// when they do not decode.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_image_decode(data: *const u8, length: usize) -> *mut KatuiImage {
-    owned_or_null(decode(unsafe { slice(data, length) }))
+    // SAFETY: the header requires `data` to hold `length` values.
+    made(picture::decode(unsafe { slice(data, length) }))
 }
 
 /// An image read from a PNG, JPEG, GIF or WebP file. NULL when it cannot
 /// be read or decoded.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_image_open(path: *const c_char) -> *mut KatuiImage {
+    // SAFETY: the header requires `path` to be NULL or NUL-terminated.
     let path = unsafe { text(path) };
-    let read = std::fs::read(path.as_ref())
-        .map_err(|error| Error::Io(format!("read {path}: {error}")))
-        .and_then(|data| decode(&data));
-    owned_or_null(read)
+    made(picture::open(Path::new(path.as_ref())))
 }
 
 /// Free an image. Elements that show it keep their own reference. NULL
 /// does nothing.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_image_free(image: *mut KatuiImage) {
-    unsafe { free(image) };
+pub extern "C" fn katui_image_free(image: Option<Box<KatuiImage>>) {
+    drop(image);
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_image_width(image: *const KatuiImage) -> u32 {
-    unsafe { borrow(image) }.map_or(0, |image| image.0.width())
+pub extern "C" fn katui_image_width(image: Option<&KatuiImage>) -> u32 {
+    image.map_or(0, |image| image.0.width())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_image_height(image: *const KatuiImage) -> u32 {
-    unsafe { borrow(image) }.map_or(0, |image| image.0.height())
+pub extern "C" fn katui_image_height(image: Option<&KatuiImage>) -> u32 {
+    image.map_or(0, |image| image.0.height())
 }
 
 /// The RGBA bytes, four per pixel, row by row, with their count in
 /// `length`. The image owns them; they live as long as it does.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_image_rgba(
-    image: *const KatuiImage,
-    length: *mut usize,
+pub extern "C" fn katui_image_rgba(
+    image: Option<&KatuiImage>,
+    length: Option<&mut usize>,
 ) -> *const u8 {
-    let pixels = unsafe { borrow(image) }.map_or(&[][..], |image| image.0.pixels());
-    if let Some(length) = unsafe { borrow_mut(length) } {
+    let pixels = image.map_or(&[][..], |image| image.0.pixels());
+    if let Some(length) = length {
         *length = pixels.len();
     }
     pixels.as_ptr()
@@ -605,23 +591,17 @@ pub unsafe extern "C" fn katui_image_rgba(
 
 /// Write the color at `x`, `y` into `color`. False outside the image.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_image_pixel(
-    image: *const KatuiImage,
+pub extern "C" fn katui_image_pixel(
+    image: Option<&KatuiImage>,
     x: u32,
     y: u32,
-    color: *mut KatuiColor,
+    color: Option<&mut KatuiColor>,
 ) -> bool {
-    let Some(image) = (unsafe { borrow(image) }) else {
+    let found = image.and_then(|image| picture::pixel(&image.0, x, y));
+    let Some([red, green, blue, alpha]) = found else {
         return false;
     };
-    if x >= image.0.width() {
-        return false;
-    }
-    let at = (y as usize * image.0.width() as usize + x as usize) * 4;
-    let Some(&[red, green, blue, alpha]) = image.0.pixels().get(at..at + 4) else {
-        return false;
-    };
-    if let Some(color) = unsafe { borrow_mut(color) } {
+    if let Some(color) = color {
         *color = KatuiColor {
             r: red,
             g: green,
@@ -635,21 +615,13 @@ pub unsafe extern "C" fn katui_image_pixel(
 /// Write the image to `path` as a PNG.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_image_save(
-    image: *const KatuiImage,
+    image: Option<&KatuiImage>,
     path: *const c_char,
 ) -> KatuiStatus {
+    // SAFETY: the header requires `path` to be NULL or NUL-terminated.
     let path = unsafe { text(path) };
-    let saved = unsafe { borrow(image) }
+    let saved = image
         .ok_or(Error::Null("image"))
-        .and_then(|image| {
-            image::save_buffer(
-                path.as_ref(),
-                image.0.pixels(),
-                image.0.width(),
-                image.0.height(),
-                image::ExtendedColorType::Rgba8,
-            )
-            .map_err(|error| Error::Io(format!("write {path}: {error}")))
-        });
+        .and_then(|image| picture::save(&image.0, Path::new(path.as_ref())).map_err(raise));
     status(saved)
 }

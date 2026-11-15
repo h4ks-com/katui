@@ -1,18 +1,20 @@
 //! The bridge between katui's app runner and a Python `App`, and `run`.
 
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::sync::Arc;
 
-use katui_app::{Control, UiApp, Waker};
+use katui_app::{Control, Waker};
+use katui_bindings::app::AppHost;
+use katui_bindings::state::interval;
 use katui_proto::input::InputEvent;
-use katui_ui::{CellPixels, Element};
+use katui_ui::CellPixels;
 use katui_widgets::Theme;
-use pyo3::exceptions::{PyOSError, PyTypeError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
+use crate::convert::raise;
 use crate::element::{Node, PyElement};
-use crate::message::{Msg, obj};
-use crate::state::PyEvent;
+use crate::event::PyEvent;
+use crate::message::{Msg, Obj, obj, resolve};
 use crate::theme::PyTheme;
 
 /// What to do after a message or an event.
@@ -44,23 +46,6 @@ impl From<PyControl> for Control {
     }
 }
 
-/// The first error Python raised, kept until the runner returns.
-pub(crate) type Failure = Arc<Mutex<Option<PyErr>>>;
-
-pub(crate) fn take(failure: &Failure) -> Option<PyErr> {
-    failure
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .take()
-}
-
-pub(crate) fn keep(failure: &Failure, error: PyErr) {
-    failure
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get_or_insert(error);
-}
-
 /// Calls `name` on `target` with `args`, or gives `None` when `target` has
 /// no such method.
 pub(crate) fn call_optional<'py>(
@@ -87,114 +72,55 @@ pub(crate) fn control(returned: Option<&Bound<'_, PyAny>>, default: Control) -> 
     }
 }
 
-/// A Python app, as the runner sees it.
-pub(crate) struct Bridge {
-    app: Py<PyAny>,
-    failure: Failure,
-    waker: Option<Waker<Msg>>,
-}
+/// A Python app, as the shared bridge calls it.
+pub(crate) struct PyApp(pub(crate) Py<PyAny>);
 
-impl Bridge {
-    pub(crate) fn new(app: Py<PyAny>, failure: Failure) -> Self {
-        Self {
-            app,
-            failure,
-            waker: None,
-        }
+impl AppHost for PyApp {
+    type Value = Obj;
+    type Error = PyErr;
+
+    fn refused(error: katui_bindings::Error) -> PyErr {
+        raise(error)
     }
 
-    fn fail(&self, error: PyErr) -> Control {
-        keep(&self.failure, error);
-        if let Some(waker) = &self.waker {
-            waker.send(Msg::Stop);
-        }
-        Control::Quit
-    }
-
-    pub(crate) fn render(&self) -> Node {
+    fn start(&mut self, waker: Waker<Msg>) -> PyResult<()> {
         Python::attach(|py| {
-            let built = self
-                .app
-                .bind(py)
-                .call_method0("view")
-                .and_then(|view| Ok(view.cast::<PyElement>()?.borrow().inner.clone()));
-            built.unwrap_or_else(|error| {
-                self.fail(error);
-                Element::spacer()
-            })
+            call_optional(self.0.bind(py), "start", (PyWaker { inner: waker },)).map(drop)
         })
     }
 
-    pub(crate) fn theme_for(&self, cell: CellPixels) -> Theme {
+    fn view(&self) -> PyResult<Node> {
         Python::attach(|py| {
-            let picked = call_optional(self.app.bind(py), "theme", ((cell.width, cell.height),))
-                .and_then(|theme| match theme {
-                    Some(theme) if !theme.is_none() => Ok(Some(theme.extract::<PyTheme>()?.inner)),
-                    _ => Ok(None),
-                });
-            match picked {
-                Ok(theme) => theme.unwrap_or_else(|| Theme::dark(cell)),
-                Err(error) => {
-                    self.fail(error);
-                    Theme::dark(cell)
-                }
-            }
+            let view = self.0.bind(py).call_method0("view")?;
+            Ok(view.cast::<PyElement>()?.borrow().inner.clone())
         })
     }
 
-    pub(crate) fn deliver(&mut self, message: &Msg) -> Control {
+    fn update(&mut self, message: &Msg) -> PyResult<Control> {
         Python::attach(|py| {
-            let outcome = message.resolve(py).and_then(|resolved| match resolved {
-                None => Ok(Control::Quit),
-                Some(resolved) => {
-                    let returned = self.app.bind(py).call_method1("update", (resolved,))?;
-                    control(Some(&returned), Control::Redraw)
-                }
-            });
-            outcome.unwrap_or_else(|error| self.fail(error))
+            let resolved = resolve(py, message)?;
+            let returned = self.0.bind(py).call_method1("update", (resolved,))?;
+            control(Some(&returned), Control::Redraw)
         })
     }
 
-    pub(crate) fn react(&mut self, event: &InputEvent) -> Control {
+    fn input(&mut self, event: &InputEvent) -> PyResult<Control> {
         Python::attach(|py| {
             let event = PyEvent {
                 inner: event.clone(),
             };
-            let outcome = call_optional(self.app.bind(py), "input", (event,))
-                .and_then(|returned| control(returned.as_ref(), Control::Wait));
-            outcome.unwrap_or_else(|error| self.fail(error))
+            let returned = call_optional(self.0.bind(py), "input", (event,))?;
+            control(returned.as_ref(), Control::Wait)
         })
     }
-}
 
-impl UiApp for Bridge {
-    type Message = Msg;
-
-    fn start(&mut self, waker: Waker<Msg>) {
-        self.waker = Some(waker.clone());
+    fn theme(&self, cell: CellPixels) -> PyResult<Option<Theme>> {
         Python::attach(|py| {
-            if let Err(error) =
-                call_optional(self.app.bind(py), "start", (PyWaker { inner: waker },))
-            {
-                self.fail(error);
+            match call_optional(self.0.bind(py), "theme", ((cell.width, cell.height),))? {
+                Some(theme) if !theme.is_none() => Ok(Some(theme.extract::<PyTheme>()?.inner)),
+                _ => Ok(None),
             }
-        });
-    }
-
-    fn view(&self) -> Element<Msg> {
-        self.render()
-    }
-
-    fn update(&mut self, message: Msg) -> Control {
-        self.deliver(&message)
-    }
-
-    fn input(&mut self, event: &InputEvent) -> Control {
-        self.react(event)
-    }
-
-    fn theme(&self, cell: CellPixels) -> Theme {
-        self.theme_for(cell)
+        })
     }
 }
 
@@ -216,20 +142,12 @@ impl PyWaker {
     fn every(&self, seconds: f64, message: &Bound<'_, PyAny>) {
         let message = obj(message);
         self.inner
-            .every(Duration::from_secs_f64(seconds.max(0.001)), move || {
-                Msg::Value(Arc::clone(&message))
-            });
+            .every(interval(seconds), move || Msg::Value(Arc::clone(&message)));
     }
 }
 
 /// Run `app` on the terminal until it quits.
 #[pyfunction]
 pub(crate) fn run(py: Python<'_>, app: Py<PyAny>) -> PyResult<()> {
-    let failure = Failure::default();
-    let bridge = Bridge::new(app, Arc::clone(&failure));
-    let finished = py.detach(|| katui_app::run(bridge));
-    if let Some(error) = take(&failure) {
-        return Err(error);
-    }
-    finished.map_err(|error| PyOSError::new_err(error.to_string()))
+    py.detach(|| katui_bindings::app::run(PyApp(app)))
 }

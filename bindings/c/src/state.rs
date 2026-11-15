@@ -1,52 +1,17 @@
 //! The state widgets keep between frames: fields, lists, scrolling, trees,
-//! focus and toasts, plus the input events that change them.
+//! focus and toasts.
 
 use std::ffi::c_char;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction};
+use katui_bindings::state::{duration, next_expiry};
 use katui_widgets::{
     Edit, Focus, ListState, ScrollState, TextArea, TextField, Toasts, TreeNode, TreeState,
 };
 
-use crate::ffi::{
-    Error, borrow, borrow_mut, c_string, free, owned, owned_or_null, slice, take, text,
-};
+use crate::event::{KatuiEvent, input};
+use crate::ffi::{Error, borrow, c_string, owned, owned_or_null, slice, take, text};
 use crate::message::KatuiScroll;
-
-/// A key press, a release, a mouse event, a paste or a focus change.
-pub struct KatuiEvent(pub(crate) InputEvent);
-
-/// The key named `name`: one character, `"enter"`, `"up"`, `"f1"` and so on.
-pub(crate) fn key(name: &str) -> Result<Key, Error> {
-    Key::from_name(name).ok_or_else(|| Error::Invalid(format!("name a key, not {name:?}")))
-}
-
-/// What kind of event a `KatuiEvent` is.
-pub type KatuiEventKind = u32;
-pub const KATUI_EVENT_OTHER: KatuiEventKind = 0;
-pub const KATUI_EVENT_KEY: KatuiEventKind = 1;
-pub const KATUI_EVENT_KEY_UP: KatuiEventKind = 2;
-pub const KATUI_EVENT_MOUSE: KatuiEventKind = 3;
-pub const KATUI_EVENT_PASTE: KatuiEventKind = 4;
-pub const KATUI_EVENT_FOCUS: KatuiEventKind = 5;
-
-/// What the mouse did.
-pub type KatuiMouseAction = u32;
-pub const KATUI_MOUSE_NONE: KatuiMouseAction = 0;
-pub const KATUI_MOUSE_PRESS: KatuiMouseAction = 1;
-pub const KATUI_MOUSE_RELEASE: KatuiMouseAction = 2;
-pub const KATUI_MOUSE_DRAG: KatuiMouseAction = 3;
-pub const KATUI_MOUSE_MOVE: KatuiMouseAction = 4;
-pub const KATUI_MOUSE_WHEEL_UP: KatuiMouseAction = 5;
-pub const KATUI_MOUSE_WHEEL_DOWN: KatuiMouseAction = 6;
-
-/// Which mouse button.
-pub type KatuiButton = u32;
-pub const KATUI_BUTTON_NONE: KatuiButton = 0;
-pub const KATUI_BUTTON_LEFT: KatuiButton = 1;
-pub const KATUI_BUTTON_MIDDLE: KatuiButton = 2;
-pub const KATUI_BUTTON_RIGHT: KatuiButton = 3;
 
 /// What an event did to a text field.
 pub type KatuiEdit = u32;
@@ -64,158 +29,6 @@ fn edit(edit: Edit) -> KatuiEdit {
     }
 }
 
-/// # Safety
-/// `event` is NULL or a live event.
-unsafe fn event<'a>(event: *const KatuiEvent) -> Option<&'a InputEvent> {
-    unsafe { borrow(event) }.map(|event| &event.0)
-}
-
-/// A press of the key `name`, for tests and for handing keys to widgets.
-/// NULL when `name` names no key.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_press(
-    name: *const c_char,
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-) -> *mut KatuiEvent {
-    let mods = Mods { shift, alt, ctrl };
-    owned_or_null(key(&unsafe { text(name) }).map(|key| KatuiEvent(InputEvent::Key(key, mods))))
-}
-
-/// A paste of `text`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_paste(text: *const c_char) -> *mut KatuiEvent {
-    owned(KatuiEvent(InputEvent::Paste(
-        unsafe { self::text(text) }.into_owned(),
-    )))
-}
-
-/// A copy of `event` the caller owns.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_clone(event: *const KatuiEvent) -> *mut KatuiEvent {
-    unsafe { self::event(event) }.map_or(std::ptr::null_mut(), |event| {
-        owned(KatuiEvent(event.clone()))
-    })
-}
-
-/// Free an event the caller owns. NULL does nothing.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_free(event: *mut KatuiEvent) {
-    unsafe { free(event) };
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_kind(event: *const KatuiEvent) -> KatuiEventKind {
-    match unsafe { self::event(event) } {
-        Some(InputEvent::Key(..)) => KATUI_EVENT_KEY,
-        Some(InputEvent::KeyUp(..)) => KATUI_EVENT_KEY_UP,
-        Some(InputEvent::Mouse(_)) => KATUI_EVENT_MOUSE,
-        Some(InputEvent::Paste(_)) => KATUI_EVENT_PASTE,
-        Some(InputEvent::Focus(_)) => KATUI_EVENT_FOCUS,
-        _ => KATUI_EVENT_OTHER,
-    }
-}
-
-/// The key's name: one character, `"enter"`, `"up"`, `"f1"` and so on, or
-/// NULL for an event without a key. The caller frees it with
-/// `katui_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_key(event: *const KatuiEvent) -> *mut c_char {
-    match unsafe { self::event(event) } {
-        Some(InputEvent::Key(key, _) | InputEvent::KeyUp(key, _)) => c_string(&key.name()),
-        _ => std::ptr::null_mut(),
-    }
-}
-
-fn mods(event: Option<&InputEvent>) -> Mods {
-    match event {
-        Some(InputEvent::Key(_, mods) | InputEvent::KeyUp(_, mods)) => *mods,
-        Some(InputEvent::Mouse(mouse)) => mouse.mods,
-        _ => Mods::NONE,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_ctrl(event: *const KatuiEvent) -> bool {
-    mods(unsafe { self::event(event) }).ctrl
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_alt(event: *const KatuiEvent) -> bool {
-    mods(unsafe { self::event(event) }).alt
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_shift(event: *const KatuiEvent) -> bool {
-    mods(unsafe { self::event(event) }).shift
-}
-
-/// The pasted text, or NULL for another event. The caller frees it with
-/// `katui_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_text(event: *const KatuiEvent) -> *mut c_char {
-    match unsafe { self::event(event) } {
-        Some(InputEvent::Paste(text)) => c_string(text),
-        _ => std::ptr::null_mut(),
-    }
-}
-
-/// Whether the window has the focus, for a focus event.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_focused(event: *const KatuiEvent) -> bool {
-    matches!(unsafe { self::event(event) }, Some(InputEvent::Focus(true)))
-}
-
-/// Write the cell under the pointer into `column` and `row`. False for an
-/// event without a pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_position(
-    event: *const KatuiEvent,
-    column: *mut u32,
-    row: *mut u32,
-) -> bool {
-    let Some(InputEvent::Mouse(mouse)) = (unsafe { self::event(event) }) else {
-        return false;
-    };
-    if let Some(column) = unsafe { borrow_mut(column) } {
-        *column = mouse.x;
-    }
-    if let Some(row) = unsafe { borrow_mut(row) } {
-        *row = mouse.y;
-    }
-    true
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_action(event: *const KatuiEvent) -> KatuiMouseAction {
-    let Some(InputEvent::Mouse(mouse)) = (unsafe { self::event(event) }) else {
-        return KATUI_MOUSE_NONE;
-    };
-    match mouse.action {
-        MouseAction::Press(_) => KATUI_MOUSE_PRESS,
-        MouseAction::Release(_) => KATUI_MOUSE_RELEASE,
-        MouseAction::Drag(_) => KATUI_MOUSE_DRAG,
-        MouseAction::Move => KATUI_MOUSE_MOVE,
-        MouseAction::WheelUp => KATUI_MOUSE_WHEEL_UP,
-        MouseAction::WheelDown => KATUI_MOUSE_WHEEL_DOWN,
-    }
-}
-
-/// The button of a press, release or drag.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_button(event: *const KatuiEvent) -> KatuiButton {
-    let Some(InputEvent::Mouse(mouse)) = (unsafe { self::event(event) }) else {
-        return KATUI_BUTTON_NONE;
-    };
-    match mouse.action.button() {
-        Some(Button::Left) => KATUI_BUTTON_LEFT,
-        Some(Button::Middle) => KATUI_BUTTON_MIDDLE,
-        Some(Button::Right) => KATUI_BUTTON_RIGHT,
-        None => KATUI_BUTTON_NONE,
-    }
-}
-
 /// A one-line text input's text and cursor.
 pub struct KatuiTextField(pub(crate) TextField);
 
@@ -223,27 +36,29 @@ pub struct KatuiTextField(pub(crate) TextField);
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_text_field_new(text: *const c_char) -> *mut KatuiTextField {
     owned(KatuiTextField(TextField::with_text(
+        // SAFETY: the header requires `text` to be NULL or NUL-terminated.
         unsafe { self::text(text) }.into_owned(),
     )))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_field_free(field: *mut KatuiTextField) {
-    unsafe { free(field) };
+pub extern "C" fn katui_text_field_free(field: Option<Box<KatuiTextField>>) {
+    drop(field);
 }
 
 /// The text, which the caller frees with `katui_string_free`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_field_text(field: *const KatuiTextField) -> *mut c_char {
-    c_string(unsafe { borrow(field) }.map_or("", |field| field.0.text()))
+pub extern "C" fn katui_text_field_text(field: Option<&KatuiTextField>) -> *mut c_char {
+    c_string(field.map_or("", |field| field.0.text()))
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_text_field_set_text(
-    field: *mut KatuiTextField,
+    field: Option<&mut KatuiTextField>,
     text: *const c_char,
 ) {
-    if let Some(field) = unsafe { borrow_mut(field) } {
+    if let Some(field) = field {
+        // SAFETY: the header requires `text` to be NULL or NUL-terminated.
         field.0.set_text(unsafe { self::text(text) }.into_owned());
     }
 }
@@ -252,15 +67,15 @@ pub unsafe extern "C" fn katui_text_field_set_text(
 /// each freed by the caller with `katui_string_free`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_text_field_split(
-    field: *const KatuiTextField,
-    before: *mut *mut c_char,
-    after: *mut *mut c_char,
+    field: Option<&KatuiTextField>,
+    before: Option<&mut *mut c_char>,
+    after: Option<&mut *mut c_char>,
 ) {
-    let (head, tail) = unsafe { borrow(field) }.map_or(("", ""), |field| field.0.split());
-    if let Some(before) = unsafe { borrow_mut(before) } {
+    let (head, tail) = field.map_or(("", ""), |field| field.0.split());
+    if let Some(before) = before {
         *before = c_string(head);
     }
-    if let Some(after) = unsafe { borrow_mut(after) } {
+    if let Some(after) = after {
         *after = c_string(tail);
     }
 }
@@ -268,17 +83,17 @@ pub unsafe extern "C" fn katui_text_field_split(
 /// Empty the field and return what it held, freed by the caller with
 /// `katui_string_free`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_field_take(field: *mut KatuiTextField) -> *mut c_char {
-    c_string(&unsafe { borrow_mut(field) }.map_or_else(String::new, |field| field.0.take()))
+pub extern "C" fn katui_text_field_take(field: Option<&mut KatuiTextField>) -> *mut c_char {
+    c_string(&field.map_or_else(String::new, |field| field.0.take()))
 }
 
 /// Typing, the cursor keys and paste.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_field_handle(
-    field: *mut KatuiTextField,
-    event: *const KatuiEvent,
+pub extern "C" fn katui_text_field_handle(
+    field: Option<&mut KatuiTextField>,
+    event: Option<&KatuiEvent>,
 ) -> KatuiEdit {
-    match (unsafe { borrow_mut(field) }, unsafe { self::event(event) }) {
+    match (field, input(event)) {
         (Some(field), Some(event)) => edit(field.0.handle(event)),
         _ => KATUI_EDIT_IGNORED,
     }
@@ -294,19 +109,23 @@ pub extern "C" fn katui_text_area_new(rows: usize) -> *mut KatuiTextArea {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_area_free(area: *mut KatuiTextArea) {
-    unsafe { free(area) };
+pub extern "C" fn katui_text_area_free(area: Option<Box<KatuiTextArea>>) {
+    drop(area);
 }
 
 /// The text, which the caller frees with `katui_string_free`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_area_text(area: *const KatuiTextArea) -> *mut c_char {
-    c_string(unsafe { borrow(area) }.map_or("", |area| area.0.text()))
+pub extern "C" fn katui_text_area_text(area: Option<&KatuiTextArea>) -> *mut c_char {
+    c_string(area.map_or("", |area| area.0.text()))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_area_set_text(area: *mut KatuiTextArea, text: *const c_char) {
-    if let Some(area) = unsafe { borrow_mut(area) } {
+pub unsafe extern "C" fn katui_text_area_set_text(
+    area: Option<&mut KatuiTextArea>,
+    text: *const c_char,
+) {
+    if let Some(area) = area {
+        // SAFETY: the header requires `text` to be NULL or NUL-terminated.
         area.0.set_text(unsafe { self::text(text) }.into_owned());
     }
 }
@@ -314,26 +133,26 @@ pub unsafe extern "C" fn katui_text_area_set_text(area: *mut KatuiTextArea, text
 /// Empty the area and return what it held, freed by the caller with
 /// `katui_string_free`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_area_take(area: *mut KatuiTextArea) -> *mut c_char {
-    c_string(&unsafe { borrow_mut(area) }.map_or_else(String::new, |area| area.0.take()))
+pub extern "C" fn katui_text_area_take(area: Option<&mut KatuiTextArea>) -> *mut c_char {
+    c_string(&area.map_or_else(String::new, |area| area.0.take()))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_area_rows(area: *const KatuiTextArea) -> usize {
-    unsafe { borrow(area) }.map_or(0, |area| area.0.rows())
+pub extern "C" fn katui_text_area_rows(area: Option<&KatuiTextArea>) -> usize {
+    area.map_or(0, |area| area.0.rows())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_area_cursor_line(area: *const KatuiTextArea) -> usize {
-    unsafe { borrow(area) }.map_or(0, |area| area.0.cursor_line())
+pub extern "C" fn katui_text_area_cursor_line(area: Option<&KatuiTextArea>) -> usize {
+    area.map_or(0, |area| area.0.cursor_line())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_text_area_handle(
-    area: *mut KatuiTextArea,
-    event: *const KatuiEvent,
+pub extern "C" fn katui_text_area_handle(
+    area: Option<&mut KatuiTextArea>,
+    event: Option<&KatuiEvent>,
 ) -> KatuiEdit {
-    match (unsafe { borrow_mut(area) }, unsafe { self::event(event) }) {
+    match (area, input(event)) {
         (Some(area), Some(event)) => edit(area.0.handle(event)),
         _ => KATUI_EDIT_IGNORED,
     }
@@ -348,45 +167,45 @@ pub extern "C" fn katui_list_state_new(length: usize, visible: usize) -> *mut Ka
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_list_state_free(state: *mut KatuiListState) {
-    unsafe { free(state) };
+pub extern "C" fn katui_list_state_free(state: Option<Box<KatuiListState>>) {
+    drop(state);
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_list_state_resize(
-    state: *mut KatuiListState,
+pub extern "C" fn katui_list_state_resize(
+    state: Option<&mut KatuiListState>,
     length: usize,
     visible: usize,
 ) {
-    if let Some(state) = unsafe { borrow_mut(state) } {
+    if let Some(state) = state {
         state.0.resize(length, visible);
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_list_state_selected(state: *const KatuiListState) -> usize {
-    unsafe { borrow(state) }.map_or(0, |state| state.0.selected())
+pub extern "C" fn katui_list_state_selected(state: Option<&KatuiListState>) -> usize {
+    state.map_or(0, |state| state.0.selected())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_list_state_select(state: *mut KatuiListState, row: usize) {
-    if let Some(state) = unsafe { borrow_mut(state) } {
+pub extern "C" fn katui_list_state_select(state: Option<&mut KatuiListState>, row: usize) {
+    if let Some(state) = state {
         state.0.select(row);
     }
 }
 
 /// The rows in view, from `start` up to but not including `end`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_list_state_in_view(
-    state: *const KatuiListState,
-    start: *mut usize,
-    end: *mut usize,
+pub extern "C" fn katui_list_state_in_view(
+    state: Option<&KatuiListState>,
+    start: Option<&mut usize>,
+    end: Option<&mut usize>,
 ) {
-    let rows = unsafe { borrow(state) }.map_or(0..0, |state| state.0.in_view());
-    if let Some(start) = unsafe { borrow_mut(start) } {
+    let rows = state.map_or(0..0, |state| state.0.in_view());
+    if let Some(start) = start {
         *start = rows.start;
     }
-    if let Some(end) = unsafe { borrow_mut(end) } {
+    if let Some(end) = end {
         *end = rows.end;
     }
 }
@@ -394,11 +213,11 @@ pub unsafe extern "C" fn katui_list_state_in_view(
 /// Move the selection with the arrow, page, home and end keys. True when
 /// it moved.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_list_state_handle(
-    state: *mut KatuiListState,
-    event: *const KatuiEvent,
+pub extern "C" fn katui_list_state_handle(
+    state: Option<&mut KatuiListState>,
+    event: Option<&KatuiEvent>,
 ) -> bool {
-    match (unsafe { borrow_mut(state) }, unsafe { self::event(event) }) {
+    match (state, input(event)) {
         (Some(state), Some(event)) => state.0.handle(event),
         _ => false,
     }
@@ -413,34 +232,34 @@ pub extern "C" fn katui_scroll_state_new() -> *mut KatuiScrollState {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_scroll_state_free(state: *mut KatuiScrollState) {
-    unsafe { free(state) };
+pub extern "C" fn katui_scroll_state_free(state: Option<Box<KatuiScrollState>>) {
+    drop(state);
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_scroll_state_offset(state: *const KatuiScrollState) -> f32 {
-    unsafe { borrow(state) }.map_or(0.0, |state| state.0.offset())
+pub extern "C" fn katui_scroll_state_offset(state: Option<&KatuiScrollState>) -> f32 {
+    state.map_or(0.0, |state| state.0.offset())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_scroll_state_max(state: *const KatuiScrollState) -> f32 {
-    unsafe { borrow(state) }.map_or(0.0, |state| state.0.max())
+pub extern "C" fn katui_scroll_state_max(state: Option<&KatuiScrollState>) -> f32 {
+    state.map_or(0.0, |state| state.0.max())
 }
 
 /// Take the position a scroll view reported.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_scroll_state_apply(
-    state: *mut KatuiScrollState,
+pub extern "C" fn katui_scroll_state_apply(
+    state: Option<&mut KatuiScrollState>,
     scroll: KatuiScroll,
 ) {
-    if let Some(state) = unsafe { borrow_mut(state) } {
+    if let Some(state) = state {
         state.0.apply(scroll.into());
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_scroll_state_scroll_by(state: *mut KatuiScrollState, pixels: f32) {
-    if let Some(state) = unsafe { borrow_mut(state) } {
+pub extern "C" fn katui_scroll_state_scroll_by(state: Option<&mut KatuiScrollState>, pixels: f32) {
+    if let Some(state) = state {
         state.0.scroll_by(pixels);
     }
 }
@@ -448,12 +267,12 @@ pub unsafe extern "C" fn katui_scroll_state_scroll_by(state: *mut KatuiScrollSta
 /// Move with the arrow, page, home and end keys, `line` pixels a step.
 /// True when it moved.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_scroll_state_handle(
-    state: *mut KatuiScrollState,
-    event: *const KatuiEvent,
+pub extern "C" fn katui_scroll_state_handle(
+    state: Option<&mut KatuiScrollState>,
+    event: Option<&KatuiEvent>,
     line: f32,
 ) -> bool {
-    match (unsafe { borrow_mut(state) }, unsafe { self::event(event) }) {
+    match (state, input(event)) {
         (Some(state), Some(event)) => state.0.handle(event, line),
         _ => false,
     }
@@ -465,9 +284,9 @@ pub struct KatuiTreeNode(pub(crate) TreeNode);
 /// A node without children.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_tree_node_leaf(id: u64, text: *const c_char) -> *mut KatuiTreeNode {
-    owned(KatuiTreeNode(TreeNode::leaf(id, unsafe {
-        self::text(text)
-    })))
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
+    let text = unsafe { self::text(text) };
+    owned(KatuiTreeNode(TreeNode::leaf(id, text)))
 }
 
 /// A node with `count` children under it. Takes over every child; NULL
@@ -479,20 +298,22 @@ pub unsafe extern "C" fn katui_tree_node_branch(
     children: *const *mut KatuiTreeNode,
     count: usize,
 ) -> *mut KatuiTreeNode {
+    // SAFETY: the header hands us the `count` nodes at `children` to own.
     let children = unsafe { slice(children, count) }
         .iter()
         .filter_map(|&child| unsafe { take(child) }.map(|child| child.0))
         .collect();
     owned(KatuiTreeNode(TreeNode::branch(
         id,
+        // SAFETY: the header requires `text` to be NULL or NUL-terminated.
         unsafe { self::text(text) },
         children,
     )))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_tree_node_free(node: *mut KatuiTreeNode) {
-    unsafe { free(node) };
+pub extern "C" fn katui_tree_node_free(node: Option<Box<KatuiTreeNode>>) {
+    drop(node);
 }
 
 /// The `count` roots at `roots`, cloned, NULL ones left out.
@@ -500,6 +321,7 @@ pub unsafe extern "C" fn katui_tree_node_free(node: *mut KatuiTreeNode) {
 /// # Safety
 /// `roots` is NULL or points at `count` nodes, each NULL or live.
 pub(crate) unsafe fn roots(roots: *const *const KatuiTreeNode, count: usize) -> Vec<TreeNode> {
+    // SAFETY: our caller promises `count` roots at `roots`, each NULL or live.
     unsafe { slice(roots, count) }
         .iter()
         .filter_map(|&root| unsafe { borrow(root) }.map(|root| root.0.clone()))
@@ -515,40 +337,40 @@ pub extern "C" fn katui_tree_state_new() -> *mut KatuiTreeState {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_tree_state_free(state: *mut KatuiTreeState) {
-    unsafe { free(state) };
+pub extern "C" fn katui_tree_state_free(state: Option<Box<KatuiTreeState>>) {
+    drop(state);
 }
 
 /// Write the selected node's id into `id`. False when none is selected.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_tree_state_selected(
-    state: *const KatuiTreeState,
-    id: *mut u64,
+pub extern "C" fn katui_tree_state_selected(
+    state: Option<&KatuiTreeState>,
+    id: Option<&mut u64>,
 ) -> bool {
-    let Some(selected) = unsafe { borrow(state) }.and_then(|state| state.0.selected()) else {
+    let Some(selected) = state.and_then(|state| state.0.selected()) else {
         return false;
     };
-    if let Some(id) = unsafe { borrow_mut(id) } {
+    if let Some(id) = id {
         *id = selected;
     }
     true
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_tree_state_select(state: *mut KatuiTreeState, id: u64) {
-    if let Some(state) = unsafe { borrow_mut(state) } {
+pub extern "C" fn katui_tree_state_select(state: Option<&mut KatuiTreeState>, id: u64) {
+    if let Some(state) = state {
         state.0.select(id);
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_tree_state_is_open(state: *const KatuiTreeState, id: u64) -> bool {
-    unsafe { borrow(state) }.is_some_and(|state| state.0.is_open(id))
+pub extern "C" fn katui_tree_state_is_open(state: Option<&KatuiTreeState>, id: u64) -> bool {
+    state.is_some_and(|state| state.0.is_open(id))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_tree_state_toggle(state: *mut KatuiTreeState, id: u64) {
-    if let Some(state) = unsafe { borrow_mut(state) } {
+pub extern "C" fn katui_tree_state_toggle(state: Option<&mut KatuiTreeState>, id: u64) {
+    if let Some(state) = state {
         state.0.toggle(id);
     }
 }
@@ -557,13 +379,14 @@ pub unsafe extern "C" fn katui_tree_state_toggle(state: *mut KatuiTreeState, id:
 /// True when something changed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_tree_state_handle(
-    state: *mut KatuiTreeState,
-    event: *const KatuiEvent,
+    state: Option<&mut KatuiTreeState>,
+    event: Option<&KatuiEvent>,
     roots: *const *const KatuiTreeNode,
     count: usize,
 ) -> bool {
+    // SAFETY: the header requires `roots` to hold `count` nodes, each NULL or live.
     let roots = unsafe { self::roots(roots, count) };
-    match (unsafe { borrow_mut(state) }, unsafe { self::event(event) }) {
+    match (state, input(event)) {
         (Some(state), Some(event)) => state.0.handle(event, &roots),
         _ => false,
     }
@@ -586,47 +409,47 @@ pub extern "C" fn katui_focus_new(count: usize) -> *mut KatuiFocus {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_focus_free(focus: *mut KatuiFocus) {
-    unsafe { free(focus) };
+pub extern "C" fn katui_focus_free(focus: Option<Box<KatuiFocus>>) {
+    drop(focus);
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_focus_current(focus: *const KatuiFocus) -> usize {
-    unsafe { borrow(focus) }.map_or(0, |focus| focus.0.current())
+pub extern "C" fn katui_focus_current(focus: Option<&KatuiFocus>) -> usize {
+    focus.map_or(0, |focus| focus.0.current())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_focus_is(focus: *const KatuiFocus, control: usize) -> bool {
-    unsafe { borrow(focus) }.is_some_and(|focus| focus.0.is(control))
+pub extern "C" fn katui_focus_is(focus: Option<&KatuiFocus>, control: usize) -> bool {
+    focus.is_some_and(|focus| focus.0.is(control))
 }
 
 /// Focus `control`. False when it is not one of the controls.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_focus_set(focus: *mut KatuiFocus, control: usize) -> bool {
-    unsafe { borrow_mut(focus) }.is_some_and(|focus| focus.0.set(control))
+pub extern "C" fn katui_focus_set(focus: Option<&mut KatuiFocus>, control: usize) -> bool {
+    focus.is_some_and(|focus| focus.0.set(control))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_focus_next(focus: *mut KatuiFocus) {
-    if let Some(focus) = unsafe { borrow_mut(focus) } {
+pub extern "C" fn katui_focus_next(focus: Option<&mut KatuiFocus>) {
+    if let Some(focus) = focus {
         focus.0.next();
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_focus_previous(focus: *mut KatuiFocus) {
-    if let Some(focus) = unsafe { borrow_mut(focus) } {
+pub extern "C" fn katui_focus_previous(focus: Option<&mut KatuiFocus>) {
+    if let Some(focus) = focus {
         focus.0.previous();
     }
 }
 
 /// Move the focus on Tab and Shift+Tab. True when it moved.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_focus_handle(
-    focus: *mut KatuiFocus,
-    event: *const KatuiEvent,
+pub extern "C" fn katui_focus_handle(
+    focus: Option<&mut KatuiFocus>,
+    event: Option<&KatuiEvent>,
 ) -> bool {
-    match (unsafe { borrow_mut(focus) }, unsafe { self::event(event) }) {
+    match (focus, input(event)) {
         (Some(focus), Some(event)) => focus.0.handle(event),
         _ => false,
     }
@@ -641,16 +464,17 @@ pub extern "C" fn katui_toasts_new() -> *mut KatuiToasts {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_toasts_free(toasts: *mut KatuiToasts) {
-    unsafe { free(toasts) };
+pub extern "C" fn katui_toasts_free(toasts: Option<Box<KatuiToasts>>) {
+    drop(toasts);
 }
 
 /// Show `text` for the default time.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_toasts_push(toasts: *mut KatuiToasts, text: *const c_char) {
-    if let Some(toasts) = unsafe { borrow_mut(toasts) } {
+pub unsafe extern "C" fn katui_toasts_push(toasts: Option<&mut KatuiToasts>, text: *const c_char) {
+    if let Some(toasts) = toasts {
         toasts
             .0
+            // SAFETY: the header requires `text` to be NULL or NUL-terminated.
             .push(unsafe { self::text(text) }.into_owned(), Instant::now());
     }
 }
@@ -658,55 +482,52 @@ pub unsafe extern "C" fn katui_toasts_push(toasts: *mut KatuiToasts, text: *cons
 /// Show `text` for `seconds`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_toasts_push_for(
-    toasts: *mut KatuiToasts,
+    toasts: Option<&mut KatuiToasts>,
     text: *const c_char,
     seconds: f64,
 ) {
-    if let Some(toasts) = unsafe { borrow_mut(toasts) } {
-        let time = Duration::try_from_secs_f64(seconds).unwrap_or_default();
+    if let Some(toasts) = toasts {
         toasts.0.push_for(
+            // SAFETY: the header requires `text` to be NULL or NUL-terminated.
             unsafe { self::text(text) }.into_owned(),
             Instant::now(),
-            time,
+            duration(seconds),
         );
     }
 }
 
 /// Drop the toasts whose time is up. True when any are left.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_toasts_expire(toasts: *mut KatuiToasts) -> bool {
-    unsafe { borrow_mut(toasts) }.is_some_and(|toasts| toasts.0.expire(Instant::now()))
+pub extern "C" fn katui_toasts_expire(toasts: Option<&mut KatuiToasts>) -> bool {
+    toasts.is_some_and(|toasts| toasts.0.expire(Instant::now()))
 }
 
 /// Write the seconds until the next toast leaves into `seconds`. False when
 /// there is none.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_toasts_next_expiry(
-    toasts: *const KatuiToasts,
-    seconds: *mut f64,
+pub extern "C" fn katui_toasts_next_expiry(
+    toasts: Option<&KatuiToasts>,
+    seconds: Option<&mut f64>,
 ) -> bool {
-    let Some(at) = unsafe { borrow(toasts) }.and_then(|toasts| toasts.0.next_expiry()) else {
+    let Some(left) = toasts.and_then(|toasts| next_expiry(&toasts.0)) else {
         return false;
     };
-    if let Some(seconds) = unsafe { borrow_mut(seconds) } {
-        *seconds = at.saturating_duration_since(Instant::now()).as_secs_f64();
+    if let Some(seconds) = seconds {
+        *seconds = left;
     }
     true
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_toasts_is_empty(toasts: *const KatuiToasts) -> bool {
-    unsafe { borrow(toasts) }.is_none_or(|toasts| toasts.0.is_empty())
+pub extern "C" fn katui_toasts_is_empty(toasts: Option<&KatuiToasts>) -> bool {
+    toasts.is_none_or(|toasts| toasts.0.is_empty())
 }
 
 /// The text of the toast at `index`, oldest first, or NULL past the last.
 /// The caller frees it with `katui_string_free`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_toasts_text(
-    toasts: *const KatuiToasts,
-    index: usize,
-) -> *mut c_char {
-    unsafe { borrow(toasts) }
+pub extern "C" fn katui_toasts_text(toasts: Option<&KatuiToasts>, index: usize) -> *mut c_char {
+    toasts
         .and_then(|toasts| toasts.0.texts().nth(index))
         .map_or(std::ptr::null_mut(), c_string)
 }

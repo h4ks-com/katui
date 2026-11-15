@@ -5,7 +5,7 @@ use katui_ui::CellPixels;
 use katui_widgets::Theme;
 
 use crate::element::{KatuiColor, paint_color};
-use crate::ffi::{borrow, borrow_mut, free, owned};
+use crate::ffi::owned;
 
 /// The colors and sizes every widget draws with. A gradient color reads as
 /// transparent.
@@ -36,208 +36,199 @@ pub extern "C" fn katui_theme_current() -> *mut KatuiTheme {
 
 /// A new theme, `theme` with every size times `factor`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_scaled(
-    theme: *const KatuiTheme,
-    factor: f32,
-) -> *mut KatuiTheme {
-    unsafe { borrow(theme) }.map_or(std::ptr::null_mut(), |theme| {
+pub extern "C" fn katui_theme_scaled(theme: Option<&KatuiTheme>, factor: f32) -> *mut KatuiTheme {
+    theme.map_or(std::ptr::null_mut(), |theme| {
         owned(KatuiTheme(theme.0.clone().scaled(factor)))
     })
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_free(theme: *mut KatuiTheme) {
-    unsafe { free(theme) };
+pub extern "C" fn katui_theme_free(theme: Option<Box<KatuiTheme>>) {
+    drop(theme);
 }
 
 /// Write the cell size the sizes follow into `width` and `height`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_cell(
-    theme: *const KatuiTheme,
-    width: *mut u16,
-    height: *mut u16,
+pub extern "C" fn katui_theme_cell(
+    theme: Option<&KatuiTheme>,
+    width: Option<&mut u16>,
+    height: Option<&mut u16>,
 ) {
-    let cell = unsafe { borrow(theme) }.map_or(cell(0, 0), |theme| theme.0.cell);
-    if let Some(width) = unsafe { borrow_mut(width) } {
+    let cell = theme.map_or(cell(0, 0), |theme| theme.0.cell);
+    if let Some(width) = width {
         *width = cell.width;
     }
-    if let Some(height) = unsafe { borrow_mut(height) } {
+    if let Some(height) = height {
         *height = cell.height;
     }
 }
 
-/// # Safety
-/// `theme` is NULL or a live theme.
-unsafe fn size(theme: *const KatuiTheme, of: impl FnOnce(&Theme) -> f32) -> f32 {
-    unsafe { borrow(theme) }.map_or(0.0, |theme| of(&theme.0))
+fn size(theme: Option<&KatuiTheme>, of: impl FnOnce(&Theme) -> f32) -> f32 {
+    theme.map_or(0.0, |theme| of(&theme.0))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_cell_width(theme: *const KatuiTheme) -> f32 {
-    unsafe { size(theme, Theme::cell_width) }
+pub extern "C" fn katui_theme_cell_width(theme: Option<&KatuiTheme>) -> f32 {
+    size(theme, Theme::cell_width)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_cell_height(theme: *const KatuiTheme) -> f32 {
-    unsafe { size(theme, Theme::cell_height) }
+pub extern "C" fn katui_theme_cell_height(theme: Option<&KatuiTheme>) -> f32 {
+    size(theme, Theme::cell_height)
 }
 
 /// The body text size, in pixels.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_body(theme: *const KatuiTheme) -> f32 {
-    unsafe { size(theme, Theme::body) }
+pub extern "C" fn katui_theme_body(theme: Option<&KatuiTheme>) -> f32 {
+    size(theme, Theme::body)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_small(theme: *const KatuiTheme) -> f32 {
-    unsafe { size(theme, Theme::small) }
+pub extern "C" fn katui_theme_small(theme: Option<&KatuiTheme>) -> f32 {
+    size(theme, Theme::small)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_heading(theme: *const KatuiTheme) -> f32 {
-    unsafe { size(theme, Theme::heading) }
+pub extern "C" fn katui_theme_heading(theme: Option<&KatuiTheme>) -> f32 {
+    size(theme, Theme::heading)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_title(theme: *const KatuiTheme) -> f32 {
-    unsafe { size(theme, Theme::title) }
+pub extern "C" fn katui_theme_title(theme: Option<&KatuiTheme>) -> f32 {
+    size(theme, Theme::title)
 }
 
 /// The corner radius, in pixels.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_radius(theme: *const KatuiTheme) -> f32 {
-    unsafe { size(theme, Theme::radius) }
+pub extern "C" fn katui_theme_radius(theme: Option<&KatuiTheme>) -> f32 {
+    size(theme, Theme::radius)
 }
 
 /// `count` cells across, in pixels.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_columns(theme: *const KatuiTheme, count: f32) -> f32 {
-    unsafe { size(theme, |theme| theme.cell_width() * count) }
+pub extern "C" fn katui_theme_columns(theme: Option<&KatuiTheme>, count: f32) -> f32 {
+    size(theme, |theme| theme.cell_width() * count)
 }
 
 /// `count` cells down, in pixels.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_rows(theme: *const KatuiTheme, count: f32) -> f32 {
-    unsafe { size(theme, |theme| theme.cell_height() * count) }
+pub extern "C" fn katui_theme_rows(theme: Option<&KatuiTheme>, count: f32) -> f32 {
+    size(theme, |theme| theme.cell_height() * count)
 }
 
 /// The accent color while `active`, the border color otherwise.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_outline(theme: *const KatuiTheme, active: bool) -> KatuiColor {
-    unsafe { borrow(theme) }.map_or_else(KatuiColor::default, |theme| {
+pub extern "C" fn katui_theme_outline(theme: Option<&KatuiTheme>, active: bool) -> KatuiColor {
+    theme.map_or_else(KatuiColor::default, |theme| {
         paint_color(&theme.0.outline(active))
     })
 }
 
-/// # Safety
-/// `theme` is NULL or a live theme.
-unsafe fn read(theme: *const KatuiTheme, of: impl FnOnce(&Theme) -> KatuiColor) -> KatuiColor {
-    unsafe { borrow(theme) }.map_or_else(KatuiColor::default, |theme| of(&theme.0))
+fn read(theme: Option<&KatuiTheme>, of: impl FnOnce(&Theme) -> KatuiColor) -> KatuiColor {
+    theme.map_or_else(KatuiColor::default, |theme| of(&theme.0))
 }
 
-/// # Safety
-/// `theme` is NULL or a live theme nothing else uses now.
-unsafe fn write(theme: *mut KatuiTheme, set: impl FnOnce(&mut Theme)) {
-    if let Some(theme) = unsafe { borrow_mut(theme) } {
+fn write(theme: Option<&mut KatuiTheme>, set: impl FnOnce(&mut Theme)) {
+    if let Some(theme) = theme {
         set(&mut theme.0);
     }
 }
 
 /// The page behind everything.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_background(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| paint_color(&theme.background)) }
+pub extern "C" fn katui_theme_background(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| paint_color(&theme.background))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_background(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.background = Paint::Solid(color.into())) }
+pub extern "C" fn katui_theme_set_background(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.background = Paint::Solid(color.into()));
 }
 
 /// Panels and fields.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_raised(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| paint_color(&theme.raised)) }
+pub extern "C" fn katui_theme_raised(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| paint_color(&theme.raised))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_raised(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.raised = Paint::Solid(color.into())) }
+pub extern "C" fn katui_theme_set_raised(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.raised = Paint::Solid(color.into()));
 }
 
 /// Hovered or selected rows.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_highlight(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| paint_color(&theme.highlight)) }
+pub extern "C" fn katui_theme_highlight(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| paint_color(&theme.highlight))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_highlight(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.highlight = Paint::Solid(color.into())) }
+pub extern "C" fn katui_theme_set_highlight(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.highlight = Paint::Solid(color.into()));
 }
 
 /// Hairline borders.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_border(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| paint_color(&theme.border)) }
+pub extern "C" fn katui_theme_border(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| paint_color(&theme.border))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_border(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.border = Paint::Solid(color.into())) }
+pub extern "C" fn katui_theme_set_border(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.border = Paint::Solid(color.into()));
 }
 
 /// Body text.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_text(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| theme.text.into()) }
+pub extern "C" fn katui_theme_text(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| theme.text.into())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_text(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.text = color.into()) }
+pub extern "C" fn katui_theme_set_text(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.text = color.into());
 }
 
 /// Hints, placeholders and secondary text.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_muted(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| theme.muted.into()) }
+pub extern "C" fn katui_theme_muted(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| theme.muted.into())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_muted(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.muted = color.into()) }
+pub extern "C" fn katui_theme_set_muted(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.muted = color.into());
 }
 
 /// The color of the action that matters most.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_accent(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| theme.accent.into()) }
+pub extern "C" fn katui_theme_accent(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| theme.accent.into())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_accent(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.accent = color.into()) }
+pub extern "C" fn katui_theme_set_accent(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.accent = color.into());
 }
 
 /// Text on the accent color.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_on_accent(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| theme.on_accent.into()) }
+pub extern "C" fn katui_theme_on_accent(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| theme.on_accent.into())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_on_accent(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.on_accent = color.into()) }
+pub extern "C" fn katui_theme_set_on_accent(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.on_accent = color.into());
 }
 
 /// Errors.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_danger(theme: *const KatuiTheme) -> KatuiColor {
-    unsafe { read(theme, |theme| theme.danger.into()) }
+pub extern "C" fn katui_theme_danger(theme: Option<&KatuiTheme>) -> KatuiColor {
+    read(theme, |theme| theme.danger.into())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_theme_set_danger(theme: *mut KatuiTheme, color: KatuiColor) {
-    unsafe { write(theme, |theme| theme.danger = color.into()) }
+pub extern "C" fn katui_theme_set_danger(theme: Option<&mut KatuiTheme>, color: KatuiColor) {
+    write(theme, |theme| theme.danger = color.into());
 }

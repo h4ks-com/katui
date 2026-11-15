@@ -1,22 +1,21 @@
 //! The bridge between katui's app runner and a JavaScript app, and `run`.
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Duration;
 
-use katui_app::{Control as UiControl, UiApp, Waker as UiWaker};
+use katui_app::{Control as UiControl, Waker as UiWaker};
+use katui_bindings::app::AppHost;
+use katui_bindings::state::interval;
 use katui_proto::input::InputEvent;
-use katui_ui::{CellPixels, Element as UiElement};
+use katui_ui::CellPixels;
 use katui_widgets::Theme as UiTheme;
 use napi::bindgen_prelude::{Function, JsObjectValue, JsValuesTupleIntoVec, Object, Unknown};
-use napi::{Env, Error, JsValue, Result, Status, ValueType};
+use napi::{Env, Error, JsValue, Result, ValueType};
 
-use crate::convert::{function, instance, invalid, is_nothing};
+use crate::convert::{function, instance, invalid, is_nothing, raise};
 use crate::element::{Node, node};
-use crate::message::{Msg, Obj, fetch, hold};
+use crate::event::Event;
+use crate::message::{Msg, Obj, fetch, hold, resolve};
 use crate::reclaim::{collector, reclaim};
-use crate::state::Event;
 use crate::theme::Theme;
 
 /// What to do after a message or an event.
@@ -41,17 +40,6 @@ impl From<Control> for UiControl {
             Control::Quit => Self::Quit,
         }
     }
-}
-
-/// The first error JavaScript raised, kept until the runner returns.
-pub(crate) type Failure = Rc<RefCell<Option<Error>>>;
-
-pub(crate) fn take(failure: &Failure) -> Option<Error> {
-    failure.borrow_mut().take()
-}
-
-pub(crate) fn keep(failure: &Failure, error: Error) {
-    failure.borrow_mut().get_or_insert(error);
 }
 
 /// Calls the method `name` of `target` with `args`, or gives `None` when
@@ -100,81 +88,53 @@ pub(crate) fn object<'env>(env: &'env Env, held: &Obj) -> Result<Object<'env>> {
     fetch(env, held)
 }
 
-/// A JavaScript app, as the runner sees it.
-pub(crate) struct Bridge {
+/// A JavaScript app, as the shared bridge calls it.
+pub(crate) struct NodeApp {
     env: Env,
     app: Obj,
     collect: Obj,
-    failure: Failure,
-    waker: Option<UiWaker<Msg>>,
 }
 
-impl Bridge {
-    pub(crate) fn new(env: Env, app: Object<'_>, failure: Failure) -> Result<Self> {
+impl NodeApp {
+    pub(crate) fn new(env: Env, app: Object<'_>) -> Result<Self> {
         Ok(Self {
             env,
             app: hold(&env, app.to_unknown())?,
             collect: collector(&env)?,
-            failure,
-            waker: None,
         })
-    }
-
-    fn fail(&self, error: Error) -> UiControl {
-        keep(&self.failure, error);
-        if let Some(waker) = &self.waker {
-            waker.send(Msg::Stop);
-        }
-        UiControl::Quit
     }
 
     /// Runs `body` in a handle scope of its own, so the values it makes are
-    /// freed when it returns, and turns an error into a quit.
-    fn scoped(&self, body: impl FnOnce(&Env, Object<'_>) -> Result<UiControl>) -> UiControl {
+    /// freed when it returns.
+    fn scoped<T>(&self, body: impl FnOnce(&Env, Object<'_>) -> Result<T>) -> Result<T> {
         let env = self.env;
-        let outcome = env.run_in_scope(|| body(&env, object(&env, &self.app)?));
-        outcome.unwrap_or_else(|error| self.fail(error))
+        env.run_in_scope(|| body(&env, object(&env, &self.app)?))
+    }
+}
+
+impl AppHost for NodeApp {
+    type Value = Obj;
+    type Error = Error;
+
+    fn refused(error: katui_bindings::Error) -> Error {
+        raise(error)
     }
 
-    pub(crate) fn render(&self) -> Node {
-        let env = self.env;
-        let built = env.run_in_scope(|| {
-            reclaim(&env, &self.collect)?;
-            let app = object(&env, &self.app)?;
+    fn start(&mut self, waker: UiWaker<Msg>) -> Result<()> {
+        self.scoped(|_, app| call_optional(&app, "start", Waker { inner: waker }).map(drop))
+    }
+
+    fn view(&self) -> Result<Node> {
+        self.scoped(|env, app| {
+            reclaim(env, &self.collect)?;
             let view = call_optional(&app, "view", ())?
                 .ok_or_else(|| invalid("give the app a view method"))?;
-            node(&env, view)
-        });
-        built.unwrap_or_else(|error| {
-            self.fail(error);
-            UiElement::spacer()
+            node(env, view)
         })
     }
 
-    pub(crate) fn theme_for(&self, cell: CellPixels) -> UiTheme {
-        let env = self.env;
-        let picked = env.run_in_scope(|| {
-            let app = object(&env, &self.app)?;
-            let returned = call_optional(&app, "theme", (cell.width, cell.height))?;
-            match returned {
-                Some(theme) if !is_nothing(&theme)? => {
-                    let theme = instance::<Theme>(&env, theme, "return a Theme from theme")?;
-                    Ok(Some(theme.inner.clone()))
-                }
-                _ => Ok(None),
-            }
-        });
-        match picked {
-            Ok(theme) => theme.unwrap_or_else(|| UiTheme::dark(cell)),
-            Err(error) => {
-                self.fail(error);
-                UiTheme::dark(cell)
-            }
-        }
-    }
-
-    pub(crate) fn deliver(&self, message: &Msg) -> UiControl {
-        self.scoped(|env, app| match message.resolve(env)? {
+    fn update(&mut self, message: &Msg) -> Result<UiControl> {
+        self.scoped(|env, app| match resolve(env, message)? {
             None => Ok(UiControl::Quit),
             Some(resolved) => match call_optional(&app, "update", resolved)? {
                 Some(returned) => control(Some(returned), UiControl::Redraw),
@@ -183,18 +143,23 @@ impl Bridge {
         })
     }
 
-    pub(crate) fn react(&self, event: &InputEvent) -> UiControl {
+    fn input(&mut self, event: &InputEvent) -> Result<UiControl> {
         self.scoped(|_, app| {
             let returned = call_optional(&app, "input", Event::new(event.clone()))?;
             control(returned, UiControl::Wait)
         })
     }
 
-    fn begin(&self, waker: UiWaker<Msg>) {
-        self.scoped(|_, app| {
-            call_optional(&app, "start", Waker { inner: waker })?;
-            Ok(UiControl::Wait)
-        });
+    fn theme(&self, cell: CellPixels) -> Result<Option<UiTheme>> {
+        self.scoped(
+            |env, app| match call_optional(&app, "theme", (cell.width, cell.height))? {
+                Some(theme) if !is_nothing(&theme)? => {
+                    let theme = instance::<Theme>(env, theme, "return a Theme from theme")?;
+                    Ok(Some(theme.inner.clone()))
+                }
+                _ => Ok(None),
+            },
+        )
     }
 }
 
@@ -205,31 +170,6 @@ fn default_update(message: Unknown<'_>) -> Result<UiControl> {
     }
     let call = function::<(), Unknown<'_>>(message)?;
     control(Some(call.call(())?), UiControl::Redraw)
-}
-
-impl UiApp for Bridge {
-    type Message = Msg;
-
-    fn start(&mut self, waker: UiWaker<Msg>) {
-        self.waker = Some(waker.clone());
-        self.begin(waker);
-    }
-
-    fn view(&self) -> UiElement<Msg> {
-        self.render()
-    }
-
-    fn update(&mut self, message: Msg) -> UiControl {
-        self.deliver(&message)
-    }
-
-    fn input(&mut self, event: &InputEvent) -> UiControl {
-        self.react(event)
-    }
-
-    fn theme(&self, cell: CellPixels) -> UiTheme {
-        self.theme_for(cell)
-    }
 }
 
 /// Sends messages to a running app.
@@ -251,15 +191,9 @@ impl Waker {
     pub fn every(&self, env: Env, seconds: f64, message: Unknown<'_>) -> Result<()> {
         let message = hold(&env, message)?;
         self.inner
-            .every(Duration::from_secs_f64(seconds.max(0.001)), move || {
-                Msg::Value(Arc::clone(&message))
-            });
+            .every(interval(seconds), move || Msg::Value(Arc::clone(&message)));
         Ok(())
     }
-}
-
-pub(crate) fn terminal_error(error: &katui_rt::RtError) -> Error {
-    Error::new(Status::GenericFailure, error.to_string())
 }
 
 /// Run `app` on the terminal until it quits. It blocks until then, and an
@@ -267,11 +201,5 @@ pub(crate) fn terminal_error(error: &katui_rt::RtError) -> Error {
 /// restored.
 #[napi(ts_args_type = "app: AppLike")]
 pub fn run(env: Env, app: Object<'_>) -> Result<()> {
-    let failure = Failure::default();
-    let bridge = Bridge::new(env, app, Rc::clone(&failure))?;
-    let finished = katui_app::run(bridge);
-    if let Some(error) = take(&failure) {
-        return Err(error);
-    }
-    finished.map_err(|error| terminal_error(&error))
+    katui_bindings::app::run(NodeApp::new(env, app)?)
 }

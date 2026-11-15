@@ -2,31 +2,13 @@
 //! caller chose, and a payload with what was picked.
 
 use std::ffi::{CString, c_char};
-use std::sync::Arc;
 
+use katui_bindings::Msg as Shared;
 use katui_ui::Scroll;
 
-#[derive(Clone)]
-pub(crate) enum Payload {
-    None,
-    Index(usize),
-    Id(u64),
-    Float(f32),
-    Point(f32, f32),
-    Scroll(Scroll),
-    Link(Arc<str>),
-}
-
-#[derive(Clone)]
-pub(crate) enum Msg {
-    User(u64, Payload),
-    /// A callback broke its contract while we drew, so the app has to end.
-    Stop,
-}
-
-pub(crate) fn plain(key: u64) -> Msg {
-    Msg::User(key, Payload::None)
-}
+// cbindgen resolves a generic path by its last segment, so naming the
+// alias after the shared type would make it read `Msg<u64>` as this alias.
+pub(crate) type Msg = Shared<u64>;
 
 /// Which field of a `KatuiMessage` holds the payload.
 pub type KatuiPayload = u32;
@@ -105,41 +87,44 @@ impl KatuiMessage {
     }
 }
 
-/// Call `deliver` with the C form of `key` and `payload`.
-pub(crate) fn with_message<R>(
-    key: u64,
-    payload: &Payload,
-    deliver: impl FnOnce(&KatuiMessage) -> R,
-) -> R {
-    let mut message = KatuiMessage::new(key, KATUI_PAYLOAD_NONE);
-    let link;
-    match payload {
-        Payload::None => {}
-        Payload::Index(index) => {
-            message.payload = KATUI_PAYLOAD_INDEX;
-            message.index = *index;
+/// Call `deliver` with the C form of `message`, whose link lives during the
+/// call.
+pub(crate) fn with_message<R>(message: &Msg, deliver: impl FnOnce(&KatuiMessage) -> R) -> R {
+    let link = match message {
+        Msg::Link(_, href) | Msg::Href(href) => {
+            Some(CString::new(href.replace('\0', "")).unwrap_or_default())
         }
-        Payload::Id(id) => {
-            message.payload = KATUI_PAYLOAD_ID;
-            message.id = *id;
-        }
-        Payload::Float(value) => {
-            message.payload = KATUI_PAYLOAD_FLOAT;
-            message.value = *value;
-        }
-        Payload::Point(x, y) => {
-            message.payload = KATUI_PAYLOAD_POINT;
-            (message.x, message.y) = (*x, *y);
-        }
-        Payload::Scroll(scroll) => {
-            message.payload = KATUI_PAYLOAD_SCROLL;
-            message.scroll = (*scroll).into();
-        }
-        Payload::Link(href) => {
-            link = CString::new(href.replace('\0', "")).unwrap_or_default();
-            message.payload = KATUI_PAYLOAD_LINK;
-            message.link = link.as_ptr();
-        }
+        _ => None,
+    };
+    let mut out = match *message {
+        Msg::Value(key) => KatuiMessage::new(key, KATUI_PAYLOAD_NONE),
+        Msg::Index(key, index) => KatuiMessage {
+            index,
+            ..KatuiMessage::new(key, KATUI_PAYLOAD_INDEX)
+        },
+        Msg::Id(key, id) => KatuiMessage {
+            id,
+            ..KatuiMessage::new(key, KATUI_PAYLOAD_ID)
+        },
+        Msg::Float(key, value) => KatuiMessage {
+            value,
+            ..KatuiMessage::new(key, KATUI_PAYLOAD_FLOAT)
+        },
+        Msg::Point(key, x, y) => KatuiMessage {
+            x,
+            y,
+            ..KatuiMessage::new(key, KATUI_PAYLOAD_POINT)
+        },
+        Msg::Scroll(key, scroll) => KatuiMessage {
+            scroll: scroll.into(),
+            ..KatuiMessage::new(key, KATUI_PAYLOAD_SCROLL)
+        },
+        Msg::Link(key, _) => KatuiMessage::new(key, KATUI_PAYLOAD_LINK),
+        Msg::Href(_) => KatuiMessage::new(0, KATUI_PAYLOAD_LINK),
+        Msg::Stop => KatuiMessage::new(0, KATUI_PAYLOAD_NONE),
+    };
+    if let Some(link) = &link {
+        out.link = link.as_ptr();
     }
-    deliver(&message)
+    deliver(&out)
 }
