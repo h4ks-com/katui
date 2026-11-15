@@ -171,11 +171,12 @@ and `just node-demo widgets` runs an example with it.
 
 ## Releasing
 
-1. Set the new version in the workspace `Cargo.toml`, in
-   `[workspace.package]` and on every internal dependency, and in
-   `bindings/node/package.json`.
-2. Run `just ci` and commit.
-3. Tag the commit with the version, like `v0.2.0`, and push the tag.
+Every package ships together under one version. From a clean `main`, run
+`just release patch`, `just release minor` or `just release major`. It
+sets the next version in the workspace `Cargo.toml`, on every internal
+dependency and in `bindings/node/package.json`, refreshes the lock files,
+the API manifest and the Node loader, runs `just ci`, commits, tags the
+commit like `v0.2.0` and pushes both.
 
 The release workflow then:
 

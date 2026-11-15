@@ -77,8 +77,12 @@ docs:
 # the public api reference, as github pages publishes it
 api-docs:
     cargo doc --workspace --exclude katui-python --exclude katui-node --exclude katui-bindings --no-deps --all-features
-    echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
     python3 scripts/llms.py
+    just site
+
+# the front page and the guides as static pages, beside the api reference in target/doc
+site:
+    uv run --no-project --with markdown==3.8 --with pygments==2.19.1 python scripts/site.py
 
 # every gate, before every commit
 ci: fmt-check clippy test docs typos quality py-check c-check go-check node-check
@@ -202,11 +206,41 @@ node-publish dist:
 version:
     @sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1
 
-# fail unless `tag` names the workspace version, like v0.1.0, and every
-# internal dependency asks for that version
+# every internal dependency and the node package have to ask for that version.
+# fail unless `tag` names the workspace version, like v0.1.0
 release-check tag:
     test {{quote(tag)}} = "v$(just version)"
     test -z "$(grep -E '^katui-[a-z]+ = .*version = ' Cargo.toml | grep -v "version = \"$(just version)\"")"
+    grep -q "^  \"version\": \"$(just version)\"," bindings/node/package.json
+
+# bumps the versions, passes the gate, commits, tags and pushes; the release
+# workflow then publishes to crates.io, PyPI, npm, GitHub and the go module.
+# release every package together, like `just release patch` (or minor, major)
+release level:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    test -z "$(git status --porcelain)" || { echo "commit or stash your changes first"; exit 1; }
+    test "$(git branch --show-current)" = main || { echo "release from main"; exit 1; }
+    IFS=. read -r major minor patch <<< "$(just version)"
+    case {{quote(level)}} in
+      major) next="$((major + 1)).0.0" ;;
+      minor) next="$major.$((minor + 1)).0" ;;
+      patch) next="$major.$minor.$((patch + 1))" ;;
+      *) echo "say major, minor or patch"; exit 1 ;;
+    esac
+    current=$(just version)
+    perl -pi -e "s/^version = \"\Q$current\E\"/version = \"$next\"/; s/(katui-[a-z]+ = \{ path = \"[^\"]+\", version = )\"\Q$current\E\"/\$1\"$next\"/" Cargo.toml
+    (cd bindings/node && npm version "$next" --no-git-tag-version --allow-same-version >/dev/null)
+    cargo update --workspace --quiet
+    cargo update --workspace --quiet --manifest-path demos/obby-chat/Cargo.toml
+    just api node-build
+    just release-check "v$next"
+    git add -A
+    just ci
+    git commit -m "chore: release $next"
+    git tag "v$next"
+    git push origin main "v$next"
+    echo "pushed v$next; follow it with: gh run watch \$(gh run list --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
 
 # package and compile every crate the way crates.io will see it
 crates-check:
