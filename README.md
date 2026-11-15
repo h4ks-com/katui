@@ -213,34 +213,20 @@ tmux -L katui -f katui.conf new -s demos
 
 ## Demos
 
-Clone the repository and run any of these with [just](https://github.com/casey/just):
+Clone the repository and run any of these with [just](https://github.com/casey/just). Each folder has a README with a screenshot of every demo in it.
 
-| Command | What it shows |
-|---|---|
-| `just demo-counter` | The first program above |
-| `just demo-glow` | The game example above |
-| `just demo-todo` | A task list with tabs, a text field and a progress bar |
-| `just demo-widgets` | Every widget in one app: menus, a tree, a table, a note, toasts and a dialog |
-| `just demo-browse` | A page viewer for local HTML, with scrolling and links |
-| `just demo-html` | Every part of the HTML and CSS subset on one page |
-| `just demo-ratatui` | An image viewer made of ratatui widgets, with the picture beside them |
-| `just demo-video` | A video player for a file or URL, or a test pattern with a beep when you give it none |
-| `just demo-shardrift` | An asteroids-style game |
-| `just demo-lumenshaft` | A falling-block game in a 3D shaft |
-| `just demo-cube` | A lit cube in software 3D that the arrow keys spin |
-| `just demo-plasma` | An interference plasma |
-
-The same apps and a game written in Python run with `just py-demo`, like
-`just py-demo widgets`. They live in
-[bindings/python/examples](bindings/python/examples).
-
-C and Go examples run with `just c-demo todo` and `just go-demo todo`, from
-[bindings/c/examples](bindings/c/examples) and
-[bindings/go/examples](bindings/go/examples).
-
-The same apps and game in TypeScript run with `just node-demo`, like
-`just node-demo widgets`. They live in
-[bindings/node/examples](bindings/node/examples).
+| Demo | What it shows | Folder | Run |
+|---|---|---|---|
+| md-viewer | A markdown reader for a repository's docs, with a file tree, search and GitHub's markdown | [demos/md-viewer](demos/md-viewer) | `just demo-md` |
+| IRC client | A chat client drawn in pixels, with image previews and small animations | [demos/obby-chat](demos/obby-chat) | `just demo-irc` |
+| Counter, glow | The first program and the game example above | [crates/katui/examples](crates/katui/examples) | `just demo-counter`, `just demo-glow` |
+| Todo, widgets, browse, HTML | A task list, every widget in one app, and a viewer for local HTML pages | [crates/katui-app/examples](crates/katui-app/examples) | `just demo-widgets` |
+| Games and video | Shardrift, Lumenshaft, a lit cube, snake, life, a bouncing logo, a plasma and a video player | [crates/katui-game/examples](crates/katui-game/examples) | `just demo-shardrift` |
+| ratatui viewer | An image viewer made of ratatui widgets, with the picture beside them | [crates/katui-ratatui/examples](crates/katui-ratatui/examples) | `just demo-ratatui` |
+| Python | The same apps and a game in Python | [bindings/python/examples](bindings/python/examples) | `just py-demo widgets` |
+| TypeScript | The same apps and a game in TypeScript | [bindings/node/examples](bindings/node/examples) | `just node-demo widgets` |
+| Go | A counter, a task list, a help page and a game in Go | [bindings/go/examples](bindings/go/examples) | `just go-demo todo` |
+| C | A counter, a task list and a game in C | [bindings/c/examples](bindings/c/examples) | `just c-demo todo` |
 
 `just --list` shows the rest, and `just info` prints what katui detected in
 your terminal. The video demo needs `ffmpeg` for the picture and `ffplay`
@@ -251,6 +237,23 @@ for the sound.
 The [guides](docs/README.md) walk you through each kind of program, and the
 [API docs](https://matheusfillipe.github.io/katui/katui/) list every type
 and function.
+
+## Use katui with a coding agent
+
+The repository has a skill that teaches coding agents like Claude Code how
+to build with katui: apps, games, documents, video and tests in every
+language. Copy the `skills/katui` folder into `~/.claude/skills/` to use it
+in all your projects, or into a project's `.claude/skills/` folder for that
+project alone:
+
+```
+git clone https://github.com/matheusfillipe/katui
+cp -r katui/skills/katui ~/.claude/skills/
+```
+
+Agents that read llms.txt can start from
+<https://matheusfillipe.github.io/katui/llms.txt>, which links every guide
+and the API reference.
 
 ## Status
 

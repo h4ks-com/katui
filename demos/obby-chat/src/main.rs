@@ -331,7 +331,7 @@ mod tests {
     }
 
     fn save(name: &str, surface: &Surface) {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/screens");
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/screenshots");
         std::fs::create_dir_all(&dir).expect("artifact directory");
         image::save_buffer(
             dir.join(name),

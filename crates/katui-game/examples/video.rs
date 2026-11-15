@@ -366,8 +366,17 @@ impl App for Player {
 }
 
 #[cfg(test)]
+#[path = "support/artifact.rs"]
+#[expect(dead_code, reason = "the video frame comes from ffmpeg, not a Light")]
+mod artifact;
+
+#[cfg(test)]
 mod tests {
-    use super::{Clip, draw_overlay, frame_size};
+    use std::time::Duration;
+
+    use katui_rt::media::VideoStream;
+
+    use super::{Clip, artifact, draw_overlay, frame_size};
 
     #[test]
     fn frames_keep_the_screen_shape_and_shrink_under_a_multiplexer() {
@@ -397,16 +406,26 @@ mod tests {
         assert_eq!(at(150, height - 1), [40, 40, 48], "part still to play");
         assert_eq!(at(width / 2 - 4, height / 2), [255, 255, 255], "pause sign");
         assert_eq!(at(width / 2, height / 2), [0, 0, 0], "gap between its bars");
-        image::save_buffer(
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../target/katui-video-overlay.png"
-            ),
-            &pixels,
-            width as u32,
-            height as u32,
-            image::ColorType::Rgba8,
-        )
-        .expect("the png writer saves under target");
+    }
+
+    #[test]
+    #[ignore = "decodes the test pattern with ffmpeg"]
+    fn a_paused_test_pattern_frame_dumps_a_png_artifact() {
+        let size = (854, 480);
+        let mut stream =
+            VideoStream::ffmpeg(&Clip::Test.video_input(12.0), size, 30).expect("ffmpeg starts");
+        let mut pixels = loop {
+            if let Some(frame) = stream.latest() {
+                break frame;
+            }
+            assert!(!stream.ended(), "ffmpeg decodes a frame");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(
+            pixels.iter().any(|&byte| byte > 0),
+            "the frame has a picture"
+        );
+        draw_overlay(&mut pixels, size, Some(0.2), true);
+        artifact::save_rgba(&pixels, size, "video");
     }
 }

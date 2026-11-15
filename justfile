@@ -40,11 +40,11 @@ metrics:
 
 # copy-paste duplication in every language, from .jscpd.json
 dupes:
-    npx --yes jscpd@4 crates/ bindings/ demos/obby-chat/src/
+    npx --yes jscpd@4 crates/ bindings/ demos/obby-chat/src/ demos/md-viewer/src/
 
 # cyclomatic complexity, length and parameter count of every function, in every language
 complexity:
-    uvx --from lizard==1.26.0 lizard crates bindings demos/obby-chat/src \
+    uvx --from lizard==1.26.0 lizard crates bindings demos/obby-chat/src demos/md-viewer/src \
         -l rust -l python -l go -l typescript -l c \
         -x '*/target/*' -x '*/node_modules/*' -x '*/.venv/*' \
         -x '*/index.js' -x '*/index.d.ts' -x '*/katui.h' \
@@ -78,6 +78,7 @@ docs:
 api-docs:
     cargo doc --workspace --exclude katui-python --exclude katui-node --exclude katui-bindings --no-deps --all-features
     echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
+    python3 scripts/llms.py
 
 # every gate, before every commit
 ci: fmt-check clippy test docs typos quality py-check c-check go-check node-check
@@ -407,6 +408,15 @@ demo-life:
 # an interference plasma
 demo-plasma:
     cargo run --release -p katui-game --example plasma
+
+# render every demo headless into the screenshots folder beside it (needs ffmpeg and cwebp)
+screenshots:
+    sh scripts/screenshots-rust.sh
+    sh scripts/screenshots-bindings.sh
+
+# a markdown reader for a folder of docs, katui's own by default
+demo-md path=".":
+    cargo run --release -p md-viewer -- {{path}}
 
 # an irc client
 demo-irc:

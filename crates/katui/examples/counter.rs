@@ -28,3 +28,44 @@ impl UiApp for Counter {
 fn main() -> Result<(), katui::rt::RtError> {
     run(Counter::default())
 }
+
+#[cfg(test)]
+mod tests {
+    use katui::app::UiApp as _;
+    use katui::draw::{TextEngine, bundled_fonts};
+    use katui::ui::{CellPixels, Ui, UiOptions};
+    use katui::widgets::Theme;
+
+    use super::Counter;
+
+    #[test]
+    fn three_clicks_show_on_the_screen() {
+        const CELL: CellPixels = CellPixels {
+            width: 9,
+            height: 19,
+        };
+        let mut counter = Counter::default();
+        for _ in 0..3 {
+            counter.update(());
+        }
+        assert_eq!(counter.0, 3);
+        let size = (9 * 40, 19 * 6);
+        let view = Theme::dark(CELL).scope(|_| counter.view());
+        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
+        let mut ui: Ui<()> = Ui::new(engine, UiOptions::default());
+        let surface = ui
+            .render(&view, size, CELL)
+            .flatten(CELL, size)
+            .expect("whole pixels");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/screenshots");
+        std::fs::create_dir_all(dir).expect("the target directory is writable");
+        image::save_buffer(
+            format!("{dir}/counter.png"),
+            surface.pixels(),
+            size.0,
+            size.1,
+            image::ExtendedColorType::Rgba8,
+        )
+        .expect("the png writer saves under target");
+    }
+}

@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(todo.shown(), vec![0, 2], "active hides done tasks");
 
         let view = Theme::dark(CELL).scope(|_| todo.view());
-        render_to_png(&view, (9 * 90, 19 * 22), CELL, "katui-todo");
+        render_to_png(&view, (9 * 90, 19 * 22), CELL, "todo");
 
         todo.update(Message::Filter(0));
         press(&mut todo, Key::Delete);

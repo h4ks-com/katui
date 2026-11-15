@@ -54,3 +54,27 @@ func TestTodoAddsTypedTasksTicksAndFiltersThem(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestScreenshot(t *testing.T) {
+	screen, err := katui.NewScreen(newTodo(), 900, 560)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Close()
+	for _, task := range []string{"buy bread", "call the bank"} {
+		if err := screen.TypeText(task); err != nil {
+			t.Fatal(err)
+		}
+		press(t, screen, "enter")
+	}
+	if err := screen.TypeText("walk the dog"); err != nil {
+		t.Fatal(err)
+	}
+	picture, err := screen.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := picture.Save(shots.Path("example-todo")); err != nil {
+		t.Fatal(err)
+	}
+}

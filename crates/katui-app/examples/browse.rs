@@ -203,7 +203,7 @@ mod tests {
         let mut browser = Browser::open(start);
         assert!(browser.source.is_ok(), "the bundled page opens");
         let view = Theme::dark(CELL).scope(|_| browser.view());
-        render_to_png(&view, (9 * 100, 19 * 36), CELL, "katui-browse");
+        render_to_png(&view, (9 * 100, 19 * 22), CELL, "browse");
         browser.update(Message::Link("about.html".to_owned()));
         assert!(browser.page.ends_with("about.html"));
         assert!(browser.source.is_ok(), "the linked page opens");
@@ -220,7 +220,7 @@ mod tests {
         let browser = Browser::open(showcase);
         assert!(browser.source.is_ok(), "the showcase opens");
         let view = Theme::dark(CELL).scope(|_| browser.view());
-        render_to_png(&view, (9 * 110, 19 * 190), CELL, "katui-html-showcase");
+        render_to_png(&view, (9 * 110, 19 * 126), CELL, "showcase");
         assert!(
             browser
                 .images

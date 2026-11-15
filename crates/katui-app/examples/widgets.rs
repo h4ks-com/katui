@@ -401,12 +401,7 @@ mod tests {
 
     fn render(tour: &Tour, name: &str) -> Vec<u8> {
         let view = tour.theme(CELL).scope(|_| tour.view());
-        render_to_png(
-            &view,
-            (8 * 120, 17 * 40),
-            CELL,
-            &format!("katui-tour-{name}"),
-        )
+        render_to_png(&view, (8 * 120, 17 * 40), CELL, &format!("widgets-{name}"))
     }
 
     #[test]

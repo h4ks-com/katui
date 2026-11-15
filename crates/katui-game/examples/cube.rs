@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn the_cube_turns_shows_three_faces_and_steers_with_arrows() {
         let mut cube = Cube::default();
-        let mut light = Light::new(320, 180, 1.0);
+        let mut light = Light::new(640, 360, 1.0);
         let idle = HeldKeys::default();
         for _ in 0..40 {
             cube.step(&idle, 1.0 / 60.0);
@@ -165,7 +165,7 @@ mod tests {
         artifact::save_frame(&light, "cube");
         let surface = light.to_surface();
         let center = surface
-            .get(katui_scene::surface::PixelPos::new(160, 90))
+            .get(katui_scene::surface::PixelPos::new(320, 180))
             .expect("inside the screen");
         let corner = surface
             .get(katui_scene::surface::PixelPos::new(2, 2))

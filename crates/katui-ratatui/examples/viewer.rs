@@ -384,3 +384,170 @@ fn checkers(x: u32, y: u32) -> [u8; 3] {
         [56, 52, 78]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use katui_draw::{
+        Canvas, Paint, Point, Rect as PixelRect, Rgba, TextEngine, TextSpan, TextStyle,
+        bundled_fonts,
+    };
+    use katui_proto::probe::CellPixels;
+    use katui_scene::surface::Surface;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+    use ratatui::style::{Color, Modifier};
+
+    use super::{RatatuiApp as _, Viewer};
+
+    const CELL: CellPixels = CellPixels {
+        width: 9,
+        height: 19,
+    };
+    const BACKGROUND: Rgba = Rgba::solid(24, 24, 32);
+    const FOREGROUND: Rgba = Rgba::solid(220, 220, 230);
+
+    fn rgba(color: Color, reset: Rgba) -> Rgba {
+        match color {
+            Color::Rgb(red, green, blue) => Rgba::solid(red, green, blue),
+            Color::Black => Rgba::solid(0, 0, 0),
+            _ => reset,
+        }
+    }
+
+    fn rasterize(buffer: &Buffer) -> Canvas {
+        let (cell_width, cell_height) = (f32::from(CELL.width), f32::from(CELL.height));
+        let width = u32::from(buffer.area.width);
+        let mut canvas = Canvas::new(
+            width * u32::from(CELL.width),
+            u32::from(buffer.area.height) * u32::from(CELL.height),
+        )
+        .expect("a positive size");
+        canvas.clear(BACKGROUND);
+        let mut engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
+        let style = TextStyle {
+            line_height: cell_height,
+            ..TextStyle::new(15.0)
+        };
+        for (index, cell) in (0_u32..).zip(&buffer.content) {
+            let at = Point::new(
+                (index % width) as f32 * cell_width,
+                (index / width) as f32 * cell_height,
+            );
+            let background = rgba(cell.bg, BACKGROUND);
+            canvas.fill_rect(
+                PixelRect::new(at.x, at.y, cell_width, cell_height),
+                &Paint::Solid(background),
+            );
+            let ink = Paint::Solid(rgba(cell.fg, FOREGROUND));
+            let symbol = cell.symbol().chars().next().unwrap_or(' ');
+            if !draw_shape(&mut canvas, symbol, at, &ink) && symbol != ' ' {
+                let span = TextSpan {
+                    text: cell.symbol().to_owned(),
+                    bold: cell.modifier.contains(Modifier::BOLD),
+                    mono: true,
+                    ..TextSpan::default()
+                };
+                let layout = engine.layout_spans(&[span], &style, None);
+                canvas.draw_text(&layout, at, &ink);
+            }
+        }
+        canvas
+    }
+
+    /// The up, down, left and right arms of a box drawing character.
+    fn arms(symbol: char) -> Option<[bool; 4]> {
+        Some(match symbol {
+            '─' => [false, false, true, true],
+            '│' => [true, true, false, false],
+            '┌' | '╭' => [false, true, false, true],
+            '┐' | '╮' => [false, true, true, false],
+            '└' | '╰' => [true, false, false, true],
+            '┘' | '╯' => [true, false, true, false],
+            _ => return None,
+        })
+    }
+
+    /// We draw box lines, block eighths and arrows as shapes because the
+    /// bundled fonts have no glyphs for them, the way terminals draw them.
+    fn draw_shape(canvas: &mut Canvas, symbol: char, at: Point, ink: &Paint) -> bool {
+        let (width, height) = (f32::from(CELL.width), f32::from(CELL.height));
+        let (middle_x, middle_y) = (at.x + (width / 2.0).floor(), at.y + (height / 2.0).floor());
+        let code = u32::from(symbol);
+        if let Some([up, down, left, right]) = arms(symbol) {
+            let lines = [
+                (up, PixelRect::new(middle_x, at.y, 1.0, height / 2.0)),
+                (
+                    down,
+                    PixelRect::new(middle_x, middle_y, 1.0, height / 2.0 + 1.0),
+                ),
+                (left, PixelRect::new(at.x, middle_y, width / 2.0, 1.0)),
+                (
+                    right,
+                    PixelRect::new(middle_x, middle_y, width / 2.0 + 1.0, 1.0),
+                ),
+            ];
+            for (_, line) in lines.iter().filter(|(drawn, _)| *drawn) {
+                canvas.fill_rect(*line, ink);
+            }
+        } else if (0x2581..=0x2588).contains(&code) {
+            let filled = height * (code - 0x2580) as f32 / 8.0;
+            canvas.fill_rect(
+                PixelRect::new(at.x, at.y + height - filled, width, filled),
+                ink,
+            );
+        } else if (0x2589..=0x258F).contains(&code) {
+            let filled = width * (0x2590 - code) as f32 / 8.0;
+            canvas.fill_rect(PixelRect::new(at.x, at.y, filled, height), ink);
+        } else if symbol == '↑' || symbol == '↓' {
+            for row in 0..5_u8 {
+                let half = f32::from(if symbol == '↑' { row } else { 4 - row });
+                let top = middle_y - 2.0 + f32::from(row);
+                canvas.fill_rect(
+                    PixelRect::new(middle_x - half, top, half * 2.0 + 1.0, 1.0),
+                    ink,
+                );
+            }
+        } else {
+            return false;
+        }
+        true
+    }
+
+    #[test]
+    fn the_sidebar_reports_the_picture_it_shows() {
+        let mut viewer = Viewer::new(Vec::new());
+        viewer.list.select(Some(1));
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("a test terminal");
+        terminal
+            .draw(|frame| viewer.draw(frame, CELL))
+            .expect("the viewer draws");
+        let shown = viewer.shown.as_ref().expect("the mandelbrot is drawn");
+        let buffer = terminal.backend().buffer();
+        let text: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+        let size = format!("{} x {} pixels", shown.size.0, shown.size.1);
+        assert!(text.contains(&size), "the sidebar reads {size}");
+
+        let mut canvas = rasterize(buffer);
+        let picture = Surface::from_rgba(shown.size.0, shown.size.1, shown.pixels.to_vec())
+            .expect("exact pixels");
+        let area = PixelRect::new(
+            f32::from(shown.area.x) * f32::from(CELL.width),
+            f32::from(shown.area.y) * f32::from(CELL.height),
+            shown.size.0 as f32,
+            shown.size.1 as f32,
+        );
+        canvas.draw_surface(&picture, area, 0.0);
+        let surface = canvas.to_surface().expect("whole pixels");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/screenshots");
+        std::fs::create_dir_all(dir).expect("the target directory is writable");
+        image::save_buffer(
+            format!("{dir}/viewer.png"),
+            surface.pixels(),
+            surface.width(),
+            surface.height(),
+            image::ColorType::Rgba8,
+        )
+        .expect("the png writer saves under target");
+    }
+}

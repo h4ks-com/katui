@@ -39,3 +39,18 @@ func TestHelpLinksSwitchPages(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestScreenshot(t *testing.T) {
+	screen, err := katui.NewScreen(&help{current: "start"}, 900, 560)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Close()
+	picture, err := screen.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := picture.Save(shots.Path("example-help")); err != nil {
+		t.Fatal(err)
+	}
+}

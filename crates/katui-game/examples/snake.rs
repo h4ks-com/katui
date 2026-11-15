@@ -239,9 +239,13 @@ mod tests {
         let mut snake = Snake::new();
         let mut light = Light::new(960, 540, 1.0);
         snake.resize(&light);
-        for _ in 0..300 {
+        for _ in 0..900 {
             snake.run.tick();
         }
+        assert!(
+            snake.run.body.len() > Run::new().body.len(),
+            "the snake grows as it eats"
+        );
         snake.render(&mut light);
         artifact::save_frame(&light, "snake");
     }

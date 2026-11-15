@@ -26,6 +26,7 @@ katui-rt = { workspace = true, optional = true }
 run = ["dep:katui-rt"]
 
 [dev-dependencies]
+katui-draw.workspace = true
 katui-rt.workspace = true
 
 [lints]

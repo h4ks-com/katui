@@ -33,3 +33,18 @@ func TestTheCounterCountsClicks(t *testing.T) {
 		t.Fatalf("counted %d clicks, want 2", app.count)
 	}
 }
+
+func TestScreenshot(t *testing.T) {
+	screen, err := katui.NewScreen(&counter{count: 3}, 900, 560)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Close()
+	picture, err := screen.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := picture.Save(shots.Path("example-counter")); err != nil {
+		t.Fatal(err)
+	}
+}
