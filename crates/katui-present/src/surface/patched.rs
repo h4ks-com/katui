@@ -207,12 +207,62 @@ impl PatchedKitty {
         area: CellRect,
     ) -> io::Result<()> {
         bytes.write_all(b"\x1b[?2026h")?;
+        let mut uploads = Vec::new();
         let mut shows = Vec::new();
         for rect in damage {
-            self.patch(bytes, &mut shows, surface, *rect, area)?;
+            self.patch(&mut uploads, &mut shows, surface, *rect, area)?;
         }
+        self.write_uploads(bytes, surface, &uploads)?;
         bytes.append(&mut shows);
         bytes.write_all(b"\x1b[?2026l")
+    }
+
+    /// The pixels of every upload in order. Through a stash they go one by
+    /// one; in the escape code they compress on every core, since each
+    /// tile is its own image.
+    fn write_uploads(
+        &mut self,
+        bytes: &mut Vec<u8>,
+        surface: &Surface,
+        uploads: &[Upload],
+    ) -> io::Result<()> {
+        let placeholders = matches!(self.grid, Grid::Placeholders);
+        let cell = self.cell;
+        let mut stash = self.stash.as_deref_mut();
+        if stash.is_some() || uploads.len() < 2 {
+            for upload in uploads {
+                upload.encode(bytes, surface, placeholders, cell, stash.as_deref_mut())?;
+            }
+            return Ok(());
+        }
+        let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        let per_core = uploads.len().div_ceil(cores).max(1);
+        let encoded: Vec<io::Result<Vec<u8>>> = std::thread::scope(|scope| {
+            let workers: Vec<_> = uploads
+                .chunks(per_core)
+                .map(|batch| {
+                    scope.spawn(move || {
+                        let mut out = Vec::new();
+                        for upload in batch {
+                            upload.encode(&mut out, surface, placeholders, cell, None)?;
+                        }
+                        Ok(out)
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| {
+                    worker.join().unwrap_or_else(|_| {
+                        Err(io::Error::other("a tile encoding thread panicked"))
+                    })
+                })
+                .collect()
+        });
+        for batch in encoded {
+            bytes.append(&mut batch?);
+        }
+        Ok(())
     }
 
     /// A repaint keeps the old tiles up until each one is replaced. Every
@@ -243,10 +293,12 @@ impl PatchedKitty {
         {
             anchor.write(&mut bytes)?;
         }
+        let mut uploads = Vec::new();
         let mut shows = Vec::new();
         for rect in &damage {
-            self.patch(&mut bytes, &mut shows, surface, *rect, area)?;
+            self.patch(&mut uploads, &mut shows, surface, *rect, area)?;
         }
+        self.write_uploads(&mut bytes, surface, &uploads)?;
         bytes.append(&mut shows);
         self.prev = Some(surface.clone());
         out.write_all(&bytes)?;
@@ -304,7 +356,7 @@ impl PatchedKitty {
     /// ones are placed.
     fn patch(
         &mut self,
-        uploads: &mut Vec<u8>,
+        uploads: &mut Vec<Upload>,
         reveal: &mut Vec<u8>,
         surface: &Surface,
         rect: PixelRect,
@@ -325,18 +377,11 @@ impl PatchedKitty {
             y: origin_y,
         };
         let cells = (columns, rows);
+        uploads.push(Upload { image, rect, cells });
         if matches!(self.grid, Grid::Placeholders) {
-            upload_placeholder_tile(uploads, image, surface, rect, cells, self.cell)?;
             show_placeholder_tile(reveal, image, origin, cells)?;
         } else {
             let padded = with_apron(rect, surface);
-            transmit_pixels(
-                uploads,
-                image,
-                &tile_pixels(surface, padded),
-                (padded.width, padded.height),
-                self.stash.as_deref_mut(),
-            )?;
             self.place_tile(reveal, image, rect, padded, origin, cells)?;
         }
         if let Some(previous) = shown {
@@ -375,6 +420,40 @@ impl PatchedKitty {
             move_cursor(bytes, origin)?;
         }
         bytes.write_all(&place.encode())
+    }
+}
+
+/// One tile's pixels to send under `image`, decided before any of them is
+/// encoded so the encoding can run in parallel.
+#[derive(Debug, Clone, Copy)]
+struct Upload {
+    image: KittyImage,
+    rect: PixelRect,
+    cells: (u16, u16),
+}
+
+impl Upload {
+    fn encode(
+        &self,
+        bytes: &mut Vec<u8>,
+        surface: &Surface,
+        placeholders: bool,
+        cell: CellPixels,
+        stash: Option<&mut (dyn Stash + 'static)>,
+    ) -> io::Result<()> {
+        if placeholders {
+            return upload_placeholder_tile(
+                bytes, self.image, surface, self.rect, self.cells, cell,
+            );
+        }
+        let padded = with_apron(self.rect, surface);
+        transmit_pixels(
+            bytes,
+            self.image,
+            &tile_pixels(surface, padded),
+            (padded.width, padded.height),
+            stash,
+        )
     }
 }
 
