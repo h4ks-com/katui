@@ -64,6 +64,18 @@ pub struct Placement {
 }
 
 impl Placement {
+    /// Placement `id` of the whole of `image` over `area`, at z 0.
+    #[must_use]
+    pub const fn new(image: ImageId, id: PlacementId, area: CellRect) -> Self {
+        Self {
+            image,
+            id,
+            area,
+            crop: None,
+            z: 0,
+        }
+    }
+
     fn pair(self) -> (u32, u32) {
         (self.image.0, self.id.0)
     }
@@ -84,6 +96,7 @@ pub struct PlacementDelta {
 
 impl PlacementDelta {
     /// Whether nothing changed.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.moved.is_empty() && self.removed.is_empty()
     }
@@ -93,6 +106,7 @@ impl PlacementDelta {
 /// changed geometry moves, a vanished pair removes. Both sets hold each
 /// pair at most once. Search is linear per entry; placement counts are
 /// tens, never thousands.
+#[must_use]
 pub fn diff(prev: &[Placement], next: &[Placement]) -> PlacementDelta {
     let mut delta = PlacementDelta::default();
     for placement in next {
@@ -121,18 +135,13 @@ mod tests {
     use super::{CellRect, ImageId, Placement, PlacementId, diff};
 
     fn placement(image: u32, id: u32, x: u16, y: u16) -> Placement {
-        Placement {
-            image: ImageId(image),
-            id: PlacementId(id),
-            area: CellRect {
-                x,
-                y,
-                columns: 4,
-                rows: 2,
-            },
-            crop: None,
-            z: 0,
-        }
+        let area = CellRect {
+            x,
+            y,
+            columns: 4,
+            rows: 2,
+        };
+        Placement::new(ImageId(image), PlacementId(id), area)
     }
 
     #[test]

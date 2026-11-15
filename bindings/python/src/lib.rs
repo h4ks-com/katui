@@ -3,6 +3,8 @@
 // pyo3 hands every argument over as an owned value and every method a
 // `&self`, so these two pedantic lints flag the shape pyo3 requires
 #![allow(clippy::needless_pass_by_value, clippy::trivially_copy_pass_by_ref)]
+// other languages call these functions, where `#[must_use]` means nothing
+#![allow(clippy::must_use_candidate)]
 
 mod app;
 mod convert;

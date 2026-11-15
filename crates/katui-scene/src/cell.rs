@@ -51,11 +51,13 @@ impl Attrs {
     }
 
     /// Whether every attribute of `other` is set here.
+    #[must_use]
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
     /// Whether nothing is set.
+    #[must_use]
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
@@ -100,11 +102,13 @@ impl Buffer {
         }
     }
 
+    #[must_use]
     pub fn size(&self) -> CellSize {
         self.size
     }
 
     /// The cell at `at`, `None` outside the grid.
+    #[must_use]
     pub fn get(&self, at: Position) -> Option<&Cell> {
         self.cells.get(index_of(self.size, at)?)
     }
@@ -164,6 +168,7 @@ impl Buffer {
 /// The changed cells between two buffers, row-major: every position where
 /// `next` differs, carrying `next`'s cell. Buffers of different sizes diff
 /// as a full redraw.
+#[must_use]
 pub fn diff<'a>(prev: &Buffer, next: &'a Buffer) -> Vec<(Position, &'a Cell)> {
     if prev.size() != next.size() {
         return all_cells(next);
@@ -184,6 +189,7 @@ pub fn diff<'a>(prev: &Buffer, next: &'a Buffer) -> Vec<(Position, &'a Cell)> {
 }
 
 /// Every cell of a buffer with its position, row-major.
+#[must_use]
 pub fn all_cells(buffer: &Buffer) -> Vec<(Position, &Cell)> {
     buffer
         .cells

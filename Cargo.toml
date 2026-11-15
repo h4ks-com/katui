@@ -26,6 +26,7 @@ edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/matheusfillipe/katui"
+readme = "README.md"
 categories = ["command-line-interface", "gui"]
 keywords = ["terminal", "tui", "kitty-graphics", "ratatui"]
 
@@ -82,7 +83,6 @@ indexing_slicing = "warn"
 cognitive_complexity = "warn"
 # pedantic lints we allow
 module_name_repetitions = "allow"
-must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 cast_possible_truncation = "allow"

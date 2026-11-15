@@ -18,6 +18,7 @@ pub enum Backend {
 /// sixel comes second outside multiplexers, which place sixel images
 /// themselves, and blocks carry everything else. Needs-aware choices
 /// (alpha, z-order, frame budget) are the presenter strategies' concern.
+#[must_use]
 pub fn select(caps: &Capabilities) -> Backend {
     if caps.kitty {
         Backend::Kitty

@@ -151,6 +151,7 @@ pub fn size() -> Result<katui_scene::CellSize, RtError> {
 
 /// The probe every demo and binary runs over the controlling terminal,
 /// falling back to the environment sniff when no terminal answers.
+#[must_use]
 pub fn probe_default() -> Capabilities {
     let mut caps = probe_terminal();
     if caps.multiplexed() {

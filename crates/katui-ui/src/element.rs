@@ -158,6 +158,7 @@ impl<M> Element<M> {
     }
 
     /// Text with its own look per stretch, wrapping as one run.
+    #[must_use]
     pub fn rich(spans: Vec<TextSpan>) -> Self {
         let text: String = spans.iter().map(|span| span.text.as_str()).collect();
         let mut element = Self::new(Kind::Text(text.into()), Vec::new());
@@ -168,11 +169,13 @@ impl<M> Element<M> {
     /// An image, at its natural size unless a width or height is set.
     /// Layers compare images by `Arc` identity, so an unchanged image keeps
     /// the same `Arc` between renders.
+    #[must_use]
     pub fn image(surface: Arc<Surface>) -> Self {
         Self::new(Kind::Image(surface), Vec::new())
     }
 
     /// Empty space that grows to fill its parent's main axis.
+    #[must_use]
     pub fn spacer() -> Self {
         let mut element = Self::new(Kind::Spacer, Vec::new());
         element.style.grow = 1.0;

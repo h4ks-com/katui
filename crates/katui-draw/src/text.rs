@@ -262,11 +262,13 @@ impl TextLayout {
     }
 
     /// The measured `(width, height)` in pixels.
+    #[must_use]
     pub fn size(&self) -> (f32, f32) {
         self.size
     }
 
     /// The number of lines after wrapping.
+    #[must_use]
     pub fn line_count(&self) -> usize {
         self.line_count
     }

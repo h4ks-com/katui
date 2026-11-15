@@ -356,18 +356,13 @@ mod tests {
     const PIXELS: &[u8] = &[0xff, 0, 0, 0xff];
 
     fn placement(image: u32, id: u32, x: u16, y: u16) -> Placement {
-        Placement {
-            image: ImageId(image),
-            id: PlacementId(id),
-            area: CellRect {
-                x,
-                y,
-                columns: 4,
-                rows: 2,
-            },
-            crop: None,
-            z: 0,
-        }
+        let area = CellRect {
+            x,
+            y,
+            columns: 4,
+            rows: 2,
+        };
+        Placement::new(ImageId(image), PlacementId(id), area)
     }
 
     fn delta(added: &[Placement], moved: &[Placement], removed: &[Placement]) -> PlacementDelta {

@@ -5,6 +5,8 @@
 #![allow(unsafe_code)]
 // every function shares one safety contract, stated once in the header
 #![allow(clippy::missing_safety_doc)]
+// other languages call these functions, where `#[must_use]` means nothing
+#![allow(clippy::must_use_candidate)]
 
 mod app;
 mod element;

@@ -17,6 +17,7 @@ const TOAST_TIME: Duration = Duration::from_secs(4);
 
 /// Three dots with one lit, moving on every quarter second of `elapsed`.
 /// Keep redrawing while it shows, for example with `Control::Animate`.
+#[must_use]
 pub fn spinner<M>(elapsed: Duration) -> Element<M> {
     let theme = Theme::current();
     let lit = elapsed.as_millis() / SPINNER_STEP.as_millis() % 3;
@@ -83,6 +84,7 @@ impl Toasts {
 
 /// The toasts in the bottom right corner, above everything. Put it last
 /// in your root element.
+#[must_use]
 pub fn toasts<M>(toasts: &Toasts) -> Element<M> {
     let theme = Theme::current();
     let cards = toasts.texts().map(|text| {
@@ -103,6 +105,7 @@ pub fn toasts<M>(toasts: &Toasts) -> Element<M> {
 
 /// A row of key hints: each key drawn as a key cap, followed by what it
 /// does, like `("Ctrl+S", "save the file")`.
+#[must_use]
 pub fn key_hints<M>(hints: &[(&str, &str)]) -> Element<M> {
     let theme = Theme::current();
     let pairs = hints.iter().map(|(key, action)| {

@@ -50,6 +50,7 @@ pub struct Env {
 
 impl Env {
     /// Capture the environment this process runs in.
+    #[must_use]
     pub fn capture() -> Self {
         let var = |key: &str| std::env::var(key).ok();
         Self {
@@ -64,6 +65,7 @@ impl Env {
     }
 
     /// `TrueColor` detection from `COLORTERM`.
+    #[must_use]
     pub fn has_truecolor(&self) -> bool {
         self.colorterm
             .as_ref()
@@ -75,6 +77,7 @@ impl Env {
     /// under tmux no marker counts. rmux sets the tmux variables too,
     /// but it re-emits kitty graphics to the outer terminal, so under
     /// rmux the inherited markers count.
+    #[must_use]
     pub fn supports_kitty(&self) -> bool {
         let multiplexer_forwards = self.rmux.is_some() || self.tmux.is_none();
         multiplexer_forwards && self.launched_from_kitty()
@@ -82,6 +85,7 @@ impl Env {
 
     /// Whether kitty markers are present, inherited through a multiplexer
     /// or not.
+    #[must_use]
     pub fn launched_from_kitty(&self) -> bool {
         self.kitty_window_id.is_some()
             || self.term.as_deref() == Some("xterm-kitty")
@@ -89,6 +93,7 @@ impl Env {
     }
 
     /// The graphics backend `KATUI_GRAPHICS` names, if it names one.
+    #[must_use]
     pub fn forced_graphics(&self) -> Option<ForcedGraphics> {
         match self
             .graphics
@@ -105,6 +110,7 @@ impl Env {
     }
 
     /// Whether we run in a tmux or rmux pane.
+    #[must_use]
     pub fn inside_multiplexer(&self) -> bool {
         self.tmux.is_some() || self.rmux.is_some()
     }
@@ -115,6 +121,7 @@ impl Env {
     /// and the sniff decides. GNU screen and kin stay excluded, but tmux
     /// panes often carry a `screen` TERM too, so we let tmux's own
     /// variables decide there.
+    #[must_use]
     pub fn probing_allowed(&self) -> bool {
         let blocked = ["dumb", "unknown", "", "linux"];
         let Some(term) = self.term.as_deref() else {
@@ -342,6 +349,7 @@ fn still_listening(replies: &Replies, silent_reads: u32) -> bool {
 }
 
 /// Seed capabilities from environment markers alone.
+#[must_use]
 pub fn sniff(env: &Env) -> Capabilities {
     let mut caps = Capabilities {
         kitty: env.supports_kitty(),

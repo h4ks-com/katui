@@ -12,6 +12,7 @@ pub struct Rgba {
 }
 
 impl Rgba {
+    #[must_use]
     pub const fn solid(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
     }
@@ -71,6 +72,7 @@ pub struct PixelRect {
 
 impl PixelRect {
     /// Whether `x` and `y` fall inside.
+    #[must_use]
     pub fn contains(&self, x: u32, y: u32) -> bool {
         x >= self.x && y >= self.y && x < self.x + self.width && y < self.y + self.height
     }
@@ -111,11 +113,13 @@ impl Surface {
     }
 
     /// The width in pixels.
+    #[must_use]
     pub fn width(&self) -> u32 {
         self.width
     }
 
     /// The height in pixels.
+    #[must_use]
     pub fn height(&self) -> u32 {
         self.height
     }
@@ -145,6 +149,7 @@ impl Surface {
     }
 
     /// The RGBA bytes.
+    #[must_use]
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
     }
@@ -215,6 +220,7 @@ impl Surface {
 /// The changed tiles between two surfaces, cut on a `tile`-pixel grid:
 /// every tile whose content differs, in row-major order. Surfaces of
 /// different sizes damage as one full-surface tile.
+#[must_use]
 pub fn diff_tiles(prev: &Surface, next: &Surface, tile: u32) -> Vec<PixelRect> {
     let tile = tile.max(1);
     if prev.width != next.width || prev.height != next.height {

@@ -64,16 +64,19 @@ pub struct LayerImage {
 
 impl LayerImage {
     /// The width in pixels.
+    #[must_use]
     pub fn width(&self) -> u32 {
         self.surface.width()
     }
 
     /// The height in pixels.
+    #[must_use]
     pub fn height(&self) -> u32 {
         self.surface.height()
     }
 
     /// The straight-alpha RGBA bytes, `4 * width * height` long.
+    #[must_use]
     pub fn rgba(&self) -> &[u8] {
         self.surface.pixels()
     }

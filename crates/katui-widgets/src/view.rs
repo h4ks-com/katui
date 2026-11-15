@@ -96,6 +96,7 @@ pub fn page<M>(children: impl IntoIterator<Item = Element<M>>) -> Element<M> {
 
 /// A text field showing `field`, its caret where the cursor is while
 /// `focused`, and `placeholder` while it is empty.
+#[must_use]
 pub fn text_field<M>(field: &TextField, placeholder: &str, focused: bool) -> Element<M> {
     let theme = Theme::current();
     let (before, after) = field.split();
@@ -169,6 +170,7 @@ pub fn checkbox<M>(text: &str, checked: bool, message: M) -> Element<M> {
 }
 
 /// A bar filled to `fraction`, clamped into zero through one.
+#[must_use]
 pub fn progress<M>(fraction: f32) -> Element<M> {
     let theme = Theme::current();
     let height = theme.cell_height() * 0.4;

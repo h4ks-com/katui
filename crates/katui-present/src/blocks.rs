@@ -47,6 +47,7 @@ const QUARTERS: [char; 16] = [
 /// the more luminant one as the foreground; every quadrant joins whichever
 /// of the two it sits nearer to. Four equal pixels collapse to a full
 /// block.
+#[must_use]
 pub fn quarter(pixels: [[Rgb; 2]; 2]) -> Block {
     let [[top_left, top_right], [bottom_left, bottom_right]] = pixels;
     let corners = [
@@ -85,6 +86,7 @@ pub fn quarter(pixels: [[Rgb; 2]; 2]) -> Block {
 }
 
 /// Classify two vertically stacked pixels into one half-block cell.
+#[must_use]
 pub fn half(top: Rgb, bottom: Rgb) -> Block {
     if top == bottom {
         return Block {

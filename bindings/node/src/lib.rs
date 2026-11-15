@@ -6,6 +6,8 @@
 // napi hands every argument over as an owned value and takes `&Env`
 // everywhere, so these two pedantic lints flag the shape napi requires
 #![allow(clippy::needless_pass_by_value, clippy::trivially_copy_pass_by_ref)]
+// other languages call these functions, where `#[must_use]` means nothing
+#![allow(clippy::must_use_candidate)]
 
 #[macro_use]
 extern crate napi_derive;

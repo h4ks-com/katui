@@ -89,11 +89,13 @@ impl Canvas {
     }
 
     /// The width in pixels.
+    #[must_use]
     pub fn width(&self) -> u32 {
         self.pixmap.width()
     }
 
     /// The height in pixels.
+    #[must_use]
     pub fn height(&self) -> u32 {
         self.pixmap.height()
     }

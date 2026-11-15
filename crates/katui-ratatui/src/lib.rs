@@ -127,13 +127,8 @@ impl<W: io::Write> KatuiBackend<W> {
         let mut next = Vec::with_capacity(frames.len());
         for (index, frame) in frames.iter().enumerate() {
             images.insert(frame.image, frame.pixels);
-            next.push(Placement {
-                image: frame.image,
-                id: PlacementId(u32::try_from(index + 1).unwrap_or(u32::MAX)),
-                area: frame.area,
-                crop: None,
-                z: 0,
-            });
+            let id = PlacementId(u32::try_from(index + 1).unwrap_or(u32::MAX));
+            next.push(Placement::new(frame.image, id, frame.area));
         }
         let delta = placement::diff(&self.placements, &next);
         let written = self.kitty.render(&mut self.out, &delta, &images)?;

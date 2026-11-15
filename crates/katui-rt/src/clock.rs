@@ -25,11 +25,13 @@ impl FrameClock {
     }
 
     /// One frame's duration.
+    #[must_use]
     pub fn frame_time(&self) -> Duration {
         self.frame_time
     }
 
     /// The frames issued so far.
+    #[must_use]
     pub fn frame(&self) -> u64 {
         self.frame
     }

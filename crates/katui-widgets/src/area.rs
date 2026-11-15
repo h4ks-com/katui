@@ -166,6 +166,7 @@ fn clean(text: &str) -> String {
 
 /// A text area showing the rows of `area` in view, its caret where the
 /// cursor is while `focused`, and `placeholder` while it is empty.
+#[must_use]
 pub fn text_area<M>(area: &TextArea, placeholder: &str, focused: bool) -> Element<M> {
     let theme = Theme::current();
     let line_height = theme.body() * 1.35;
