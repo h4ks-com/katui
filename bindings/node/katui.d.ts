@@ -54,6 +54,11 @@ export interface Element<M = unknown> {
   opaque(): Element<M>
   scrollbar(color: Color): Element<M>
   id(id: number): Element<M>
+  /**
+   * Scroll so the descendant with `id` starts at the top; `onScroll`
+   * receives the new position. Takes an `id` number or an `anchorId`.
+   */
+  reveal(id: number | bigint): Element<M>
   padding(all: number): Element<M>
   paddingXy(x: number, y: number): Element<M>
   gap(gap: number): Element<M>

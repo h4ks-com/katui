@@ -9,7 +9,7 @@ mod css;
 mod html;
 
 #[cfg(feature = "html")]
-pub use html::{HtmlDefaults, HtmlHost, html, markdown_view};
+pub use html::{HtmlDefaults, HtmlHost, anchor_id, html, markdown_view};
 
 use katui_scene::CellSize;
 use katui_scene::cell::{Attrs, Buffer, Color, Position};

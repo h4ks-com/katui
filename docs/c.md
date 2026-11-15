@@ -145,6 +145,11 @@ return an element. A click on a link sends `document.link_key` with the
 href. `document.image` gives the image for each `src`, and a zeroed
 `KatuiDocument`, or NULL, takes every default.
 
+To follow a link to `#install`, call `katui_element_reveal(element,
+katui_anchor_id("#install"))` on the scrolling element around the document.
+Its `on_scroll` key receives the new position; store it and stop calling
+`katui_element_reveal`.
+
 ## Games
 
 A game is a `KatuiGame` with `step` and `render`. `katui_play` runs it at

@@ -69,6 +69,7 @@
     "katui-content": [
       "HtmlDefaults",
       "HtmlHost",
+      "anchor_id",
       "html",
       "markdown_view"
     ]
@@ -84,6 +85,7 @@
       "spacer",
       "layer",
       "scroll",
+      "reveal",
       "on_click",
       "on_span_click",
       "on_hover",

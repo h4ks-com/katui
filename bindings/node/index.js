@@ -773,7 +773,7 @@ if (
   }
 }
 
-const { Camera, Column, Element, Event, Focus, Image, Keys, Light, ListState, Rng, Screen, ScrollState, Span, Spark, Sparks, TextArea, TextField, Theme, Toasts, TreeNode, TreeState, V3, Waker, BASE_IMAGE, button, checkbox, Control, dialog, Edit, frame, heading, hint, html, keyHints, label, lerp3, listView, markdown, menu, MULTIPLEXED_SHRINK, nudge, page, panel, play, primaryButton, progress, radio, run, scaled, scrollView, select, slider, spinner, split, srgb, table, tabs, textArea, textField, title, toasts, toggleSwitch, tooltip, tree, VERSION } = nativeBinding
+const { Camera, Column, Element, Event, Focus, Image, Keys, Light, ListState, Rng, Screen, ScrollState, Span, Spark, Sparks, TextArea, TextField, Theme, Toasts, TreeNode, TreeState, V3, Waker, anchorId, BASE_IMAGE, button, checkbox, Control, dialog, Edit, frame, heading, hint, html, keyHints, label, lerp3, listView, markdown, menu, MULTIPLEXED_SHRINK, nudge, page, panel, play, primaryButton, progress, radio, run, scaled, scrollView, select, slider, spinner, split, srgb, table, tabs, textArea, textField, title, toasts, toggleSwitch, tooltip, tree, VERSION } = nativeBinding
 export { Camera }
 export { Column }
 export { Element }
@@ -797,6 +797,7 @@ export { TreeNode }
 export { TreeState }
 export { V3 }
 export { Waker }
+export { anchorId }
 export { BASE_IMAGE }
 export { button }
 export { checkbox }

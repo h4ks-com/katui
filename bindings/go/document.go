@@ -62,6 +62,13 @@ func document(source string, markdown bool, doc Document) *Element {
 	return element(C.katui_go_document(s, C.bool(markdown), settings, C.uintptr_t(handle), C.bool(doc.Images != nil)))
 }
 
+// AnchorID is the element ID a link to "#fragment" reaches, for Reveal.
+func AnchorID(fragment string) uint64 {
+	s := cString(fragment)
+	defer free(s)
+	return uint64(C.katui_anchor_id(s))
+}
+
 // HTML is an HTML document as an element.
 func HTML(source string, doc Document) *Element {
 	return document(source, false, doc)

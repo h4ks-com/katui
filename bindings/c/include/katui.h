@@ -813,6 +813,12 @@ struct KatuiElement *katui_element_scrollbar(struct KatuiElement *element, struc
  */
 struct KatuiElement *katui_element_id(struct KatuiElement *element, uint64_t id);
 
+/**
+ * Scroll the scrolling element so its descendant with `id` starts at the
+ * top; its `on_scroll` key receives the new position.
+ */
+struct KatuiElement *katui_element_reveal(struct KatuiElement *element, uint64_t id);
+
 struct KatuiElement *katui_element_padding(struct KatuiElement *element, float all);
 
 struct KatuiElement *katui_element_padding_xy(struct KatuiElement *element, float x, float y);
@@ -1155,6 +1161,11 @@ struct KatuiImage *katui_frame(const struct KatuiGame *game,
                                const char *const *held,
                                size_t held_count,
                                float dt);
+
+/**
+ * The element id a link to `#fragment` reaches, for `katui_element_reveal`.
+ */
+uint64_t katui_anchor_id(const char *fragment);
 
 /**
  * An HTML document as an element.

@@ -86,6 +86,31 @@ func TestALinkWithoutOnLinkSendsItsHref(t *testing.T) {
 	}
 }
 
+// revealer shows a long document scrolled to its target heading.
+type revealer struct{ offset float32 }
+
+func (r *revealer) View() *Element {
+	source := strings.Repeat("filler\n\n", 20) + "## The target\n\nend"
+	return Column(Markdown(source, Document{})).
+		Scroll(0).
+		Reveal(AnchorID("#the-target")).
+		OnScroll(func(scroll Scroll) { r.offset = scroll.Offset }).
+		Size(Fill, Fill)
+}
+
+func (r *revealer) Update(any) Control { return Redraw }
+
+func TestRevealScrollsToAnAnchorAndReportsIt(t *testing.T) {
+	app := &revealer{}
+	screen(t, app)
+	if app.offset <= 0 {
+		t.Fatalf("OnScroll got %v, want the heading's offset", app.offset)
+	}
+	if AnchorID("#the-target") != AnchorID("the-target") {
+		t.Fatal("AnchorID keeps the hash")
+	}
+}
+
 func TestThemeSwitchesTheLook(t *testing.T) {
 	app := &picker{}
 	s := screen(t, app)

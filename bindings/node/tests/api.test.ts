@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   App,
+  anchorId,
   button,
   Camera,
   Control,
@@ -195,6 +196,21 @@ test('html takes images from an object or a function', () => {
     const image = new Screen(app, 100, 100).render()
     assert.deepEqual(image.pixel(10, 10), [255, 0, 0, 255])
   }
+})
+
+test('reveal scrolls to a heading by its anchor and reports the offset', () => {
+  const source = `${'filler\n\n'.repeat(20)}## The target\n\nend`
+  const app = new Recorder(() =>
+    column(markdown(source))
+      .scroll(0)
+      .reveal(anchorId('#the-target'))
+      .onScroll((scroll) => scroll.offset)
+      .size('fill', 'fill'),
+  )
+  new Screen(app, 200, 100).render()
+  assert.equal(app.messages.length, 1)
+  assert.ok((app.messages[0] as number) > 0)
+  assert.equal(anchorId('#the-target'), anchorId('the-target'))
 })
 
 test('children skip nothing and open arrays', () => {

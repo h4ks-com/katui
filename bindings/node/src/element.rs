@@ -9,11 +9,11 @@ use katui_bindings::picture;
 use katui_draw::TextSpan;
 use katui_scene::surface::Surface;
 use katui_ui::Element as UiElement;
-use napi::bindgen_prelude::{Buffer, JsObjectValue, This, Uint8Array, Unknown};
+use napi::bindgen_prelude::{BigInt, Buffer, Either, JsObjectValue, This, Uint8Array, Unknown};
 use napi::{Env, JsValue, Result, ValueType};
 
 use crate::convert::{
-    ColorArg, LengthArg, align, color, instance, is_nothing, length, paint, raise,
+    ColorArg, LengthArg, align, color, instance, invalid, is_nothing, length, paint, raise,
 };
 use crate::message::{Msg, hold, value};
 use crate::reclaim::{Tree, watch};
@@ -256,6 +256,21 @@ impl Element {
     pub fn id<'a>(&mut self, this: This<'a>, id: u32) -> This<'a> {
         self.map(|e| e.id(u64::from(id)));
         this
+    }
+
+    /// Scroll so the descendant with `id` starts at the top; `onScroll`
+    /// receives the new position. Takes an `id` number or an `anchorId`.
+    #[napi(ts_args_type = "id: number | bigint")]
+    pub fn reveal<'a>(&mut self, this: This<'a>, id: Either<u32, BigInt>) -> Result<This<'a>> {
+        let id = match id {
+            Either::A(id) => u64::from(id),
+            Either::B(id) => match id.get_u64() {
+                (false, id, true) => id,
+                _ => return Err(invalid("reveal takes an id from 0 to 2^64 - 1")),
+            },
+        };
+        self.map(|e| e.reveal(id));
+        Ok(this)
     }
 
     #[napi]

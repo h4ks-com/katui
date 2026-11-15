@@ -456,6 +456,28 @@ impl<'r, M: Clone + 'static> Walker<'_, '_, 'r, M> {
         self.walk_children(element, rect, scope, scroll);
     }
 
+    /// How far into `element`'s content its descendant with `id` starts,
+    /// along the scrolling axis.
+    fn start_of(&self, element: &Element<M>, node: NodeId, id: u64, is_row: bool) -> Option<f32> {
+        let children = self.laid.tree.children(node).ok()?;
+        children
+            .iter()
+            .zip(&element.children)
+            .find_map(|(child, inner)| {
+                let layout = self.laid.tree.layout(*child).ok()?;
+                let start = if is_row {
+                    layout.location.x
+                } else {
+                    layout.location.y
+                };
+                if inner.id == Some(id) {
+                    return Some(start);
+                }
+                self.start_of(inner, *child, id, is_row)
+                    .map(|within| start + within)
+            })
+    }
+
     fn popup_key(&self, element: &Element<M>) -> u64 {
         element
             .layer
@@ -489,7 +511,11 @@ impl<'r, M: Clone + 'static> Walker<'_, '_, 'r, M> {
             (layout.padding.bottom + layout.border.bottom, rect.height)
         };
         let max = (reach + end_padding - viewport).max(0.0);
-        let offset = requested.clamp(0.0, max);
+        let wanted = element
+            .reveal
+            .and_then(|id| self.start_of(element, node, id, is_row))
+            .unwrap_or(requested);
+        let offset = wanted.clamp(0.0, max);
         if (requested - offset).abs() > 0.5
             && let Some(handler) = &element.on_scroll
         {

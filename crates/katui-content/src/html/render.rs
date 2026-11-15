@@ -89,6 +89,9 @@ impl<M: Clone> Renderer<'_, M> {
                 .align(Align::Center)
                 .width(Length::Fill);
         }
+        if let Some(anchor) = anchor_of(element) {
+            container = container.id(super::anchor_id(&anchor));
+        }
         Some(match href(element) {
             Some(href) => container.on_click(self.host.link(href)),
             None => container,
@@ -107,7 +110,7 @@ impl<M: Clone> Renderer<'_, M> {
         match (child.value().name(), child_style.display) {
             (_, Display::Hidden) => {}
             ("br", _) => run.push_break(&child_style),
-            ("img", _) => {
+            ("img" | "video", _) => {
                 children.extend(run.finish(style, self.host));
                 children.extend(self.image(child, &child_style, run.link.as_deref()));
             }
@@ -161,7 +164,7 @@ impl<M: Clone> Renderer<'_, M> {
         match (child.value().name(), child_style.display) {
             (_, Display::Hidden) => {}
             ("br", _) => run.push_break(&child_style),
-            ("img", _) => {
+            ("img" | "video", _) => {
                 children.extend(run.finish(block, self.host));
                 children.extend(self.image(child, &child_style, run.link.as_deref()));
             }
@@ -175,7 +178,7 @@ impl<M: Clone> Renderer<'_, M> {
         style: &Style,
         link: Option<&str>,
     ) -> Option<Element<M>> {
-        let surface = self.host.image(element.value().attr("src")?)?;
+        let surface = self.host.image(source_of(element)?)?;
         let attribute = |name: &str| {
             element
                 .value()
@@ -196,6 +199,34 @@ impl<M: Clone> Renderer<'_, M> {
             None => image,
         })
     }
+}
+
+/// The name a link fragment reaches `element` by: its `id` attribute, or
+/// for a heading the slug GitHub makes of its text.
+fn anchor_of(element: ElementRef<'_>) -> Option<String> {
+    if let Some(id) = element.value().attr("id") {
+        return Some(id.to_owned());
+    }
+    let heading = matches!(
+        element.value().name(),
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+    );
+    heading.then(|| slug(&element.text().collect::<String>()))
+}
+
+/// GitHub's heading slug: lowercase letters, digits, `-` and `_`, with
+/// spaces turned into `-`.
+fn slug(text: &str) -> String {
+    text.trim()
+        .chars()
+        .filter_map(|letter| match letter {
+            ' ' => Some('-'),
+            '-' | '_' => Some(letter),
+            _ if letter.is_alphanumeric() => Some(letter),
+            _ => None,
+        })
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// Whether the list item `element` is a task, and whether it is done.
@@ -223,6 +254,18 @@ fn checkbox<M>(checked: bool, style: &Style) -> Element<M> {
     } else {
         mark
     }
+}
+
+/// Where an image's or a video's pixels come from: its `src`, or for a
+/// video without one, the `src` of its first `<source>`.
+fn source_of(element: ElementRef<'_>) -> Option<&str> {
+    element.value().attr("src").or_else(|| {
+        element
+            .children()
+            .filter_map(ElementRef::wrap)
+            .find(|child| child.value().name() == "source")
+            .and_then(|source| source.value().attr("src"))
+    })
 }
 
 /// The target of `element` when it is a link.
@@ -362,6 +405,20 @@ mod tests {
         assert_eq!(cell.width, Some(katui_ui::Length::Fill));
         let tasks: Vec<_> = pick("li").into_iter().map(super::task_checkbox).collect();
         assert_eq!(tasks, [Some(true), Some(false)]);
+    }
+
+    #[test]
+    fn headings_take_githubs_slug_and_fragments_find_them() {
+        assert_eq!(super::slug(" A first program! "), "a-first-program");
+        assert_eq!(super::slug("Use katui_rt: 2.0"), "use-katui_rt-20");
+        assert_eq!(
+            crate::html::anchor_id("#install"),
+            crate::html::anchor_id("install")
+        );
+        assert_ne!(
+            crate::html::anchor_id("install"),
+            crate::html::anchor_id("demos")
+        );
     }
 
     #[test]

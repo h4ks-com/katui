@@ -5,7 +5,7 @@ use std::sync::Arc;
 use katui_bindings::html::{Format, Look, document, link};
 use katui_content::HtmlHost;
 use katui_scene::surface::Surface;
-use napi::bindgen_prelude::{JsObjectValue, Object, Unknown};
+use napi::bindgen_prelude::{BigInt, JsObjectValue, Object, Unknown};
 use napi::{Env, JsValue, Result, ValueType};
 
 use crate::convert::{ColorArg, color, function, instance, is_nothing};
@@ -105,6 +105,12 @@ fn element(
     let look = look(options)?;
     let host = host(env, options)?;
     Ok(Element::new(document(format, source, look, &host)))
+}
+
+/// The element id a link to `#fragment` reaches, for `Element.reveal`.
+#[napi]
+pub fn anchor_id(fragment: String) -> BigInt {
+    BigInt::from(katui_content::anchor_id(&fragment))
 }
 
 /// An HTML document as an element.

@@ -124,3 +124,8 @@ files.
 A long document can be taller than the screen. Keep a `ScrollState` for it
 as in [Scrolling](ui-apps.md#scrolling). Run `just demo-browse` to see a
 scrolling page viewer.
+
+Headings carry the id of their GitHub slug, and elements with an `id`
+attribute carry the id of that. `anchor_id("#install")` is the id a link to
+`#install` reaches; pass it to `.reveal` on the scrolling element around
+the document to jump there.

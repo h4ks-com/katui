@@ -175,6 +175,10 @@ leave `on_link` out. Images come from `images`: a dict from `src` to
 `katui.Image`, or a function that returns one. `Image.open(path)` reads a
 PNG, JPEG, GIF or WebP file.
 
+To follow a link to `#install`, call `.reveal(katui.anchor_id("#install"))`
+on the scrolling element around the document. Its `on_scroll` handler
+receives the new position; store it and stop calling `reveal`.
+
 ## Games
 
 A game is a class with `step` and `render`. `play` runs it at 60 steps a

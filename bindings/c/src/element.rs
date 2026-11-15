@@ -382,6 +382,16 @@ pub extern "C" fn katui_element_id(
     change(element, |e| e.id(id))
 }
 
+/// Scroll the scrolling element so its descendant with `id` starts at the
+/// top; its `on_scroll` key receives the new position.
+#[unsafe(no_mangle)]
+pub extern "C" fn katui_element_reveal(
+    element: Option<&mut KatuiElement>,
+    id: u64,
+) -> Option<&mut KatuiElement> {
+    change(element, |e| e.reveal(id))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn katui_element_padding(
     element: Option<&mut KatuiElement>,

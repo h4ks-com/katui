@@ -37,7 +37,9 @@ pub struct HtmlDefaults {
 pub trait HtmlHost<M> {
     /// The message a click on a link to `href` sends.
     fn link(&self, href: &str) -> M;
-    /// The pixels of the image at `src`, when the caller has them.
+    /// The pixels of the image or the video at `src`, when the caller has
+    /// them. A video shows the frame this returns, so a caller that plays
+    /// it returns the current frame and redraws as it advances.
     fn image(&self, src: &str) -> Option<Arc<Surface>>;
 }
 
@@ -76,6 +78,21 @@ pub fn markdown_view<M: Clone>(
     );
     html(&page, defaults, host)
 }
+
+/// The element id that a link to `#fragment` reaches: headings carry the
+/// id of their GitHub slug, and elements with an `id` attribute the id of
+/// that. Pass it to [`Element::reveal`] on the scrolling view around the
+/// document to jump there.
+#[must_use]
+pub fn anchor_id(fragment: &str) -> u64 {
+    let fragment = fragment.strip_prefix('#').unwrap_or(fragment);
+    fragment.bytes().fold(ANCHOR_SEED, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// FNV-1a's offset basis, so equal fragments give equal ids in every run.
+const ANCHOR_SEED: u64 = 0xcbf2_9ce4_8422_2325;
 
 /// The element tree of the HTML document `source`.
 pub fn html<M: Clone>(source: &str, defaults: &HtmlDefaults, host: &dyn HtmlHost<M>) -> Element<M> {

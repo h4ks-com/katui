@@ -253,6 +253,13 @@ func (e *Element) ID(id uint64) *Element {
 	return e.change(C.katui_element_id(e.ptr(), C.uint64_t(id)))
 }
 
+// Reveal scrolls the scrolling element so its descendant with ID id starts
+// at the top. OnScroll receives the new position, so the app stores it and
+// stops calling Reveal.
+func (e *Element) Reveal(id uint64) *Element {
+	return e.change(C.katui_element_reveal(e.ptr(), C.uint64_t(id)))
+}
+
 // Padding pads every side by all pixels.
 func (e *Element) Padding(all float32) *Element {
 	return e.change(C.katui_element_padding(e.ptr(), C.float(all)))

@@ -161,6 +161,11 @@ href itself to `Update` when `OnLink` is nil. `doc.Images` gives the
 `*katui.Image` for each `src`, and `katui.OpenImage(path)` reads a PNG,
 JPEG, GIF or WebP file.
 
+To follow a link to `#install`, call
+`.Reveal(katui.AnchorID("#install"))` on the scrolling element around the
+document. Its `OnScroll` handler receives the new position; store it and
+stop calling `Reveal`.
+
 ## Games
 
 A game is a value with `Step` and `Render`. `Play` runs it at 60 steps a

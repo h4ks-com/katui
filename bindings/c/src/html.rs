@@ -88,6 +88,13 @@ unsafe fn read(
     ))
 }
 
+/// The element id a link to `#fragment` reaches, for `katui_element_reveal`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn katui_anchor_id(fragment: *const c_char) -> u64 {
+    // SAFETY: the header requires a NULL or NUL-terminated `fragment`.
+    katui_content::anchor_id(&unsafe { text(fragment) })
+}
+
 /// An HTML document as an element.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_html(

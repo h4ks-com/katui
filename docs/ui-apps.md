@@ -177,6 +177,10 @@ Message::Scrolled(scroll) => self.page.apply(scroll),
 never have to know how tall the content is: when an offset runs past the
 end, katui sends the clamped position back on the next frame.
 
+`.reveal(id)` on a scrolling element scrolls it so the descendant with
+`.id(id)` starts at the top. The `on_scroll` handler receives the new
+position; store it and stop calling `reveal`.
+
 ## Popups and dialogs
 
 `select`, `menu`, `tooltip`, `dialog` and `toasts` draw above everything

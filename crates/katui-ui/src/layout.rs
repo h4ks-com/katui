@@ -144,8 +144,21 @@ pub(crate) enum Leaf {
     Image(f32, f32),
 }
 
-fn measure_image(known: Size<Option<f32>>, width: f32, height: f32) -> Size<f32> {
+/// An image's size: what the layout fixed, the other side from its aspect,
+/// and with neither fixed its own size, narrowed to fit the space.
+fn measure_image(
+    known: Size<Option<f32>>,
+    available: Size<AvailableSpace>,
+    width: f32,
+    height: f32,
+) -> Size<f32> {
     let aspect = height / width.max(1.0);
+    let room = match available.width {
+        AvailableSpace::Definite(room) => room,
+        _ => f32::INFINITY,
+    };
+    let width = width.min(room);
+    let height = width * aspect;
     match (known.width, known.height) {
         (Some(width), Some(height)) => Size { width, height },
         (Some(width), None) => Size {
@@ -214,7 +227,9 @@ fn run(
             |_, _| 0.0,
             |known, available| match leaf.as_deref() {
                 Some(Leaf::Text(key)) => text.measure(key, known, available),
-                Some(Leaf::Image(width, height)) => measure_image(known, *width, *height),
+                Some(Leaf::Image(width, height)) => {
+                    measure_image(known, available, *width, *height)
+                }
                 None => known.unwrap_or(Size::ZERO),
             },
         )
@@ -387,6 +402,9 @@ fn style_of<M>(element: &Element<M>, parent: Parent, scrolled: bool) -> Style {
                 y: Overflow::Hidden,
             }
         };
+    }
+    if matches!(element.kind, Kind::Image(_)) {
+        style.max_size.width = LengthPercentageAuto::percent(1.0);
     }
     if is_stack {
         // we use one flexible track so overlapping children share the whole box

@@ -104,6 +104,11 @@ export declare class Element {
   opaque(): this
   scrollbar(color: Color): this
   id(id: number): this
+  /**
+   * Scroll so the descendant with `id` starts at the top; `onScroll`
+   * receives the new position. Takes an `id` number or an `anchorId`.
+   */
+  reveal(id: number | bigint): this
   padding(all: number): this
   paddingXy(x: number, y: number): this
   gap(gap: number): this
@@ -424,6 +429,9 @@ export declare class Waker {
   /** Hand `message` to `update` every `seconds` until the app quits. */
   every(seconds: number, message: unknown): void
 }
+
+/** The element id a link to `#fragment` reaches, for `Element.reveal`. */
+export declare function anchorId(fragment: string): bigint
 
 /** The first kitty image id games use. */
 export declare const BASE_IMAGE: number

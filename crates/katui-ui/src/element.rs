@@ -102,6 +102,7 @@ pub struct Element<M> {
     pub(crate) children: Vec<Element<M>>,
     pub(crate) layer: Option<u64>,
     pub(crate) scroll: Option<f32>,
+    pub(crate) reveal: Option<u64>,
     pub(crate) on_click: Option<M>,
     pub(crate) on_hover: Option<M>,
     pub(crate) span_clicks: Vec<(usize, M)>,
@@ -123,6 +124,7 @@ impl<M> Element<M> {
             children,
             layer: None,
             scroll: None,
+            reveal: None,
             on_click: None,
             on_hover: None,
             span_clicks: Vec::new(),
@@ -197,6 +199,16 @@ impl<M> Element<M> {
     #[must_use]
     pub fn scroll(mut self, offset_px: f32) -> Self {
         self.scroll = Some(offset_px);
+        self
+    }
+
+    /// Scroll this scrolling element so its descendant with [`Self::id`]
+    /// `id` starts at the top, as far as the content allows. The handler
+    /// from [`Self::on_scroll`] receives the new position, so the app
+    /// stores it there and stops asking.
+    #[must_use]
+    pub fn reveal(mut self, id: u64) -> Self {
+        self.reveal = Some(id);
         self
     }
 

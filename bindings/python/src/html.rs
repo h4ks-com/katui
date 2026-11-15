@@ -90,6 +90,12 @@ macro_rules! document_function {
     };
 }
 
+/// The element id a link to `#fragment` reaches, for `Element.reveal`.
+#[pyfunction]
+pub(crate) fn anchor_id(fragment: &str) -> u64 {
+    katui_content::anchor_id(fragment)
+}
+
 document_function!(
     /// An HTML document as an element.
     html,

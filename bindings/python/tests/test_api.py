@@ -157,6 +157,26 @@ def test_html_takes_images_from_a_dict() -> None:
     assert image.pixel(10, 10) == (255, 0, 0, 255)
 
 
+def test_reveal_scrolls_to_an_id_and_reports_the_offset() -> None:
+    rows = [katui.text(f"row {i}").height(50.0).id(i) for i in range(12)]
+    app = Recorder(
+        lambda app: (
+            katui.column(rows)
+            .scroll(0.0)
+            .reveal(6)
+            .on_scroll(lambda scroll: scroll.offset)
+            .size("fill", "fill")
+        )
+    )
+    Screen(app, 200, 100).render()
+    assert app.messages == [300.0]
+
+
+def test_anchor_id_ignores_the_hash() -> None:
+    assert katui.anchor_id("#install") == katui.anchor_id("install")
+    assert katui.anchor_id("install") != katui.anchor_id("demos")
+
+
 def test_children_skip_none_and_open_lists() -> None:
     app = Recorder(lambda app: katui.column(None, [label("a"), label("b")], label("c")))
     Screen(app, 100, 100).render()

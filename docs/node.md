@@ -189,6 +189,11 @@ that returns one. `Image.open(path)` reads a PNG, JPEG, GIF or WebP file:
 markdown(source, { onLink: (href) => this.open(href), images: { 'logo.png': logo } })
 ```
 
+To follow a link to `#install`, call `.reveal(anchorId('#install'))` on the
+scrolling element around the document. `anchorId` returns a `bigint`, and
+`reveal` takes it or an `id` number. Its `onScroll` handler receives the
+new position; store it and stop calling `reveal`.
+
 ## Games
 
 A game is a class with `step` and `render`. `play` runs it at 60 steps a

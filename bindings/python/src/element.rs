@@ -201,6 +201,10 @@ impl PyElement {
         Self::map(slf, |e| e.id(id))
     }
 
+    fn reveal(slf: PyRefMut<'_, Self>, id: u64) -> PyRefMut<'_, Self> {
+        Self::map(slf, |e| e.reveal(id))
+    }
+
     fn padding(slf: PyRefMut<'_, Self>, all: f32) -> PyRefMut<'_, Self> {
         Self::map(slf, |e| e.padding(all))
     }

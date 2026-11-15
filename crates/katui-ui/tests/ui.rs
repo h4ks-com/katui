@@ -2,7 +2,8 @@
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::unwrap_used,
-    clippy::cast_possible_truncation
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
 )]
 
 use std::collections::HashSet;
@@ -552,5 +553,42 @@ fn a_split_layer_joins_back_into_its_whole_surface() {
     assert!(
         view.layer_surface(99).is_none(),
         "an unknown key has no pixels"
+    );
+}
+
+#[test]
+fn reveal_scrolls_a_nested_element_to_the_top_and_reports_it() {
+    let row = |index: u64| {
+        let block = Element::column([Element::text(format!("row {index}"))])
+            .height(Length::Px(50.0))
+            .width(Length::Fill);
+        if index == 6 { block.id(77) } else { block }
+    };
+    let section = Element::column((4..8).map(row)).width(Length::Fill);
+    let page = Element::column((0..4).map(row).chain([section]).chain((8..12).map(row)))
+        .scroll(0.0)
+        .reveal(77)
+        .on_scroll(|scroll| scroll.offset as u32)
+        .size(Length::Fill, Length::Fill);
+    let mut ui = ui();
+    ui.render(&page, SCREEN, CELL);
+    assert_eq!(ui.take_clamped_scrolls(), vec![300]);
+}
+
+#[test]
+fn an_image_wider_than_its_column_shrinks_to_fit_keeping_its_aspect() {
+    let wide = Arc::new(Surface::new(800, 100));
+    let page = Element::column([Element::image(wide).id(5).on_click(5)])
+        .width(Length::Px(200.0))
+        .align(Align::Start);
+    let mut ui = ui();
+    ui.render(&page, SCREEN, CELL);
+    assert!(
+        ui.hit_test(150.0, 20.0).is_some(),
+        "the image spans the column"
+    );
+    assert!(
+        ui.hit_test(150.0, 60.0).is_none(),
+        "a quarter as wide is a quarter as tall"
     );
 }

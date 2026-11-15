@@ -69,6 +69,7 @@ fn _katui(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_functions!(
         module,
         app::run,
+        html::anchor_id,
         html::html,
         html::markdown,
         widgets::label,

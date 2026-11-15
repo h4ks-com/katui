@@ -194,6 +194,36 @@ static void a_link_click_sends_its_href(void) {
   katui_screen_free(screen);
 }
 
+static KatuiElement *revealed_view(void *user) {
+  (void)user;
+  char source[512] = "";
+  for (int i = 0; i < 20; i++) {
+    strcat(source, "filler\n\n");
+  }
+  strcat(source, "## The target\n\nend");
+  KatuiElement *doc = katui_column(KATUI_LIST(katui_markdown(source, NULL)));
+  doc = katui_element_reveal(katui_element_scroll(doc, 0), katui_anchor_id("#the-target"));
+  return katui_element_size(katui_element_on_scroll(doc, SCROLL), katui_fill(), katui_fill());
+}
+
+static KatuiControl revealed_update(void *user, const KatuiMessage *message) {
+  float *offset = user;
+  if (message->key == SCROLL && message->payload == KATUI_PAYLOAD_SCROLL) {
+    *offset = message->scroll.offset;
+  }
+  return KATUI_CONTROL_REDRAW;
+}
+
+static void reveal_scrolls_to_an_anchor(void) {
+  float offset = 0;
+  KatuiApp app = {.user = &offset, .view = revealed_view, .update = revealed_update};
+  KatuiScreen *screen = katui_screen_new(&app, 200, 100, 10, 20);
+  katui_image_free(katui_screen_render(screen));
+  CHECK(offset > 0);
+  CHECK(katui_anchor_id("#the-target") == katui_anchor_id("the-target"));
+  katui_screen_free(screen);
+}
+
 static KatuiElement *broken_view(void *user) {
   (void)user;
   return NULL;
@@ -298,6 +328,7 @@ static void events_and_state_answer(void) {
 int main(void) {
   every_widget_draws_and_the_theme_switches();
   a_link_click_sends_its_href();
+  reveal_scrolls_to_an_anchor();
   a_broken_callback_fails_with_a_message();
   null_is_safe_everywhere();
   bad_values_fail_with_a_message();
