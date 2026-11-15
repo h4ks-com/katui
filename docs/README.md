@@ -16,10 +16,12 @@ one, then pick whichever matches what you want to make.
 6. [Images in ratatui apps](ratatui.md): keep your ratatui widgets and add
    pixels next to them.
 7. [Python](python.md): the same apps, documents and games from Python.
-8. [How katui works](architecture.md): the layers, and what happens
+8. [Node.js](node.md): the same apps, documents and games from
+   JavaScript and TypeScript.
+9. [How katui works](architecture.md): the layers, and what happens
    between your `view` and the terminal.
-9. [Building, testing and publishing](publishing.md): the checks that keep
-   the Rust and Python packages in step, and how a release ships.
+10. [Building, testing and publishing](publishing.md): the checks that keep
+    the Rust, Python and Node packages in step, and how a release ships.
 
 ## API reference
 

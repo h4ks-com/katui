@@ -1,7 +1,7 @@
 <h1 align="center">katui</h1>
 
 <p align="center">
-  Real pixels in your terminal, from Rust and Python.
+  Real pixels in your terminal, from Rust, Python and Node.js.
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 
 <p align="center"><img src="assets/demos/shardrift.webp" alt="Shardrift, a katui game: a ship firing through a nebula and splitting crystal rocks" width="800"></p>
 
-katui is a terminal UI library for Rust and Python that draws real pixels. Apps, games
+katui is a terminal UI library for Rust, Python and Node.js that draws real pixels. Apps, games
 and video show up as images through the [kitty graphics protocol][kitty],
 and terminals without it get [sixel][sixel] images or quarter-block
 characters instead.
@@ -44,6 +44,13 @@ For Python 3.10 or newer, install the package from PyPI. The
 
 ```
 pip install katui
+```
+
+For Node.js 22.18 or newer, install the package from npm. The
+[Node.js guide](docs/node.md) starts from there:
+
+```
+npm install katui
 ```
 
 ## A first program
@@ -219,6 +226,10 @@ The same apps and a game written in Python run with `just py-demo`, like
 `just py-demo widgets`. They live in
 [bindings/python/examples](bindings/python/examples).
 
+The same apps and game in TypeScript run with `just node-demo`, like
+`just node-demo widgets`. They live in
+[bindings/node/examples](bindings/node/examples).
+
 `just --list` shows the rest, and `just info` prints what katui detected in
 your terminal. The video demo needs `ffmpeg` for the picture and `ffplay`
 for the sound.
@@ -233,7 +244,8 @@ and function.
 
 katui is young. It works in the terminals above and in its own demos, the
 API still changes between commits. Each release tag publishes the crates
-to crates.io and the Python package to PyPI, with the same version.
+to crates.io, the Python package to PyPI and the Node package to npm,
+with the same version.
 
 ## Develop
 
