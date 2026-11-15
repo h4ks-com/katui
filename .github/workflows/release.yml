@@ -22,9 +22,13 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: bindings/go/go.mod
+          cache: false
       - uses: taiki-e/install-action@v2
         with:
-          tool: just,typos
+          tool: just,typos,cbindgen
       - uses: Swatinem/rust-cache@v2
       - run: just release-check "$TAG"
         env:
@@ -106,6 +110,75 @@ jobs:
           merge-multiple: true
           path: dist
       - run: just py-test-wheel dist
+
+  # the C library per platform: the header, the static and the shared library
+  c-dist:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just c-dist ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: c-dist-${{ matrix.target }}
+          path: target/dist/*.tar.gz
+
+  # the C archives, attached to the GitHub release of the tag
+  c-release:
+    needs: c-dist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: c-dist-*
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+
+  # the go module: a commit off the release tag that adds the static
+  # libraries, tagged bindings/go/vX.Y.Z so `go get` needs no rust
+  go-release:
+    needs: c-dist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GIT_AUTHOR_NAME: github-actions[bot]
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: github-actions[bot]
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: c-dist-*
+          merge-multiple: true
+          path: dist
+      - run: just go-release dist
+      - run: just go-publish
 
   crates:
     needs: check
