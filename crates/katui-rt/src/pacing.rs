@@ -87,6 +87,11 @@ impl Pacer {
         self.pacing = self.configured;
     }
 
+    /// Whether the next frame waits for the terminal's answer.
+    pub(crate) fn asks(&self) -> bool {
+        self.pacing != Pacing::Timer
+    }
+
     fn take_query_id(&mut self) -> u32 {
         let local = self.next_query;
         self.next_query = if local + 1 < QUERY_IDS_UNTIL {

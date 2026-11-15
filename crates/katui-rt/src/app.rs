@@ -61,6 +61,25 @@ pub trait App {
 
     /// Encode the current state as terminal bytes into `out`.
     fn draw(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<Control>;
+
+    /// How the last frame that wrote bytes went, for an app that sizes its
+    /// frames to what the terminal keeps up with.
+    fn delivered(&mut self, _delivery: &Delivery) {}
+}
+
+/// How one frame reached the terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Delivery {
+    /// The bytes the frame wrote.
+    pub bytes: usize,
+    /// How long [`App::draw`] took to encode it.
+    pub drawn: Duration,
+    /// From the start of the draw until the terminal took the whole frame:
+    /// until it answered our pacing query, or until the bytes were written
+    /// on a terminal that answers none.
+    pub delivered: Duration,
+    /// Whether the terminal answered, so `delivered` covers its own work.
+    pub answered: bool,
 }
 
 /// Run `app` on `out` until it asks to quit, drawing at most
@@ -202,6 +221,9 @@ impl EventLoop {
         first: Option<Signal<A::Message>>,
         pump: &mut EventPump<A::Message>,
     ) {
+        // we stop draining after one frame time, and at once on a quit, so a
+        // waker that sends faster than the app handles can never starve a frame
+        let until = Instant::now() + self.frame_time;
         let mut signal = first;
         while let Some(current) = signal {
             match current {
@@ -215,6 +237,9 @@ impl EventLoop {
                         self.apply(app, AppEvent::Repaint);
                     }
                 }
+            }
+            if self.pending == Control::Quit || Instant::now() >= until {
+                break;
             }
             signal = pump.next(Duration::ZERO);
         }
@@ -250,11 +275,22 @@ impl EventLoop {
         out: &mut W,
         pump: &mut EventPump<A::Message>,
     ) -> Result<(), RtError> {
-        self.next_draw = Instant::now() + self.frame_time;
+        let started = Instant::now();
+        self.next_draw = started + self.frame_time;
         self.wire.clear();
         let after = app.draw(&mut self.wire, self.size)?;
+        let drawn = started.elapsed();
         self.pending = after;
-        self.pacer.deliver(out, &self.wire, self.size, pump)?;
+        let asks = self.pacer.asks();
+        let answered = self.pacer.deliver(out, &self.wire, self.size, pump)?;
+        if !self.wire.is_empty() {
+            app.delivered(&Delivery {
+                bytes: self.wire.len(),
+                drawn,
+                delivered: started.elapsed(),
+                answered: asks && answered,
+            });
+        }
         Ok(())
     }
 }
@@ -299,6 +335,46 @@ mod tests {
         state.merge(Control::Quit);
         state.merge(Control::Redraw);
         assert_eq!(state.pending, Control::Quit, "a quit is never undone");
+    }
+
+    struct Counter(u32);
+
+    impl super::App for Counter {
+        type Message = ();
+
+        fn start(&mut self, _waker: crate::events::Waker<()>) {}
+
+        fn update(&mut self, _event: super::AppEvent<()>) -> Control {
+            self.0 += 1;
+            if self.0 == 3 {
+                Control::Quit
+            } else {
+                Control::Redraw
+            }
+        }
+
+        fn draw(&mut self, _out: &mut Vec<u8>, _size: CellSize) -> std::io::Result<Control> {
+            Ok(Control::Wait)
+        }
+    }
+
+    #[test]
+    fn a_flood_of_messages_stops_draining_at_a_quit() {
+        let mut pump = crate::events::EventPump::start();
+        let waker = pump.waker();
+        for _ in 0..1000 {
+            waker.send(());
+        }
+        let mut state = event_loop(Control::Wait);
+        let mut app = Counter(0);
+        let first = pump.next(Duration::from_secs(1));
+        state.handle_signals(&mut app, first, &mut pump);
+        assert_eq!(state.pending, Control::Quit);
+        assert_eq!(
+            app.0, 3,
+            "the loop stops at the quit, the rest stays queued"
+        );
+        pump.finish();
     }
 
     #[test]
