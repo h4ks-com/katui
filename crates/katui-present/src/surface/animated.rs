@@ -249,19 +249,19 @@ mod tests {
     fn plain_surface(width: u32, height: u32) -> Surface {
         crate::surface::test_support::solid(width, height, Rgba::solid(10, 10, 30))
     }
-    use katui_scene::placement::CellRect;
-    use katui_scene::surface::{Rgba, Surface};
 
-    fn area() -> CellRect {
-        CellRect::full(16, 16)
-    }
+    use katui_scene::surface::{Rgba, Surface};
 
     #[test]
     fn the_first_frame_is_a_root_frame_placed_and_playing() {
         let mut presenter = AnimatedKitty::new(90, 20, 8, 16);
         let mut out = Vec::new();
         presenter
-            .render_frame(&mut out, &plain_surface(64, 64), area())
+            .render_frame(
+                &mut out,
+                &plain_surface(64, 64),
+                crate::surface::test_support::area(),
+            )
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&out);
         assert!(
@@ -280,7 +280,11 @@ mod tests {
         let mut presenter = AnimatedKitty::new(90, 20, 8, 16);
         let mut out = Vec::new();
         presenter
-            .render_frame(&mut out, &plain_surface(64, 64), area())
+            .render_frame(
+                &mut out,
+                &plain_surface(64, 64),
+                crate::surface::test_support::area(),
+            )
             .expect("writing to a Vec cannot fail");
         let mut surface = plain_surface(64, 64);
         surface.set(
@@ -289,7 +293,7 @@ mod tests {
         );
         let mut second = Vec::new();
         presenter
-            .render_frame(&mut second, &surface, area())
+            .render_frame(&mut second, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&second);
         assert!(
@@ -312,11 +316,11 @@ mod tests {
         let mut out = Vec::new();
         let surface = plain_surface(64, 64);
         presenter
-            .render_frame(&mut out, &surface, area())
+            .render_frame(&mut out, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let mut second = Vec::new();
         let written = presenter
-            .render_frame(&mut second, &surface, area())
+            .render_frame(&mut second, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         assert_eq!(written, 0);
         assert!(second.is_empty());
@@ -328,7 +332,7 @@ mod tests {
         let mut surface = plain_surface(32, 32);
         let mut out = Vec::new();
         presenter
-            .render_frame(&mut out, &surface, area())
+            .render_frame(&mut out, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         for _ in 0..super::RESET_EVERY {
             surface.set(
@@ -348,14 +352,14 @@ mod tests {
                 Rgba::solid(40, 200, 40),
             );
             presenter
-                .render_frame(&mut out, &surface, area())
+                .render_frame(&mut out, &surface, crate::surface::test_support::area())
                 .expect("writing to a Vec cannot fail");
             surface.set(
                 katui_scene::surface::PixelPos::new(4, 4),
                 Rgba::solid(40, 40, 200),
             );
             presenter
-                .render_frame(&mut out, &surface, area())
+                .render_frame(&mut out, &surface, crate::surface::test_support::area())
                 .expect("writing to a Vec cannot fail");
         }
         let text = String::from_utf8_lossy(&out);

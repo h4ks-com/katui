@@ -80,6 +80,7 @@ pub(crate) fn write_whole_image<W: Sink>(
 /// The solid-surface fixture the surface tests share.
 #[cfg(test)]
 pub(crate) mod test_support {
+    use katui_scene::placement::CellRect;
     use katui_scene::surface::{Rgba, Surface};
 
     pub(crate) fn solid(width: u32, height: u32, color: Rgba) -> Surface {
@@ -90,6 +91,11 @@ pub(crate) mod test_support {
             }
         }
         surface
+    }
+
+    /// A 16 by 16 cell area at the origin.
+    pub(crate) fn area() -> CellRect {
+        CellRect::full(16, 16)
     }
 }
 

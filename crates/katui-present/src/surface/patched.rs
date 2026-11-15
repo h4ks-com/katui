@@ -349,16 +349,16 @@ mod tests {
         }
     }
 
-    fn area() -> CellRect {
-        CellRect::full(16, 16)
-    }
-
     #[test]
     fn the_first_frame_transmits_the_whole_surface() {
         let mut presenter = PatchedKitty::new(90, cell());
         let mut out = Vec::new();
         presenter
-            .render_frame(&mut out, &plain_surface(64, 64), area())
+            .render_frame(
+                &mut out,
+                &plain_surface(64, 64),
+                crate::surface::test_support::area(),
+            )
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&out);
         assert!(text.contains("a=t"), "the whole image travels");
@@ -372,11 +372,11 @@ mod tests {
         let surface = plain_surface(64, 64);
         let mut first = Vec::new();
         presenter
-            .render_frame(&mut first, &surface, area())
+            .render_frame(&mut first, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let mut second = Vec::new();
         let written = presenter
-            .render_frame(&mut second, &surface, area())
+            .render_frame(&mut second, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         assert_eq!(written, 0, "no damage means no bytes");
         assert!(second.is_empty());
@@ -388,7 +388,7 @@ mod tests {
         let mut surface = plain_surface(64, 64);
         let mut warmup = Vec::new();
         presenter
-            .render_frame(&mut warmup, &surface, area())
+            .render_frame(&mut warmup, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         surface.set(
             katui_scene::surface::PixelPos::new(40, 40),
@@ -396,7 +396,7 @@ mod tests {
         );
         let mut out = Vec::new();
         presenter
-            .render_frame(&mut out, &surface, area())
+            .render_frame(&mut out, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&out);
         assert!(
@@ -423,7 +423,7 @@ mod tests {
         let mut surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
-            .render_frame(&mut wire, &surface, area())
+            .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         assert!(
             !String::from_utf8_lossy(&wire).contains("d=R"),
@@ -434,7 +434,7 @@ mod tests {
             Rgba::solid(255, 255, 255),
         );
         presenter
-            .render_frame(&mut wire, &surface, area())
+            .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         wire.clear();
         for y in (0..64).step_by(8) {
@@ -446,7 +446,7 @@ mod tests {
             }
         }
         presenter
-            .render_frame(&mut wire, &surface, area())
+            .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
         let placed = text.find("a=p,i=").expect("the new base is placed");
@@ -469,7 +469,7 @@ mod tests {
         let surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
-            .render_frame(&mut wire, &surface, area())
+            .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
         assert!(!text.contains("s=64"), "no whole image travels");
@@ -491,12 +491,12 @@ mod tests {
         let surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
-            .render_frame(&mut wire, &surface, area())
+            .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         presenter.repaint();
         wire.clear();
         presenter
-            .render_frame(&mut wire, &surface, area())
+            .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
         assert_eq!(text.matches(&anchored()).count(), 64, "every tile returns");
@@ -508,7 +508,7 @@ mod tests {
         assert!(!text.contains("d=R"), "old tiles stay until replaced");
         wire.clear();
         presenter
-            .render_frame(&mut wire, &surface, area())
+            .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         assert!(wire.is_empty(), "one repaint request repaints once");
     }
@@ -518,11 +518,19 @@ mod tests {
         let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space());
         let mut wire = Vec::new();
         presenter
-            .render_frame(&mut wire, &plain_surface(64, 64), area())
+            .render_frame(
+                &mut wire,
+                &plain_surface(64, 64),
+                crate::surface::test_support::area(),
+            )
             .expect("writing to a Vec cannot fail");
         wire.clear();
         presenter
-            .render_frame(&mut wire, &plain_surface(32, 32), area())
+            .render_frame(
+                &mut wire,
+                &plain_surface(32, 32),
+                crate::surface::test_support::area(),
+            )
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
         let freed = text.find("d=R").expect("the old grid is freed");
@@ -536,7 +544,7 @@ mod tests {
         let mut surface = plain_surface(16, 16);
         let mut first = Vec::new();
         presenter
-            .render_frame(&mut first, &surface, area())
+            .render_frame(&mut first, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         surface.set(
             katui_scene::surface::PixelPos::new(1, 1),
@@ -544,7 +552,7 @@ mod tests {
         );
         let mut second = Vec::new();
         presenter
-            .render_frame(&mut second, &surface, area())
+            .render_frame(&mut second, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&second);
         let placed = text.find("a=p,i=91").expect("the alternate id is placed");
@@ -558,7 +566,7 @@ mod tests {
         let mut surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
-            .render_frame(&mut wire, &surface, area())
+            .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         for shade in [10, 20] {
             surface.set(
@@ -567,7 +575,7 @@ mod tests {
             );
             wire.clear();
             presenter
-                .render_frame(&mut wire, &surface, area())
+                .render_frame(&mut wire, &surface, crate::surface::test_support::area())
                 .expect("writing to a Vec cannot fail");
         }
         let text = String::from_utf8_lossy(&wire);
@@ -616,11 +624,19 @@ mod tests {
         let mut presenter = PatchedKitty::new(90, cell());
         let mut out = Vec::new();
         presenter
-            .render_frame(&mut out, &plain_surface(64, 64), area())
+            .render_frame(
+                &mut out,
+                &plain_surface(64, 64),
+                crate::surface::test_support::area(),
+            )
             .expect("writing to a Vec cannot fail");
         let mut resized = Vec::new();
         presenter
-            .render_frame(&mut resized, &plain_surface(32, 32), area())
+            .render_frame(
+                &mut resized,
+                &plain_surface(32, 32),
+                crate::surface::test_support::area(),
+            )
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&resized);
         assert!(text.contains("a=t"), "a resize retransmits whole");

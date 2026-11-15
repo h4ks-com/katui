@@ -179,16 +179,7 @@ mod tests {
     }
 
     fn plain(width: u32, height: u32) -> Surface {
-        let mut surface = Surface::new(width, height);
-        for y in 0..height {
-            for x in 0..width {
-                surface.set(
-                    katui_scene::surface::PixelPos::new(x, y),
-                    Rgba::solid(255, 80, 40),
-                );
-            }
-        }
-        surface
+        crate::surface::test_support::solid(width, height, Rgba::solid(255, 80, 40))
     }
 
     #[test]
