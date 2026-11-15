@@ -17,82 +17,94 @@ mod widgets;
 
 use pyo3::prelude::*;
 
+/// Adds each class to `module`.
+macro_rules! add_classes {
+    ($module:ident, $($class:ty),+ $(,)?) => {
+        $($module.add_class::<$class>()?;)+
+    };
+}
+
+/// Adds each `#[pyfunction]` to `module`.
+macro_rules! add_functions {
+    ($module:ident, $($function:path),+ $(,)?) => {
+        $($module.add_function(wrap_pyfunction!($function, $module)?)?;)+
+    };
+}
+
 #[pymodule]
 fn _katui(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    module.add_class::<app::PyControl>()?;
-    module.add_class::<app::PyWaker>()?;
-    module.add_function(wrap_pyfunction!(app::run, module)?)?;
-
-    module.add_class::<element::PyElement>()?;
-    module.add_class::<element::PyImage>()?;
-    module.add_class::<element::PySpan>()?;
-    module.add_class::<theme::PyTheme>()?;
-    module.add_function(wrap_pyfunction!(html::html, module)?)?;
-    module.add_function(wrap_pyfunction!(html::markdown, module)?)?;
-
-    module.add_class::<state::PyEvent>()?;
-    module.add_class::<state::PyEdit>()?;
-    module.add_class::<state::PyScroll>()?;
-    module.add_class::<state::PyTextField>()?;
-    module.add_class::<state::PyTextArea>()?;
-    module.add_class::<state::PyListState>()?;
-    module.add_class::<state::PyScrollState>()?;
-    module.add_class::<state::PyTreeNode>()?;
-    module.add_class::<state::PyTreeState>()?;
-    module.add_class::<state::PyFocus>()?;
-    module.add_class::<state::PyToasts>()?;
-    module.add_class::<widgets::PyColumn>()?;
-    for function in [
-        wrap_pyfunction!(widgets::label, module)?,
-        wrap_pyfunction!(widgets::title, module)?,
-        wrap_pyfunction!(widgets::heading, module)?,
-        wrap_pyfunction!(widgets::hint, module)?,
-        wrap_pyfunction!(widgets::button, module)?,
-        wrap_pyfunction!(widgets::primary_button, module)?,
-        wrap_pyfunction!(widgets::panel, module)?,
-        wrap_pyfunction!(widgets::page, module)?,
-        wrap_pyfunction!(widgets::text_field, module)?,
-        wrap_pyfunction!(widgets::text_area, module)?,
-        wrap_pyfunction!(widgets::list_view, module)?,
-        wrap_pyfunction!(widgets::checkbox, module)?,
-        wrap_pyfunction!(widgets::switch, module)?,
-        wrap_pyfunction!(widgets::progress, module)?,
-        wrap_pyfunction!(widgets::tabs, module)?,
-        wrap_pyfunction!(widgets::radio, module)?,
-        wrap_pyfunction!(widgets::slider, module)?,
-        wrap_pyfunction!(widgets::nudge, module)?,
-        wrap_pyfunction!(widgets::spinner, module)?,
-        wrap_pyfunction!(widgets::toasts, module)?,
-        wrap_pyfunction!(widgets::key_hints, module)?,
-        wrap_pyfunction!(widgets::dialog, module)?,
-        wrap_pyfunction!(widgets::select, module)?,
-        wrap_pyfunction!(widgets::menu, module)?,
-        wrap_pyfunction!(widgets::tooltip, module)?,
-        wrap_pyfunction!(widgets::scroll_view, module)?,
-        wrap_pyfunction!(widgets::split, module)?,
-        wrap_pyfunction!(widgets::table, module)?,
-        wrap_pyfunction!(widgets::tree, module)?,
-    ] {
-        module.add_function(function)?;
-    }
-
-    module.add_class::<game::PyLight>()?;
-    module.add_class::<game::PyKeys>()?;
-    module.add_class::<game::PyV3>()?;
-    module.add_class::<game::PyCamera>()?;
-    module.add_class::<game::PyRng>()?;
-    module.add_class::<game::PySpark>()?;
-    module.add_class::<game::PySparks>()?;
-    module.add_function(wrap_pyfunction!(game::srgb, module)?)?;
-    module.add_function(wrap_pyfunction!(game::scaled, module)?)?;
-    module.add_function(wrap_pyfunction!(game::lerp3, module)?)?;
-    module.add_function(wrap_pyfunction!(game::play, module)?)?;
-    module.add_function(wrap_pyfunction!(game::frame, module)?)?;
+    add_classes!(
+        module,
+        app::PyControl,
+        app::PyWaker,
+        element::PyElement,
+        element::PyImage,
+        element::PySpan,
+        theme::PyTheme,
+        state::PyEvent,
+        state::PyEdit,
+        state::PyScroll,
+        state::PyTextField,
+        state::PyTextArea,
+        state::PyListState,
+        state::PyScrollState,
+        state::PyTreeNode,
+        state::PyTreeState,
+        state::PyFocus,
+        state::PyToasts,
+        widgets::PyColumn,
+        game::PyLight,
+        game::PyKeys,
+        game::PyV3,
+        game::PyCamera,
+        game::PyRng,
+        game::PySpark,
+        game::PySparks,
+        testing::PyScreen,
+    );
+    add_functions!(
+        module,
+        app::run,
+        html::html,
+        html::markdown,
+        widgets::label,
+        widgets::title,
+        widgets::heading,
+        widgets::hint,
+        widgets::button,
+        widgets::primary_button,
+        widgets::panel,
+        widgets::page,
+        widgets::text_field,
+        widgets::text_area,
+        widgets::list_view,
+        widgets::checkbox,
+        widgets::switch,
+        widgets::progress,
+        widgets::tabs,
+        widgets::radio,
+        widgets::slider,
+        widgets::nudge,
+        widgets::spinner,
+        widgets::toasts,
+        widgets::key_hints,
+        widgets::dialog,
+        widgets::select,
+        widgets::menu,
+        widgets::tooltip,
+        widgets::scroll_view,
+        widgets::split,
+        widgets::table,
+        widgets::tree,
+        game::srgb,
+        game::scaled,
+        game::lerp3,
+        game::play,
+        game::frame,
+    );
     for (name, value) in game::GAME_CONSTANTS {
         module.add(name, value)?;
     }
-
-    module.add_class::<testing::PyScreen>()?;
     Ok(())
 }

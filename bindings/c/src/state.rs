@@ -17,58 +17,9 @@ use crate::message::KatuiScroll;
 /// A key press, a release, a mouse event, a paste or a focus change.
 pub struct KatuiEvent(pub(crate) InputEvent);
 
-pub(crate) fn key_name(key: Key) -> String {
-    match key {
-        Key::Char(c) => c.to_string(),
-        Key::Enter => "enter".into(),
-        Key::Tab => "tab".into(),
-        Key::Backspace => "backspace".into(),
-        Key::Delete => "delete".into(),
-        Key::Insert => "insert".into(),
-        Key::Escape => "escape".into(),
-        Key::Up => "up".into(),
-        Key::Down => "down".into(),
-        Key::Left => "left".into(),
-        Key::Right => "right".into(),
-        Key::Home => "home".into(),
-        Key::End => "end".into(),
-        Key::PageUp => "page_up".into(),
-        Key::PageDown => "page_down".into(),
-        Key::Function(n) => format!("f{n}"),
-    }
-}
-
 /// The key named `name`: one character, `"enter"`, `"up"`, `"f1"` and so on.
 pub(crate) fn key(name: &str) -> Result<Key, Error> {
-    let mut chars = name.chars();
-    if let (Some(c), None) = (chars.next(), chars.next()) {
-        return Ok(Key::Char(c));
-    }
-    let named = match name {
-        "enter" => Key::Enter,
-        "tab" => Key::Tab,
-        "backspace" => Key::Backspace,
-        "delete" => Key::Delete,
-        "insert" => Key::Insert,
-        "escape" => Key::Escape,
-        "space" => Key::Char(' '),
-        "up" => Key::Up,
-        "down" => Key::Down,
-        "left" => Key::Left,
-        "right" => Key::Right,
-        "home" => Key::Home,
-        "end" => Key::End,
-        "page_up" => Key::PageUp,
-        "page_down" => Key::PageDown,
-        other => {
-            return other
-                .strip_prefix('f')
-                .and_then(|n| n.parse().ok())
-                .map(Key::Function)
-                .ok_or_else(|| Error::Invalid(format!("name a key, not {other:?}")));
-        }
-    };
-    Ok(named)
+    Key::from_name(name).ok_or_else(|| Error::Invalid(format!("name a key, not {name:?}")))
 }
 
 /// What kind of event a `KatuiEvent` is.
@@ -172,7 +123,7 @@ pub unsafe extern "C" fn katui_event_kind(event: *const KatuiEvent) -> KatuiEven
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_event_key(event: *const KatuiEvent) -> *mut c_char {
     match unsafe { self::event(event) } {
-        Some(InputEvent::Key(key, _) | InputEvent::KeyUp(key, _)) => c_string(&key_name(*key)),
+        Some(InputEvent::Key(key, _) | InputEvent::KeyUp(key, _)) => c_string(&key.name()),
         _ => std::ptr::null_mut(),
     }
 }

@@ -175,14 +175,10 @@ fn encode_chunks(head: &str, payload: &[u8], compressed: bool) -> std::io::Resul
     let chunks: Vec<&str> = if encoded.is_empty() {
         vec![""]
     } else {
-        // base64 output is ascii by construction
         encoded
             .as_bytes()
             .chunks(CHUNK)
-            .map(|c| match std::str::from_utf8(c) {
-                Ok(text) => text,
-                Err(_) => unreachable!("base64 output is ASCII"),
-            })
+            .map(|chunk| std::str::from_utf8(chunk).unwrap_or_default())
             .collect()
     };
     let last = chunks.len() - 1;

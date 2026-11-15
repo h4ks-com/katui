@@ -9,8 +9,8 @@ use katui_proto::kitty::{
     Animate, AnimationState, Canvas, Delete, FrameTransmit, ImageId as KittyImage,
 };
 use katui_scene::placement::CellRect;
-use katui_scene::surface::Surface;
 use katui_scene::surface::diff_tiles;
+use katui_scene::surface::{PixelRect, Surface};
 
 use super::patched::tile_pixels;
 use super::{damage_is_dense, write_whole_image};
@@ -85,29 +85,20 @@ impl AnimatedKitty {
         surface: &Surface,
         area: CellRect,
     ) -> io::Result<usize> {
-        let fresh = self.prev.as_ref().is_none_or(|prev| {
-            prev.width() != surface.width() || prev.height() != surface.height()
+        let same_size = self.prev.as_ref().is_some_and(|prev| {
+            prev.width() == surface.width() && prev.height() == surface.height()
         });
-        if fresh {
+        if !same_size {
             return self.start_reel(out, surface, area);
         }
         if self.since_reset >= RESET_EVERY {
-            // we place the next reel under the other id before freeing
-            // the old one, so we always have a frame on screen
-            let finished = self.current;
-            self.current = if finished == self.base {
-                self.base + 1
-            } else {
-                self.base
-            };
-            let written = self.start_reel(out, surface, area)?;
-            Self::stop_reel(out, finished)?;
-            return Ok(written);
+            return self.rotate_reel(out, surface, area);
         }
-        let Some(prev) = self.prev.as_ref() else {
-            unreachable!("a fresh reel starts before frames diff");
-        };
-        let damage = diff_tiles(prev, surface, self.tile_side);
+        let damage = self
+            .prev
+            .as_ref()
+            .map(|prev| diff_tiles(prev, surface, self.tile_side))
+            .unwrap_or_default();
         self.prev = Some(surface.clone());
         if damage.is_empty() {
             return Ok(0);
@@ -116,67 +107,102 @@ impl AnimatedKitty {
         let mut bytes = Vec::new();
         let dense = damage_is_dense(surface, self.tile_side, damage.len());
         if !dense && damage.len() <= self.budget {
-            // the frame is born as a copy of its predecessor with one
-            // anchor pixel of real data, then the damaged rectangles
-            // edit it in place
-            let anchor = surface.pixels().get(..4).unwrap_or(&[0, 0, 0, 255]);
-            let create = FrameTransmit {
-                id: KittyImage(self.current),
-                edit: None,
-                canvas: Canvas::Frame(self.frame),
-                rect: Some(crop_rect(katui_scene::surface::PixelRect {
-                    x: 0,
-                    y: 0,
-                    width: 1,
-                    height: 1,
-                })),
-                width: 1,
-                height: 1,
-                payload: anchor,
-                compressed: false,
-                gap_ms: Some(self.gap_ms),
-            };
-            for frame in create.encode()? {
-                bytes.write_all(&frame)?;
-            }
-            for rect in &damage {
-                let pixels = tile_pixels(surface, *rect);
-                let edit = FrameTransmit {
-                    id: KittyImage(self.current),
-                    edit: Some(next),
-                    canvas: Canvas::Blank,
-                    rect: Some(crop_rect(*rect)),
-                    width: rect.width,
-                    height: rect.height,
-                    payload: &pixels,
-                    compressed: true,
-                    gap_ms: None,
-                };
-                for frame in edit.encode()? {
-                    bytes.write_all(&frame)?;
-                }
-            }
+            self.edited_frame(&mut bytes, surface, &damage, next)?;
         } else {
-            let whole = FrameTransmit {
-                id: KittyImage(self.current),
-                edit: None,
-                canvas: Canvas::Blank,
-                rect: None,
-                width: surface.width(),
-                height: surface.height(),
-                payload: surface.pixels(),
-                compressed: true,
-                gap_ms: Some(self.gap_ms),
-            };
-            for frame in whole.encode()? {
-                bytes.write_all(&frame)?;
-            }
+            self.whole_frame(&mut bytes, surface)?;
         }
         self.frame = next;
         self.since_reset += 1;
         let written = bytes.len();
         out.write_all(&bytes)?;
         Ok(written)
+    }
+
+    /// Start the next reel under the other id, then free the finished one,
+    /// so we always have a frame on screen.
+    fn rotate_reel<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        area: CellRect,
+    ) -> io::Result<usize> {
+        let finished = self.current;
+        self.current = if finished == self.base {
+            self.base + 1
+        } else {
+            self.base
+        };
+        let written = self.start_reel(out, surface, area)?;
+        Self::stop_reel(out, finished)?;
+        Ok(written)
+    }
+
+    /// Frame `next` as a copy of its predecessor with one anchor pixel of
+    /// real data, which the damaged rectangles then edit in place.
+    fn edited_frame(
+        &self,
+        bytes: &mut Vec<u8>,
+        surface: &Surface,
+        damage: &[PixelRect],
+        next: u32,
+    ) -> io::Result<()> {
+        let anchor = surface.pixels().get(..4).unwrap_or(&[0, 0, 0, 255]);
+        let create = FrameTransmit {
+            id: KittyImage(self.current),
+            edit: None,
+            canvas: Canvas::Frame(self.frame),
+            rect: Some(crop_rect(PixelRect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            })),
+            width: 1,
+            height: 1,
+            payload: anchor,
+            compressed: false,
+            gap_ms: Some(self.gap_ms),
+        };
+        for frame in create.encode()? {
+            bytes.write_all(&frame)?;
+        }
+        for rect in damage {
+            let pixels = tile_pixels(surface, *rect);
+            let edit = FrameTransmit {
+                id: KittyImage(self.current),
+                edit: Some(next),
+                canvas: Canvas::Blank,
+                rect: Some(crop_rect(*rect)),
+                width: rect.width,
+                height: rect.height,
+                payload: &pixels,
+                compressed: true,
+                gap_ms: None,
+            };
+            for frame in edit.encode()? {
+                bytes.write_all(&frame)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The whole surface as the next frame.
+    fn whole_frame(&self, bytes: &mut Vec<u8>, surface: &Surface) -> io::Result<()> {
+        let whole = FrameTransmit {
+            id: KittyImage(self.current),
+            edit: None,
+            canvas: Canvas::Blank,
+            rect: None,
+            width: surface.width(),
+            height: surface.height(),
+            payload: surface.pixels(),
+            compressed: true,
+            gap_ms: Some(self.gap_ms),
+        };
+        for frame in whole.encode()? {
+            bytes.write_all(&frame)?;
+        }
+        Ok(())
     }
 
     /// Transmit the root frame, place it once, and hand playback to the

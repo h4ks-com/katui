@@ -150,27 +150,36 @@ impl<W: io::Write> KatuiBackend<W> {
     }
 }
 
+/// The 16 ANSI colors in palette order, so a color's position is its index.
+const ANSI: [RatColor; 16] = [
+    RatColor::Black,
+    RatColor::Red,
+    RatColor::Green,
+    RatColor::Yellow,
+    RatColor::Blue,
+    RatColor::Magenta,
+    RatColor::Cyan,
+    RatColor::Gray,
+    RatColor::DarkGray,
+    RatColor::LightRed,
+    RatColor::LightGreen,
+    RatColor::LightYellow,
+    RatColor::LightBlue,
+    RatColor::LightMagenta,
+    RatColor::LightCyan,
+    RatColor::White,
+];
+
 fn map_color(color: RatColor) -> Color {
     match color {
         RatColor::Reset => Color::Reset,
-        RatColor::Black => Color::Indexed(0),
-        RatColor::Red => Color::Indexed(1),
-        RatColor::Green => Color::Indexed(2),
-        RatColor::Yellow => Color::Indexed(3),
-        RatColor::Blue => Color::Indexed(4),
-        RatColor::Magenta => Color::Indexed(5),
-        RatColor::Cyan => Color::Indexed(6),
-        RatColor::Gray => Color::Indexed(7),
-        RatColor::DarkGray => Color::Indexed(8),
-        RatColor::LightRed => Color::Indexed(9),
-        RatColor::LightGreen => Color::Indexed(10),
-        RatColor::LightYellow => Color::Indexed(11),
-        RatColor::LightBlue => Color::Indexed(12),
-        RatColor::LightMagenta => Color::Indexed(13),
-        RatColor::LightCyan => Color::Indexed(14),
-        RatColor::White => Color::Indexed(15),
         RatColor::Indexed(index) => Color::Indexed(index),
         RatColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
+        named => ANSI
+            .iter()
+            .position(|ansi| *ansi == named)
+            .and_then(|index| u8::try_from(index).ok())
+            .map_or(Color::Reset, Color::Indexed),
     }
 }
 

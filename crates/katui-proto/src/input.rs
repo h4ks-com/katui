@@ -63,6 +63,58 @@ pub enum Key {
     Function(u8),
 }
 
+/// The keys with a name of their own, by the name `Key::name` gives them.
+const NAMED_KEYS: [(&str, Key); 14] = [
+    ("enter", Key::Enter),
+    ("tab", Key::Tab),
+    ("backspace", Key::Backspace),
+    ("delete", Key::Delete),
+    ("insert", Key::Insert),
+    ("escape", Key::Escape),
+    ("up", Key::Up),
+    ("down", Key::Down),
+    ("left", Key::Left),
+    ("right", Key::Right),
+    ("home", Key::Home),
+    ("end", Key::End),
+    ("page_up", Key::PageUp),
+    ("page_down", Key::PageDown),
+];
+
+impl Key {
+    /// The key's name: the character itself, `"enter"`, `"page_up"`, `"f1"`
+    /// and so on.
+    #[must_use]
+    pub fn name(self) -> String {
+        match self {
+            Self::Char(character) => character.to_string(),
+            Self::Function(number) => format!("f{number}"),
+            named => NAMED_KEYS
+                .iter()
+                .find(|(_, key)| *key == named)
+                .map_or_else(String::new, |(name, _)| (*name).to_owned()),
+        }
+    }
+
+    /// The key called `name`, the way [`Key::name`] spells it; `"space"`
+    /// also names the space bar.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        let mut characters = name.chars();
+        if let (Some(character), None) = (characters.next(), characters.next()) {
+            return Some(Self::Char(character));
+        }
+        if name == "space" {
+            return Some(Self::Char(' '));
+        }
+        NAMED_KEYS
+            .iter()
+            .find(|(known, _)| *known == name)
+            .map(|(_, key)| *key)
+            .or_else(|| name.strip_prefix('f')?.parse().ok().map(Self::Function))
+    }
+}
+
 /// A mouse button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Button {
@@ -545,6 +597,19 @@ fn mouse_action(code: u32, released: bool) -> Option<MouseAction> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_key_name_reads_back_as_its_key() {
+        let keys = [Key::Char('a'), Key::Char(' '), Key::Function(12)]
+            .into_iter()
+            .chain(super::NAMED_KEYS.iter().map(|(_, key)| *key));
+        for key in keys {
+            assert_eq!(Key::from_name(&key.name()), Some(key), "{key:?}");
+        }
+        assert_eq!(Key::from_name("space"), Some(Key::Char(' ')));
+        assert_eq!(Key::from_name("nothing"), None);
+        assert_eq!(Key::from_name("fx"), None);
+    }
+
     use super::{Button, InputEvent, InputParser, Key, Mods, MouseAction, MouseEvent, Pointer};
     use crate::probe::CellPixels;
 

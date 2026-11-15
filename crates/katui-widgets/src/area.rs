@@ -66,20 +66,28 @@ impl TextArea {
     }
 
     fn key(&mut self, key: Key, mods: Mods) -> Edit {
-        let (start, end) = self.line_bounds();
         match key {
             Key::Enter if mods.ctrl || mods.alt => Edit::Submitted,
             Key::Enter => self.field.insert("\n"),
             Key::Up => self.move_line(false),
             Key::Down => self.move_line(true),
-            Key::Home if mods.ctrl => self.field.move_to(0),
-            Key::End if mods.ctrl => self.field.move_to(self.field.text.len()),
-            Key::Home => self.field.move_to(start),
-            Key::End => self.field.move_to(end),
-            Key::Char('a') if mods.ctrl => self.field.move_to(start),
-            Key::Char('e') if mods.ctrl => self.field.move_to(end),
-            Key::Char('u') if mods.ctrl => self.field.remove(start, self.field.cursor),
-            Key::Char('k') if mods.ctrl => self.field.remove(self.field.cursor, end),
+            Key::Home | Key::End | Key::Char(_) => self.line_key(key, mods),
+            _ => self.field.handle(&InputEvent::Key(key, mods)),
+        }
+    }
+
+    /// Home, End and the Ctrl shortcuts, which act on the cursor's line;
+    /// Ctrl+Home and Ctrl+End reach the ends of the whole text.
+    fn line_key(&mut self, key: Key, mods: Mods) -> Edit {
+        let (start, end) = self.line_bounds();
+        let cursor = self.field.cursor;
+        match (key, mods.ctrl) {
+            (Key::Home, true) => self.field.move_to(0),
+            (Key::End, true) => self.field.move_to(self.field.text.len()),
+            (Key::Home, false) | (Key::Char('a'), true) => self.field.move_to(start),
+            (Key::End, false) | (Key::Char('e'), true) => self.field.move_to(end),
+            (Key::Char('u'), true) => self.field.remove(start, cursor),
+            (Key::Char('k'), true) => self.field.remove(cursor, end),
             _ => self.field.handle(&InputEvent::Key(key, mods)),
         }
     }

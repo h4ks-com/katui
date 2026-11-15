@@ -9,3 +9,4 @@ __pycache__/
 /bindings/node/artifacts
 /bindings/node/npm
 /bindings/node/*.node
+.claude/

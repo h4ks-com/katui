@@ -175,44 +175,70 @@ impl Kitty {
             Some(anchor) => anchor.write(&mut bytes)?,
             None => bytes.write_all(b"\x1b[?2026h")?,
         }
+        let transmitted = self.place_added(&mut bytes, &delta.added, images)?;
+        self.place_moved(&mut bytes, &delta.moved)?;
+        self.delete_removed(&mut bytes, &delta.removed)?;
+        self.free_emptied(&mut bytes)?;
+        self.sent.extend(transmitted);
+        if self.anchor.is_none() {
+            bytes.write_all(b"\x1b[?2026l")?;
+        }
+        let written = bytes.len();
+        out.write_all(&bytes)?;
+        Ok(written)
+    }
+
+    /// Place each added placement, transmitting its image first unless it
+    /// went out before. Returns the images transmitted now.
+    fn place_added(
+        &mut self,
+        bytes: &mut Vec<u8>,
+        added: &[Placement],
+        images: &Images<'_>,
+    ) -> io::Result<HashSet<ImageId>> {
         let mut transmitted: HashSet<ImageId> = HashSet::new();
-        for placement in &delta.added {
+        for placement in added {
             let image = placement.image;
-            if !self.sent.contains(&image)
-                && !transmitted.contains(&image)
-                && let Some(payload) = images.get(image)
-            {
-                self.upload(&mut bytes, image, &payload)?;
+            let on_wire = self.sent.contains(&image) || transmitted.contains(&image);
+            if !on_wire && let Some(payload) = images.get(image) {
+                self.upload(bytes, image, &payload)?;
                 transmitted.insert(image);
             }
             if self.sent.contains(&image) || transmitted.contains(&image) {
-                place(
-                    &mut bytes,
-                    self.wire(placement.image),
-                    placement,
-                    self.anchor.as_ref(),
-                )?;
+                place(bytes, self.wire(image), placement, self.anchor.as_ref())?;
                 self.live.insert((image, placement.id));
             }
         }
-        for placement in &delta.moved {
+        Ok(transmitted)
+    }
+
+    fn place_moved(&self, bytes: &mut Vec<u8>, moved: &[Placement]) -> io::Result<()> {
+        for placement in moved {
             if self.live.contains(&(placement.image, placement.id)) {
                 place(
-                    &mut bytes,
+                    bytes,
                     self.wire(placement.image),
                     placement,
                     self.anchor.as_ref(),
                 )?;
             }
         }
-        for removed in &delta.removed {
-            let pair = (removed.image, removed.id);
-            self.live.remove(&pair);
+        Ok(())
+    }
+
+    fn delete_removed(&mut self, bytes: &mut Vec<u8>, removed: &[Placement]) -> io::Result<()> {
+        for placement in removed {
+            self.live.remove(&(placement.image, placement.id));
+            let wire = self.wire(placement.image);
             bytes.write_all(
-                &kitty::Delete::Placement(self.wire(removed.image), KittyPlacement(removed.id.0))
-                    .encode(),
+                &kitty::Delete::Placement(wire, KittyPlacement(placement.id.0)).encode(),
             )?;
         }
+        Ok(())
+    }
+
+    /// Delete whole every sent image whose last placement left.
+    fn free_emptied(&mut self, bytes: &mut Vec<u8>) -> io::Result<()> {
         let mut emptied: Vec<ImageId> = self
             .sent
             .iter()
@@ -224,13 +250,7 @@ impl Kitty {
             bytes.write_all(&kitty::Delete::Free(self.wire(image)).encode())?;
             self.sent.remove(&image);
         }
-        self.sent.extend(transmitted);
-        if self.anchor.is_none() {
-            bytes.write_all(b"\x1b[?2026l")?;
-        }
-        let written = bytes.len();
-        out.write_all(&bytes)?;
-        Ok(written)
+        Ok(())
     }
 }
 

@@ -75,24 +75,44 @@ impl TextField {
         let word = mods.ctrl || mods.alt;
         match key {
             Key::Enter => Edit::Submitted,
-            Key::Char('a') if mods.ctrl => self.move_to(0),
-            Key::Char('e') if mods.ctrl => self.move_to(self.text.len()),
-            Key::Char('u') if mods.ctrl => self.remove(0, self.cursor),
-            Key::Char('k') if mods.ctrl => self.remove(self.cursor, self.text.len()),
-            Key::Char('w') if mods.ctrl => self.remove(self.word_start(), self.cursor),
-            Key::Char(character) if !mods.ctrl && !mods.alt => {
-                self.insert(character.encode_utf8(&mut [0; 4]))
-            }
+            Key::Char(character) if mods.ctrl => self.shortcut(character),
+            Key::Char(character) if !mods.alt => self.insert(character.encode_utf8(&mut [0; 4])),
+            Key::Backspace | Key::Delete => self.erase(key, word),
+            Key::Left | Key::Right | Key::Home | Key::End => self.travel(key, word),
+            _ => Edit::Ignored,
+        }
+    }
+
+    /// The Ctrl+letter editing shortcuts of a shell prompt.
+    fn shortcut(&mut self, letter: char) -> Edit {
+        match letter {
+            'a' => self.move_to(0),
+            'e' => self.move_to(self.text.len()),
+            'u' => self.remove(0, self.cursor),
+            'k' => self.remove(self.cursor, self.text.len()),
+            'w' => self.remove(self.word_start(), self.cursor),
+            _ => Edit::Ignored,
+        }
+    }
+
+    /// Backspace or Delete, a whole word back when `word`.
+    fn erase(&mut self, key: Key, word: bool) -> Edit {
+        match key {
             Key::Backspace if word => self.remove(self.word_start(), self.cursor),
             Key::Backspace => self.remove(self.previous_boundary(), self.cursor),
-            Key::Delete => self.remove(self.cursor, self.next_boundary()),
+            _ => self.remove(self.cursor, self.next_boundary()),
+        }
+    }
+
+    /// The arrows, Home and End, a whole word at a time when `word`.
+    fn travel(&mut self, key: Key, word: bool) -> Edit {
+        match key {
             Key::Left if word => self.move_to(self.word_start()),
             Key::Right if word => self.move_to(self.word_end()),
             Key::Left => self.move_to(self.previous_boundary()),
             Key::Right => self.move_to(self.next_boundary()),
             Key::Home => self.move_to(0),
-            Key::End => self.move_to(self.text.len()),
-            _ => Edit::Ignored,
+            _ => self.move_to(self.text.len()),
         }
     }
 

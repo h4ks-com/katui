@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 
 use crate::app::{Failure, call_optional, keep, take};
 use crate::element::PyImage;
-use crate::state::{key, key_name};
+use crate::state::key;
 
 type Color = (f32, f32, f32);
 type Point = (f32, f32);
@@ -493,11 +493,11 @@ impl GameBridge {
 
 impl Game for GameBridge {
     fn press(&mut self, key: Key) {
-        self.call("press", (key_name(key),));
+        self.call("press", (key.name(),));
     }
 
     fn repeat(&mut self, key: Key) {
-        self.call("repeat", (key_name(key),));
+        self.call("repeat", (key.name(),));
     }
 
     fn resize(&mut self, light: &Light) {

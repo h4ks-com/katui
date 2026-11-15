@@ -195,36 +195,35 @@ fn byte(value: f32) -> u8 {
     u8::try_from(value.clamp(0.0, 255.0).round() as i32).unwrap_or(u8::MAX)
 }
 
+/// The CSS color keywords this subset knows, with their red, green and blue.
+const NAMED_COLORS: [(&str, (u8, u8, u8)); 21] = [
+    ("black", (0, 0, 0)),
+    ("white", (255, 255, 255)),
+    ("red", (255, 0, 0)),
+    ("green", (0, 128, 0)),
+    ("lime", (0, 255, 0)),
+    ("blue", (0, 0, 255)),
+    ("navy", (0, 0, 128)),
+    ("yellow", (255, 255, 0)),
+    ("orange", (255, 165, 0)),
+    ("purple", (128, 0, 128)),
+    ("fuchsia", (255, 0, 255)),
+    ("magenta", (255, 0, 255)),
+    ("aqua", (0, 255, 255)),
+    ("cyan", (0, 255, 255)),
+    ("teal", (0, 128, 128)),
+    ("olive", (128, 128, 0)),
+    ("maroon", (128, 0, 0)),
+    ("silver", (192, 192, 192)),
+    ("gray", (128, 128, 128)),
+    ("grey", (128, 128, 128)),
+    ("transparent", (0, 0, 0)),
+];
+
 fn named_color(name: &str) -> Option<Rgba> {
-    let rgb = match name {
-        "black" => (0, 0, 0),
-        "white" => (255, 255, 255),
-        "red" => (255, 0, 0),
-        "green" => (0, 128, 0),
-        "lime" => (0, 255, 0),
-        "blue" => (0, 0, 255),
-        "navy" => (0, 0, 128),
-        "yellow" => (255, 255, 0),
-        "orange" => (255, 165, 0),
-        "purple" => (128, 0, 128),
-        "fuchsia" | "magenta" => (255, 0, 255),
-        "aqua" | "cyan" => (0, 255, 255),
-        "teal" => (0, 128, 128),
-        "olive" => (128, 128, 0),
-        "maroon" => (128, 0, 0),
-        "silver" => (192, 192, 192),
-        "gray" | "grey" => (128, 128, 128),
-        "transparent" => {
-            return Some(Rgba {
-                r: 0,
-                g: 0,
-                b: 0,
-                a: 0,
-            });
-        }
-        _ => return None,
-    };
-    Some(Rgba::solid(rgb.0, rgb.1, rgb.2))
+    let &(_, (r, g, b)) = NAMED_COLORS.iter().find(|(known, _)| *known == name)?;
+    let a = if name == "transparent" { 0 } else { 255 };
+    Some(Rgba { r, g, b, a })
 }
 
 #[cfg(test)]
@@ -257,6 +256,9 @@ mod tests {
         assert_eq!(color("rgb(1, 2, 3)"), Some(Rgba::solid(1, 2, 3)));
         assert_eq!(color("rgba(0,0,0,0.5)").map(|rgba| rgba.a), Some(128));
         assert_eq!(color("teal"), Some(Rgba::solid(0, 128, 128)));
+        assert_eq!(color("transparent").map(|rgba| rgba.a), Some(0));
+        assert_eq!(color("grey"), color("gray"));
+        assert_eq!(color("chartreuse"), None);
         assert_eq!(color("nonsense"), None);
     }
 }

@@ -16,7 +16,7 @@ use crate::app::{Failure, call_optional, keep, object, take, terminal_error};
 use crate::convert::invalid;
 use crate::element::Image;
 use crate::message::{Obj, fetch, hold};
-use crate::state::{key, key_name};
+use crate::state::key;
 
 type Color = (f64, f64, f64);
 type Point = (f64, f64);
@@ -599,11 +599,11 @@ impl GameBridge {
 
 impl UiGame for GameBridge {
     fn press(&mut self, key: Key) {
-        self.scoped(|_, game| call_optional(&game, "press", key_name(key)).map(drop));
+        self.scoped(|_, game| call_optional(&game, "press", key.name()).map(drop));
     }
 
     fn repeat(&mut self, key: Key) {
-        self.scoped(|_, game| call_optional(&game, "repeat", key_name(key)).map(drop));
+        self.scoped(|_, game| call_optional(&game, "repeat", key.name()).map(drop));
     }
 
     fn resize(&mut self, light: &UiLight) {

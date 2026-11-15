@@ -17,58 +17,9 @@ pub(crate) struct PyEvent {
     pub(crate) inner: InputEvent,
 }
 
-pub(crate) fn key_name(key: Key) -> String {
-    match key {
-        Key::Char(c) => c.to_string(),
-        Key::Enter => "enter".into(),
-        Key::Tab => "tab".into(),
-        Key::Backspace => "backspace".into(),
-        Key::Delete => "delete".into(),
-        Key::Insert => "insert".into(),
-        Key::Escape => "escape".into(),
-        Key::Up => "up".into(),
-        Key::Down => "down".into(),
-        Key::Left => "left".into(),
-        Key::Right => "right".into(),
-        Key::Home => "home".into(),
-        Key::End => "end".into(),
-        Key::PageUp => "page_up".into(),
-        Key::PageDown => "page_down".into(),
-        Key::Function(n) => format!("f{n}"),
-    }
-}
-
 /// The key named `name`: one character, `"enter"`, `"up"`, `"f1"` and so on.
 pub(crate) fn key(name: &str) -> PyResult<Key> {
-    let mut chars = name.chars();
-    if let (Some(c), None) = (chars.next(), chars.next()) {
-        return Ok(Key::Char(c));
-    }
-    let named = match name {
-        "enter" => Key::Enter,
-        "tab" => Key::Tab,
-        "backspace" => Key::Backspace,
-        "delete" => Key::Delete,
-        "insert" => Key::Insert,
-        "escape" => Key::Escape,
-        "space" => Key::Char(' '),
-        "up" => Key::Up,
-        "down" => Key::Down,
-        "left" => Key::Left,
-        "right" => Key::Right,
-        "home" => Key::Home,
-        "end" => Key::End,
-        "page_up" => Key::PageUp,
-        "page_down" => Key::PageDown,
-        other => {
-            return other
-                .strip_prefix('f')
-                .and_then(|n| n.parse().ok())
-                .map(Key::Function)
-                .ok_or_else(|| PyValueError::new_err(format!("name a key, not {other:?}")));
-        }
-    };
-    Ok(named)
+    Key::from_name(name).ok_or_else(|| PyValueError::new_err(format!("name a key, not {name:?}")))
 }
 
 const fn mods(ctrl: bool, alt: bool, shift: bool) -> Mods {
@@ -119,7 +70,7 @@ impl PyEvent {
     #[getter(key)]
     fn key_of(&self) -> Option<String> {
         match self.inner {
-            InputEvent::Key(key, _) | InputEvent::KeyUp(key, _) => Some(key_name(key)),
+            InputEvent::Key(key, _) | InputEvent::KeyUp(key, _) => Some(key.name()),
             _ => None,
         }
     }

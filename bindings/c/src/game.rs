@@ -12,7 +12,7 @@ use crate::ffi::{
     Error, KatuiStatus, borrow, borrow_mut, free, guard, owned, owned_or_null, slice, status, text,
     texts,
 };
-use crate::state::{key, key_name};
+use crate::state::key;
 
 /// The first kitty image id games use.
 pub const KATUI_BASE_IMAGE: u32 = 900;
@@ -619,7 +619,7 @@ impl GameBridge {
     }
 
     fn key(&self, call: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>, key: Key) {
-        let (Some(call), Ok(name)) = (call, CString::new(key_name(key))) else {
+        let (Some(call), Ok(name)) = (call, CString::new(key.name())) else {
             return;
         };
         unsafe { call(self.game.user, name.as_ptr()) };
