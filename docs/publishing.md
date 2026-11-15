@@ -183,8 +183,10 @@ Python from 3.10 on.
 
 ## One-time setup
 
-The release workflow publishes with PyPI's trusted publishing, so the
-repository holds no PyPI token. Before the first release:
+The release workflow publishes to PyPI, crates.io and npm with trusted
+publishing: each job trades a short-lived GitHub OIDC token for a
+publish token, so the repository holds no registry secret. Before the
+first release:
 
 1. On PyPI, add a pending trusted publisher for the project `katui`: owner
    `matheusfillipe`, repository `katui`, workflow `release.yml`,
@@ -192,15 +194,19 @@ repository holds no PyPI token. Before the first release:
 2. In the repository settings on GitHub, create an environment named
    `pypi`. Add yourself as a required reviewer to approve each release
    before it publishes.
-3. Create a crates.io API token with the publish-new and publish-update
-   scopes, and a GitHub environment named `crates-io` with the token as
-   its secret `CARGO_REGISTRY_TOKEN`. Add yourself as a required reviewer
-   there too.
+3. crates.io sets up trusted publishing per crate, and only for a crate
+   that exists. Publish the first version by hand from a clean checkout of
+   the release tag: `cargo login` with a token that has the publish-new
+   scope, then `just crates-publish`, then revoke the token. On crates.io,
+   in the settings of each of the 13 crates, add a trusted publisher:
+   repository `matheusfillipe/katui`, workflow `release.yml`, environment
+   `crates-io`. Create a GitHub environment named `crates-io` and add
+   yourself as a required reviewer. On that first release, reject the
+   `crates` job's deployment, since the crates already went up by hand.
 4. Let GitHub Actions write to the repository: the C release job creates
    the GitHub release, and the Go release job pushes the
    `bindings/go/vX.Y.Z` tag. A tag protection rule or ruleset that covers
    `bindings/go/v*` has to allow GitHub Actions.
-
 5. npm sets up trusted publishing per package, and only for a package that
    exists. Publish version 0.0.0 of each of `katui`, `katui-linux-x64-gnu`,
    `katui-linux-arm64-gnu`, `katui-linux-x64-musl`, `katui-linux-arm64-musl`,

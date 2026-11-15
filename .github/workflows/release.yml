@@ -189,6 +189,9 @@ jobs:
     environment:
       name: crates-io
       url: https://crates.io/crates/katui
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -197,9 +200,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: crates-io
       - run: just crates-publish
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io.outputs.token }}
 
   pypi:
     needs: [wheel-tests, sdist]
