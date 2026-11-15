@@ -21,7 +21,6 @@ katui-content = { workspace = true, features = ["html"] }
 katui-draw.workspace = true
 katui-game.workspace = true
 katui-proto.workspace = true
-katui-rt.workspace = true
 katui-scene.workspace = true
 katui-ui.workspace = true
 katui-widgets.workspace = true

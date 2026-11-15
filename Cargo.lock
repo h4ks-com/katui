@@ -575,7 +575,6 @@ dependencies = [
  "katui-draw",
  "katui-game",
  "katui-proto",
- "katui-rt",
  "katui-scene",
  "katui-ui",
  "katui-widgets",
