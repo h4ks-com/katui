@@ -18,8 +18,6 @@ mod style;
 
 use render::Renderer;
 use style::{Cascade, Style};
-#[cfg(test)]
-mod tests;
 
 /// What a document draws with before its own styles apply.
 #[derive(Debug, Clone, PartialEq)]

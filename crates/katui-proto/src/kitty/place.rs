@@ -117,3 +117,53 @@ impl Place {
         apc(&command).into_bytes()
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use crate::kitty::{ImageId, Place, PlacementId};
+
+    #[test]
+    fn place_encodes_a_golden_frame() {
+        let mut place = Place::new(ImageId(7));
+        place.placement = PlacementId(3);
+        place.columns = 4;
+        place.rows = 2;
+        place.z = -1;
+        assert_eq!(
+            place.encode(),
+            b"\x1b_Ga=p,i=7,p=3,c=4,r=2,z=-1,q=2,C=1\x1b\\".to_vec()
+        );
+    }
+
+    #[test]
+    fn a_relative_placement_names_its_parent_and_offset() {
+        let mut place = Place::new(ImageId(7));
+        place.placement = PlacementId(3);
+        place.parent = Some(super::Relative {
+            image: ImageId(9),
+            placement: PlacementId(1),
+            columns: 4,
+            rows: 2,
+        });
+        assert_eq!(
+            place.encode(),
+            b"\x1b_Ga=p,i=7,p=3,q=2,C=1,P=9,Q=1,H=4,V=2\x1b\\".to_vec()
+        );
+    }
+
+    #[test]
+    fn place_appends_the_crop_keys() {
+        let mut place = Place::new(ImageId(7));
+        place.crop = Some(super::PixelRect {
+            x: 10,
+            y: 5,
+            width: 100,
+            height: 200,
+        });
+        assert_eq!(
+            place.encode(),
+            b"\x1b_Ga=p,i=7,x=10,y=5,w=100,h=200,q=2,C=1\x1b\\".to_vec()
+        );
+    }
+}

@@ -176,3 +176,95 @@ impl Animate {
         apc(&command).into_bytes()
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use crate::kitty::ImageId;
+
+    #[test]
+    fn a_big_upload_goes_up_as_a_blank_image_and_bands_of_rows() {
+        let pixels = vec![0x40; 4 * 8 * 10];
+        let frames = super::banded_upload(ImageId(5), 8, 10, &pixels, 4 * 8 * 4)
+            .expect("encoding cannot fail");
+        let text: Vec<String> = frames
+            .iter()
+            .map(|frame| String::from_utf8_lossy(frame).into_owned())
+            .collect();
+        assert!(text[0].starts_with("\x1b_Ga=t,f=32,t=d,o=z,s=8,v=10,i=5"));
+        let bands: Vec<&String> = text.iter().filter(|frame| frame.contains("a=f")).collect();
+        assert_eq!(bands.len(), 3, "rows 0..4, 4..8 and 8..10");
+        assert!(bands[0].contains("r=1,x=0,y=0,s=8,v=4"));
+        assert!(bands[2].contains("r=1,x=0,y=8,s=8,v=2"));
+        let small = super::banded_upload(ImageId(5), 8, 10, &pixels, pixels.len())
+            .expect("encoding cannot fail");
+        assert_eq!(small.len(), 1, "a small upload stays one transmit");
+    }
+
+    #[test]
+    fn frame_transmits_carry_canvas_rect_and_gap() {
+        let pixels = [0u8, 0, 0, 255];
+        let root = super::FrameTransmit {
+            id: super::ImageId(3),
+            edit: None,
+            canvas: super::Canvas::Blank,
+            rect: None,
+            width: 1,
+            height: 1,
+            payload: &pixels,
+            compressed: true,
+            gap_ms: Some(50),
+        };
+        let frames = root.encode().expect("encoding cannot fail");
+        let text = String::from_utf8_lossy(&frames[0]).into_owned();
+        assert!(text.starts_with("\x1b_Ga=f,i=3,s=1,v=1,f=32,t=d,o=z,q=2,z=50,m=0;"));
+        assert!(text.ends_with("\x1b\\"));
+        // a frame declares its size exactly once: rect keys and payload
+        // keys are the same keys
+        assert_eq!(text.matches(",s=").count(), 1);
+        assert_eq!(text.matches(",v=").count(), 1);
+
+        let edit = super::FrameTransmit {
+            id: super::ImageId(3),
+            edit: Some(7),
+            canvas: super::Canvas::Frame(6),
+            rect: Some(super::PixelRect {
+                x: 10,
+                y: 5,
+                width: 4,
+                height: 2,
+            }),
+            width: 4,
+            height: 2,
+            payload: &[0u8; 32],
+            compressed: false,
+            gap_ms: None,
+        };
+        let frames = edit.encode().expect("encoding cannot fail");
+        let text = String::from_utf8_lossy(&frames[0]).into_owned();
+        assert!(text.contains("a=f,i=3,r=7,c=6,x=10,y=5,s=4,v=2,f=32,t=d"));
+        assert!(!text.contains("o=z"), "uncompressed carries no marker");
+    }
+
+    #[test]
+    fn animation_control_encodes_state_and_gap() {
+        let run = super::Animate {
+            id: super::ImageId(3),
+            state: Some(super::AnimationState::Loading),
+            frame_gap: None,
+        };
+        assert_eq!(run.encode(), b"\x1b_Ga=a,i=3,s=2\x1b\\".to_vec());
+        let gap = super::Animate {
+            id: super::ImageId(3),
+            state: None,
+            frame_gap: Some((1, 48)),
+        };
+        assert_eq!(gap.encode(), b"\x1b_Ga=a,i=3,r=1,z=48\x1b\\".to_vec());
+        let stop = super::Animate {
+            id: super::ImageId(3),
+            state: Some(super::AnimationState::Stop),
+            frame_gap: None,
+        };
+        assert_eq!(stop.encode(), b"\x1b_Ga=a,i=3,s=1\x1b\\".to_vec());
+    }
+}

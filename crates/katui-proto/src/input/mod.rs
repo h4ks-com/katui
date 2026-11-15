@@ -5,8 +5,6 @@
 use crate::probe::CellPixels;
 
 mod parse;
-#[cfg(test)]
-mod tests;
 
 pub use parse::InputParser;
 
@@ -287,5 +285,33 @@ impl Pointer {
                 (y + 0.5) * f32::from(cell.height),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::input::{InputEvent, Key};
+
+    use super::parse::tests::{CTRL, plain};
+
+    #[test]
+    fn every_key_name_reads_back_as_its_key() {
+        let keys = [Key::Char('a'), Key::Char(' '), Key::Function(12)]
+            .into_iter()
+            .chain(super::NAMED_KEYS.iter().map(|(_, key)| *key));
+        for key in keys {
+            assert_eq!(Key::from_name(&key.name()), Some(key), "{key:?}");
+        }
+        assert_eq!(Key::from_name("space"), Some(Key::Char(' ')));
+        assert_eq!(Key::from_name("nothing"), None);
+        assert_eq!(Key::from_name("fx"), None);
+    }
+
+    #[test]
+    fn the_quit_keys_are_q_escape_and_ctrl_c() {
+        assert!(plain(Key::Char('q')).is_quit_key());
+        assert!(plain(Key::Escape).is_quit_key());
+        assert!(InputEvent::Key(Key::Char('c'), CTRL).is_quit_key());
+        assert!(!plain(Key::Char('c')).is_quit_key());
     }
 }

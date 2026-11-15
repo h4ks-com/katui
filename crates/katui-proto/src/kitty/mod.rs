@@ -13,8 +13,6 @@ mod frames;
 mod passthrough;
 mod place;
 mod response;
-#[cfg(test)]
-mod tests;
 mod transmit;
 
 pub use delete::Delete;
@@ -107,4 +105,17 @@ fn apc(command: &str) -> String {
     out.push_str(command);
     out.push_str("\x1b\\");
     out
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn an_id_space_puts_its_byte_above_the_local_id() {
+        let space = super::IdSpace::of_process(4242);
+        let image = space.image(0x0100_0007);
+        assert_eq!(image.0 & 0x00ff_ffff, 7, "local ids keep 24 bits");
+        assert_ne!(image.0 >> 24, 0, "every process space is nonzero");
+        assert_eq!(space.image(7), image);
+    }
 }

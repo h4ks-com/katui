@@ -80,3 +80,43 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .windows(needle.len())
         .position(|window| window == needle)
 }
+
+#[cfg(test)]
+mod tests {
+
+    use crate::kitty::{CHUNK, Format, ImageId, Transmit};
+
+    #[test]
+    fn commands_are_wrapped_with_their_escapes_doubled_and_text_kept() {
+        let wrapped = super::wrap_for_passthrough(b"ab\x1b_Ga=t;AAAA\x1b\\cd\x1b[2J");
+        assert_eq!(
+            wrapped,
+            b"ab\x1bPtmux;\x1b\x1b_Ga=t;AAAA\x1b\x1b\\\x1b\\cd\x1b[2J".to_vec()
+        );
+    }
+
+    #[test]
+    fn splitting_respects_the_limit_between_complete_commands() {
+        let frame = b"\x1b_Ga=t,i=1,m=0;aaaa\x1b\\\x1b_Ga=t,i=2,m=0;bbbb\x1b\\\x1b_Ga=p,i=2\x1b\\";
+        let parts = super::split_at_commands(frame, 24);
+        assert_eq!(parts.concat(), frame, "nothing is lost");
+        assert!(parts.len() > 1, "the frame is split");
+        assert!(parts.iter().all(|part| part.ends_with(b"\x1b\\")));
+    }
+
+    #[test]
+    fn splitting_never_divides_an_encoded_chunked_upload() {
+        let payload = vec![0xa5; 2 * CHUNK * 3 / 4 + 1];
+        let frames = Transmit::new(ImageId(9), Format::Rgb, 10, 20, &payload)
+            .encode()
+            .expect("encoding cannot fail");
+        let mut upload = b"\x1b[3;5H\x1b[38;2;1;2;3m".to_vec();
+        upload.extend(frames.concat());
+        let mut wire = upload.clone();
+        wire.extend_from_slice(b"\x1b_Ga=p,i=9\x1b\\");
+        let parts = super::split_at_commands(&wire, 16);
+        assert_eq!(parts.concat(), wire);
+        assert_eq!(parts.len(), 2, "the upload, then the placement");
+        assert_eq!(parts[0], upload.as_slice());
+    }
+}

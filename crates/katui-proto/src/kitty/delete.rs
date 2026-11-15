@@ -45,3 +45,49 @@ impl Delete {
         apc(&command).into_bytes()
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use crate::kitty::{Delete, ImageId, PlacementId};
+
+    #[test]
+    fn delete_encodes_golden_frames() {
+        assert_eq!(
+            Delete::AllVisible.encode(),
+            b"\x1b_Ga=d,d=a,q=2\x1b\\".to_vec()
+        );
+        assert_eq!(
+            Delete::Image(ImageId(10)).encode(),
+            b"\x1b_Ga=d,d=i,i=10,q=2\x1b\\".to_vec()
+        );
+        assert_eq!(
+            Delete::Placement(ImageId(10), PlacementId(2)).encode(),
+            b"\x1b_Ga=d,d=i,i=10,p=2,q=2\x1b\\".to_vec()
+        );
+        assert_eq!(
+            Delete::Free(ImageId(10)).encode(),
+            b"\x1b_Ga=d,d=I,i=10,q=2\x1b\\".to_vec()
+        );
+        assert_eq!(
+            Delete::FreeRange(ImageId(5), ImageId(9)).encode(),
+            b"\x1b_Ga=d,d=R,x=5,y=9,q=2\x1b\\".to_vec()
+        );
+        assert_eq!(
+            crate::kitty::barrier(ImageId(7)),
+            b"\x1b_Gi=7,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\".to_vec()
+        );
+    }
+
+    #[test]
+    fn a_zero_id_omits_the_id_keys() {
+        assert_eq!(
+            Delete::Image(ImageId(0)).encode(),
+            b"\x1b_Ga=d,d=i,q=2\x1b\\".to_vec()
+        );
+        assert_eq!(
+            Delete::Placement(ImageId(0), PlacementId(2)).encode(),
+            b"\x1b_Ga=d,d=i,p=2,q=2\x1b\\".to_vec()
+        );
+    }
+}

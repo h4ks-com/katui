@@ -90,3 +90,81 @@ fn parse_frame(frame: &[u8]) -> Option<Response> {
         message: message.to_owned(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::fuzz::XorShift;
+    use crate::kitty::{ImageId, PlacementId, Response, parse_responses};
+
+    #[test]
+    fn random_byte_streams_parse_without_panicking() {
+        let mut rng = XorShift::new(0x9e37_79b9_7f4a_7c15);
+        for _ in 0..3000 {
+            let len = (rng.next() % 128) as usize;
+            // half the streams stay pure noise, half carry real frame
+            // markers so the parser walks its deepest paths too
+            let mut bytes: Vec<u8> = (0..len).map(|_| rng.byte()).collect();
+            if rng.next().is_multiple_of(2) {
+                let at = (rng.next() as usize) % (len + 1);
+                bytes.splice(at..at, b"\x1b_G".iter().copied());
+            }
+            for response in parse_responses(&bytes) {
+                assert!(
+                    matches!(response, Response::Ok { .. } | Response::Error { .. }),
+                    "only the two answer shapes exist"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_stray_frame_start_cannot_swallow_the_next_terminator() {
+        let input = b"\x1b_G\x1b_Gi=1;OK\x1b\\";
+        assert_eq!(
+            super::parse_responses(input),
+            vec![Response::Ok {
+                image: ImageId(1),
+                placement: None
+            }]
+        );
+    }
+
+    #[test]
+    fn parses_ok_and_error_answers() {
+        let input = b"\x1b_Gi=31;OK\x1b\\\x1b_Gi=7,p=2;ENOENT:missing\x1b\\";
+        assert_eq!(
+            super::parse_responses(input),
+            vec![
+                Response::Ok {
+                    image: ImageId(31),
+                    placement: None
+                },
+                Response::Error {
+                    image: ImageId(7),
+                    placement: Some(PlacementId(2)),
+                    message: "ENOENT:missing".to_owned()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn parsing_ignores_interleaved_junk_and_unterminated_frames() {
+        let input = b"x\x1b[?u\x1b_Gi=1;OK\x1b\\key\x1b_Gi=2;OK";
+        assert_eq!(
+            super::parse_responses(input),
+            vec![Response::Ok {
+                image: ImageId(1),
+                placement: None
+            }]
+        );
+        assert!(super::parse_responses(b"plain typing, no frames").is_empty());
+        assert!(super::parse_responses(b"\x1b_Ggarbage").is_empty());
+        assert!(super::parse_responses(&[0xff, 0xfe, 0x1b, 0x47, 0x00, 0x1b, 0x5c]).is_empty());
+    }
+
+    #[test]
+    fn parsing_skips_frames_without_an_image_id() {
+        assert!(super::parse_responses(b"\x1b_Gp=2;OK\x1b\\").is_empty());
+    }
+}
