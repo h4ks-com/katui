@@ -36,6 +36,7 @@ keywords = ["terminal", "tui", "kitty-graphics", "ratatui"]
 base64 = "0.22"
 cosmic-text = "0.19"
 flate2 = "1"
+simd-adler32 = "0.3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 katui-app = { path = "crates/katui-app", version = "0.0.5" }
 katui-bindings = { path = "bindings/core" }

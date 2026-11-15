@@ -5,8 +5,8 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 
 use base64::Engine as _;
-use flate2::Compression;
 use flate2::write::ZlibEncoder;
+use flate2::{Compress, Compression, FlushCompress, Status};
 
 use super::{CHUNK, Format, ImageId, Quiet, apc};
 
@@ -112,13 +112,11 @@ pub(super) fn encode_chunks(
     compressed: bool,
 ) -> std::io::Result<Vec<Vec<u8>>> {
     let raw = if compressed {
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(payload)?;
-        encoder.finish()?
+        zlib(payload)?
     } else {
         payload.to_vec()
     };
-    let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
+    let encoded = base64(&raw);
     let chunks: Vec<&str> = if encoded.is_empty() {
         vec![""]
     } else {
@@ -142,6 +140,105 @@ pub(super) fn encode_chunks(
         })
         .collect();
     Ok(frames)
+}
+
+/// Payloads below this many bytes compress and encode on one thread, where
+/// starting threads costs more than it saves.
+const PARALLEL_FROM: usize = 256 * 1024;
+
+/// How many slices a payload of `length` bytes is cut into, one per core.
+fn slices_for(length: usize) -> usize {
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    (length / PARALLEL_FROM).clamp(1, cores)
+}
+
+/// `payload` as one zlib stream. A large payload deflates in slices on
+/// every core, like pigz: each slice but the last ends on a sync flush, so
+/// the slices join into one valid stream under one header and checksum.
+fn zlib(payload: &[u8]) -> std::io::Result<Vec<u8>> {
+    let slices = slices_for(payload.len());
+    if slices == 1 {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(payload)?;
+        return encoder.finish();
+    }
+    let size = payload.len().div_ceil(slices);
+    let parts: Vec<&[u8]> = payload.chunks(size).collect();
+    let last = parts.len() - 1;
+    let (deflated, checksum) = std::thread::scope(|scope| {
+        let workers: Vec<_> = parts
+            .iter()
+            .enumerate()
+            .map(|(index, part)| scope.spawn(move || deflate(part, index == last)))
+            .collect();
+        let mut adler = simd_adler32::Adler32::new();
+        adler.write(payload);
+        let deflated: Vec<_> = workers
+            .into_iter()
+            .map(|worker| {
+                worker
+                    .join()
+                    .unwrap_or_else(|_| Err(std::io::Error::other("a compression thread panicked")))
+            })
+            .collect();
+        (deflated, adler.finish())
+    });
+    // 0x78 0x01: a 32 KB window at the fastest level
+    let mut stream = vec![0x78, 0x01];
+    for part in deflated {
+        stream.extend_from_slice(&part?);
+    }
+    stream.extend_from_slice(&checksum.to_be_bytes());
+    Ok(stream)
+}
+
+/// One slice as raw deflate: closed by a sync flush, or by the final
+/// block when it is the `last` slice.
+fn deflate(slice: &[u8], last: bool) -> std::io::Result<Vec<u8>> {
+    let mut compress = Compress::new(Compression::fast(), false);
+    let flush = if last {
+        FlushCompress::Finish
+    } else {
+        FlushCompress::Sync
+    };
+    let mut out = Vec::with_capacity(slice.len() / 2 + 1024);
+    loop {
+        let consumed = usize::try_from(compress.total_in()).unwrap_or(slice.len());
+        let status = compress
+            .compress_vec(slice.get(consumed..).unwrap_or_default(), &mut out, flush)
+            .map_err(std::io::Error::other)?;
+        let all_in = usize::try_from(compress.total_in()).unwrap_or(0) == slice.len();
+        let done = if last {
+            status == Status::StreamEnd
+        } else {
+            all_in && out.len() < out.capacity()
+        };
+        if done {
+            return Ok(out);
+        }
+        out.reserve(out.capacity().max(1024));
+    }
+}
+
+/// `raw` in base64, a large payload in slices on every core. Each slice
+/// but the last is a whole number of three-byte groups, so the encoded
+/// slices join with no padding between them.
+fn base64(raw: &[u8]) -> String {
+    let slices = slices_for(raw.len());
+    if slices == 1 {
+        return base64::engine::general_purpose::STANDARD.encode(raw);
+    }
+    let size = raw.len().div_ceil(slices).div_ceil(3) * 3;
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = raw
+            .chunks(size)
+            .map(|part| scope.spawn(move || base64::engine::general_purpose::STANDARD.encode(part)))
+            .collect();
+        workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap_or_default())
+            .collect()
+    })
 }
 
 #[cfg(test)]
@@ -265,6 +362,28 @@ pub(in crate::kitty) mod tests {
                     .len(),
             "repetitive pixels compress below their raw size"
         );
+    }
+
+    #[test]
+    fn a_frame_sized_payload_compresses_in_slices_into_one_valid_stream() {
+        use base64::Engine as _;
+        use flate2::read::ZlibDecoder;
+        use std::io::Read as _;
+
+        let payload: Vec<u8> = (0..3 * 1024 * 1024u32)
+            .map(|i| ((i / 7) ^ (i % 251)) as u8)
+            .collect();
+        let mut command = Transmit::new(ImageId(6), Format::Rgba, 1024, 768, &payload);
+        command.compressed = true;
+        let frames = command.encode().expect("encoding cannot fail");
+        let wire = base64::engine::general_purpose::STANDARD
+            .decode(joined_payload(&frames))
+            .expect("the slices join into valid base64");
+        let mut restored = Vec::new();
+        ZlibDecoder::new(wire.as_slice())
+            .read_to_end(&mut restored)
+            .expect("the slices join into one valid zlib stream");
+        assert_eq!(restored, payload);
     }
 
     #[test]

@@ -747,6 +747,7 @@ version = "0.0.5"
 dependencies = [
  "base64",
  "flate2",
+ "simd-adler32",
 ]
 
 [[package]]
@@ -783,6 +784,8 @@ dependencies = [
 name = "katui-rt"
 version = "0.0.5"
 dependencies = [
+ "base64",
+ "flate2",
  "image",
  "katui-present",
  "katui-proto",
