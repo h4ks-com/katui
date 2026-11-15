@@ -18,8 +18,8 @@ use std::sync::Arc;
 use katui::app::{Control, UiApp, run};
 use katui::content::{HtmlDefaults, HtmlHost, markdown_view};
 use katui::scene::surface::Surface;
-use katui::ui::{Element, Length};
-use katui::widgets::{Theme, label};
+use katui::ui::Element;
+use katui::widgets::{Theme, hint, page};
 
 const HELP: &str = "\
 # Help
@@ -48,7 +48,8 @@ impl HtmlHost<String> for Help {
 impl UiApp for Help {
     type Message = String;
 
-    fn view(&self, theme: &Theme) -> Element<String> {
+    fn view(&self) -> Element<String> {
+        let theme = Theme::current();
         let defaults = HtmlDefaults {
             font_size: theme.body(),
             color: theme.text,
@@ -59,11 +60,7 @@ impl UiApp for Help {
             Some(page) => format!("You opened {page}"),
             None => "Click a link".to_owned(),
         };
-        Element::column([markdown_view(HELP, &defaults, self), label(opened, theme.small(), theme.muted)])
-            .gap(theme.cell_height())
-            .padding(theme.cell_height())
-            .size(Length::Fill, Length::Fill)
-            .background(theme.background.clone())
+        page([markdown_view(HELP, &defaults, self), hint(opened)])
     }
 
     fn update(&mut self, page: String) -> Control {

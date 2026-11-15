@@ -10,9 +10,10 @@ use katui_draw::{Paint, Rgba};
 use katui_proto::input::{InputEvent, Key};
 use katui_ui::{Align, CellPixels, Element, Length};
 use katui_widgets::{
-    Column, Edit, Emphasis, Focus, ListState, Orientation, Scroll, ScrollState, TextArea, Theme,
-    Toasts, TreeNode, TreeState, button, dialog, key_hints, label, menu, panel, radio, scroll_view,
-    select, slider, spinner, split, switch, table, text_area, toasts, tooltip, tree,
+    Column, Edit, Focus, ListState, Orientation, Scroll, ScrollState, TextArea, Theme, Toasts,
+    TreeNode, TreeState, button, dialog, hint, key_hints, label, menu, panel, primary_button,
+    radio, scroll_view, select, slider, spinner, split, switch, table, text_area, toasts, tooltip,
+    tree,
 };
 
 const SIZES: [&str; 3] = ["Small", "Medium", "Large"];
@@ -123,19 +124,15 @@ impl Tour {
                 "File",
                 &FILE_MENU,
                 self.popup == Popup::FileMenu,
-                theme,
                 Message::ToggleFileMenu,
                 Message::File,
             ),
             Element::spacer(),
-            key_hints(
-                &[
-                    ("Tab", "switch field"),
-                    ("Esc", "close the popup"),
-                    ("Ctrl+C", "quit"),
-                ],
-                theme,
-            ),
+            key_hints(&[
+                ("Tab", "switch field"),
+                ("Esc", "close the popup"),
+                ("Ctrl+C", "quit"),
+            ]),
         ])
         .align(Align::Center)
         .padding_xy(theme.cell_width(), theme.cell_height() * 0.3)
@@ -146,89 +143,69 @@ impl Tour {
     fn controls(&self, theme: &Theme) -> Element<Message> {
         let busy: Element<Message> = if self.busy {
             Element::row([
-                spinner(self.started.elapsed(), theme),
-                label(
-                    "Turn off the switch to stop working",
-                    theme.body(),
-                    theme.muted,
-                ),
+                spinner(self.started.elapsed()),
+                label("Turn off the switch to stop working").color(theme.muted),
             ])
             .gap(theme.cell_width())
             .align(Align::Center)
         } else {
-            label(
-                "Turn on the switch to start working",
-                theme.body(),
-                theme.muted,
-            )
+            label("Turn on the switch to start working").color(theme.muted)
         };
-        panel(
-            [
-                label("Settings", theme.body() * 1.2, theme.text).weight(800),
-                label("Theme", theme.small(), theme.muted),
-                select(
-                    &THEMES,
-                    self.theme,
-                    self.popup == Popup::Themes,
-                    theme,
-                    Message::ToggleThemes,
-                    Message::Theme,
-                ),
-                label("Size", theme.small(), theme.muted),
-                radio(&SIZES, self.size, theme, Message::Size),
-                switch("Work in the background", self.busy, Message::Busy, theme),
-                busy,
-                label(
-                    format!("Volume {:.0}%", self.volume * 100.0),
-                    theme.small(),
-                    theme.muted,
-                ),
-                slider(self.volume, theme, Message::Volume),
-                tooltip(
-                    button("Count lines", Message::File(0), Emphasis::Primary, theme),
-                    "Count the lines in the note",
-                    self.tip,
-                    Message::ShowTip,
-                    Message::HideTip,
-                    theme,
-                ),
-            ],
-            theme,
-        )
+        panel([
+            label("Settings")
+                .font_size(theme.body() * 1.2)
+                .color(theme.text)
+                .weight(800),
+            hint("Theme"),
+            select(
+                &THEMES,
+                self.theme,
+                self.popup == Popup::Themes,
+                Message::ToggleThemes,
+                Message::Theme,
+            ),
+            hint("Size"),
+            radio(&SIZES, self.size, Message::Size),
+            switch("Work in the background", self.busy, Message::Busy),
+            busy,
+            hint(format!("Volume {:.0}%", self.volume * 100.0)),
+            slider(self.volume, Message::Volume),
+            tooltip(
+                primary_button("Count lines", Message::File(0)),
+                "Count the lines in the note",
+                self.tip,
+                Message::ShowTip,
+                Message::HideTip,
+            ),
+        ])
         .width(Length::Fill)
     }
 
     fn data(&self, theme: &Theme) -> Element<Message> {
-        panel(
-            [
-                label("Tools", theme.body() * 1.2, theme.text).weight(800),
-                table(
-                    &[
-                        Column::fixed("Name", 12.0),
-                        Column::fixed("Kind", 10.0),
-                        Column::fill("Stars"),
-                    ],
-                    &self.rows,
-                    &self.table,
-                    theme,
-                    Message::Row,
-                ),
-                label("Note", theme.small(), theme.muted),
-                text_area(
-                    &self.note,
-                    "Write a note",
-                    self.focus.is(Focused::Note),
-                    theme,
-                ),
-            ],
-            theme,
-        )
+        panel([
+            label("Tools")
+                .font_size(theme.body() * 1.2)
+                .color(theme.text)
+                .weight(800),
+            table(
+                &[
+                    Column::fixed("Name", 12.0),
+                    Column::fixed("Kind", 10.0),
+                    Column::fill("Stars"),
+                ],
+                &self.rows,
+                &self.table,
+                Message::Row,
+            ),
+            hint("Note"),
+            text_area(&self.note, "Write a note", self.focus.is(Focused::Note)),
+        ])
         .width(Length::Fill)
     }
 
     fn file_tree(theme: &Theme, state: &TreeState) -> Element<Message> {
         let roots = sample_files();
-        Element::column([tree(&roots, state, theme, Message::Open, Message::Pick)])
+        Element::column([tree(&roots, state, Message::Open, Message::Pick)])
             .padding(theme.cell_height() * 0.5)
             .size(Length::Fill, Length::Fill)
             .background(theme.raised.clone())
@@ -294,33 +271,31 @@ impl UiApp for Tour {
         });
     }
 
-    fn view(&self, theme: &Theme) -> Element<Message> {
+    fn view(&self) -> Element<Message> {
+        let theme = Theme::current();
         let page = scroll_view(
             &self.page,
-            [self.controls(theme), self.data(theme)],
-            theme,
+            [self.controls(&theme), self.data(&theme)],
             Message::Scrolled,
         )
         .padding(theme.cell_height());
         let body = split(
-            Tour::file_tree(theme, &self.files),
+            Tour::file_tree(&theme, &self.files),
             page,
             self.sidebar,
             Orientation::Horizontal,
-            theme,
             Message::Resize,
         );
-        let mut root = vec![self.menu_bar(theme), body, toasts(&self.toasts, theme)];
+        let mut root = vec![self.menu_bar(&theme), body, toasts(&self.toasts)];
         if self.popup == Popup::Quit {
             root.push(dialog(
                 "Quit the tour?",
-                label("Quit now to discard the note.", theme.body(), theme.muted),
+                label("Quit now to discard the note.").color(theme.muted),
                 [
-                    button("Stay", Message::Dismiss, Emphasis::Plain, theme),
-                    button("Quit", Message::ConfirmQuit, Emphasis::Primary, theme),
+                    button("Stay", Message::Dismiss),
+                    primary_button("Quit", Message::ConfirmQuit),
                 ],
                 Message::Dismiss,
-                theme,
             ));
         }
         Element::column(root)
@@ -410,7 +385,7 @@ mod tests {
     };
 
     fn render(tour: &Tour, name: &str) -> Vec<u8> {
-        let view = tour.view(&tour.theme(CELL));
+        let view = tour.theme(CELL).scope(|_| tour.view());
         render_to_png(
             &view,
             (8 * 120, 17 * 40),

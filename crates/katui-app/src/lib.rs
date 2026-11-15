@@ -31,8 +31,9 @@ pub trait UiApp {
     /// Keep `waker` to send messages from other threads.
     fn start(&mut self, _waker: Waker<Self::Message>) {}
 
-    /// The view of the current state.
-    fn view(&self, theme: &Theme) -> Element<Self::Message>;
+    /// The view of the current state. Widgets draw with the app's theme;
+    /// [`Theme::current`] gives its colors and sizes for your own elements.
+    fn view(&self) -> Element<Self::Message>;
 
     /// Apply `message` and say what to do next.
     fn update(&mut self, message: Self::Message) -> Control;
@@ -226,8 +227,8 @@ impl<A: UiApp> App for Runner<A> {
             u32::from(size.columns) * u32::from(self.cell.width),
             u32::from(rows) * u32::from(self.cell.height),
         );
-        let theme = self.app.theme(self.cell);
-        let root = self.app.view(&theme);
+        let app = &self.app;
+        let root = app.theme(self.cell).scope(|_| app.view());
         let output = self.ui.render(&root, pixels, self.cell);
         match &mut self.screen {
             Screen::Kitty(screen) => {
@@ -266,7 +267,7 @@ mod tests {
     use katui_rt::headless::Headless;
     use katui_scene::CellSize;
     use katui_ui::{CellPixels, Element, Length, Scroll};
-    use katui_widgets::{Emphasis, Theme, button, label};
+    use katui_widgets::{label, primary_button};
 
     use super::{Control, Runner, UiApp};
 
@@ -290,10 +291,10 @@ mod tests {
     impl UiApp for Counter {
         type Message = Message;
 
-        fn view(&self, theme: &Theme) -> Element<Message> {
+        fn view(&self) -> Element<Message> {
             Element::column([
-                label(format!("{}", self.count), theme.body(), theme.text),
-                button("Add one", Message::Add, Emphasis::Primary, theme).on_hover(Message::Hover),
+                label(format!("{}", self.count)),
+                primary_button("Add one", Message::Add).on_hover(Message::Hover),
             ])
             .size(Length::Fill, Length::Fill)
         }
@@ -375,14 +376,14 @@ mod tests {
     impl UiApp for Log {
         type Message = LogMessage;
 
-        fn view(&self, theme: &Theme) -> Element<LogMessage> {
-            let lines = (0..40).map(|line| label(format!("line {line}"), theme.body(), theme.text));
+        fn view(&self) -> Element<LogMessage> {
+            let lines = (0..40).map(|line| label(format!("line {line}")));
             Element::column([
                 Element::column(lines)
                     .scroll(self.scroll.offset)
                     .on_scroll(LogMessage::Scrolled)
                     .size(Length::Fill, Length::Px(80.0)),
-                label("footer", theme.body(), theme.text)
+                label("footer")
                     .on_hover(LogMessage::Enter)
                     .on_leave(LogMessage::Leave),
             ])

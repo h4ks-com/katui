@@ -69,9 +69,9 @@ impl ScrollState {
 pub fn scroll_view<M>(
     state: &ScrollState,
     content: impl IntoIterator<Item = Element<M>>,
-    theme: &Theme,
     message: impl Fn(Scroll) -> M + 'static,
 ) -> Element<M> {
+    let theme = Theme::current();
     Element::column(content)
         .scroll(state.offset)
         .on_scroll(message)

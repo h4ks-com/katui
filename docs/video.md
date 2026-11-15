@@ -15,8 +15,8 @@ use std::time::Duration;
 use katui::app::{Control, UiApp, Waker, run};
 use katui::rt::media::VideoStream;
 use katui::scene::surface::Surface;
-use katui::ui::{Align, Element, Length};
-use katui::widgets::Theme;
+use katui::ui::{Align, Element};
+use katui::widgets::page;
 
 const SIZE: (u32, u32) = (640, 360);
 const FRAMES_PER_SECOND: u32 = 30;
@@ -37,12 +37,10 @@ impl UiApp for Player {
         });
     }
 
-    fn view(&self, theme: &Theme) -> Element<()> {
-        Element::column([Element::image(Arc::clone(&self.frame))])
-            .size(Length::Fill, Length::Fill)
+    fn view(&self) -> Element<()> {
+        page([Element::image(Arc::clone(&self.frame))])
             .align(Align::Center)
             .justify(Align::Center)
-            .background(theme.background.clone())
     }
 
     fn update(&mut self, (): ()) -> Control {

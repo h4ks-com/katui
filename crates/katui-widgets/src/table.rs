@@ -4,7 +4,7 @@ use katui_ui::{Align, Element, Length};
 
 use crate::list::ListState;
 use crate::theme::Theme;
-use crate::view::label;
+use crate::view::styled;
 
 /// One column of a [`table`]: its title and its width in cells. A column
 /// without a width takes the space the others leave.
@@ -40,13 +40,13 @@ pub fn table<M, S: AsRef<str>>(
     columns: &[Column<'_>],
     rows: &[Vec<S>],
     state: &ListState,
-    theme: &Theme,
     pick: impl Fn(usize) -> M,
 ) -> Element<M> {
+    let theme = Theme::current();
     let header = line(
         columns,
         columns.iter().map(|column| column.title),
-        theme,
+        &theme,
         true,
     );
     let divider = Element::row([])
@@ -54,7 +54,7 @@ pub fn table<M, S: AsRef<str>>(
         .background(theme.border.clone());
     let body = state.in_view().filter_map(|index| {
         let cells = rows.get(index)?;
-        let row = line(columns, cells.iter().map(AsRef::as_ref), theme, false)
+        let row = line(columns, cells.iter().map(AsRef::as_ref), &theme, false)
             .radius(theme.cell_height() * 0.3)
             .on_click(pick(index));
         Some(if index == state.selected() {
@@ -82,7 +82,7 @@ fn line<'a, M>(
         (theme.text, 400)
     };
     let parts = columns.iter().zip(cells).map(|(column, text)| {
-        let cell = Element::row([label(text, theme.body(), color).weight(weight)]);
+        let cell = Element::row([styled(text, theme.body(), color).weight(weight)]);
         match column.cells {
             Some(cells) => cell.width(theme.columns(cells)),
             None => cell.width(Length::Fill),

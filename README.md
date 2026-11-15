@@ -47,7 +47,7 @@ that counts its clicks.
 ```rust
 use katui::app::{Control, UiApp, run};
 use katui::ui::{Align, Element};
-use katui::widgets::{Emphasis, Theme, button, label, panel};
+use katui::widgets::{label, panel, primary_button};
 
 #[derive(Default)]
 struct Counter(u32);
@@ -55,14 +55,11 @@ struct Counter(u32);
 impl UiApp for Counter {
     type Message = ();
 
-    fn view(&self, theme: &Theme) -> Element<()> {
-        panel(
-            [
-                label(format!("Clicked {} times", self.0), theme.body(), theme.text),
-                button("Add one", (), Emphasis::Primary, theme),
-            ],
-            theme,
-        )
+    fn view(&self) -> Element<()> {
+        panel([
+            label(format!("Clicked {} times", self.0)),
+            primary_button("Add one", ()),
+        ])
         .align(Align::Center)
     }
 

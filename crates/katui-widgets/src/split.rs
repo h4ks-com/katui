@@ -24,10 +24,10 @@ pub fn split<M>(
     second: Element<M>,
     fraction: f32,
     orientation: Orientation,
-    theme: &Theme,
     resize: impl Fn(f32) -> M + 'static,
 ) -> Element<M> {
     let fraction = fraction.clamp(LEAST, 1.0 - LEAST);
+    let theme = Theme::current();
     let thickness = (theme.cell_width() * 0.5).max(3.0);
     // we wrap each pane in a box without padding so its share of the space
     // follows the fraction exactly, whatever padding the pane brings

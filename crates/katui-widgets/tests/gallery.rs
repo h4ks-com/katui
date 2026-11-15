@@ -7,8 +7,8 @@ use common::{CELL, render_to_png, ui};
 use katui_proto::input::{InputEvent, Key, Mods};
 use katui_ui::{Element, Length, Ui};
 use katui_widgets::{
-    Emphasis, Focus, ListState, TextField, Theme, button, checkbox, label, list, panel, progress,
-    tabs, text_field,
+    Focus, ListState, TextField, Theme, button, checkbox, hint, label, list, panel, primary_button,
+    progress, tabs, text_field, title,
 };
 
 const SIZE: (u32, u32) = (9 * 80, 19 * 30);
@@ -45,38 +45,28 @@ fn screen(
     focus: &Focus<Control>,
     theme: &Theme,
 ) -> Element<Message> {
-    let fields = panel(
-        [
-            label("Order", theme.title(), theme.text).weight(800),
-            tabs(&["Basket", "Delivery", "Review"], 0, theme, Message::Tab),
-            label("Name", theme.small(), theme.muted),
-            text_field(name, "Type your name", focus.is(Control::Name), theme),
-            checkbox("Gift wrap", true, Message::Toggle, theme),
-            progress(0.6, theme),
-            Element::row([
-                button("Cancel", Message::Cancel, Emphasis::Plain, theme),
-                button("Save", Message::Save, Emphasis::Primary, theme),
-            ])
-            .gap(theme.cell_width()),
-        ],
-        theme,
-    )
+    let fields = panel([
+        title("Order"),
+        tabs(&["Basket", "Delivery", "Review"], 0, Message::Tab),
+        hint("Name"),
+        text_field(name, "Type your name", focus.is(Control::Name)),
+        checkbox("Gift wrap", true, Message::Toggle),
+        progress(0.6),
+        Element::row([
+            button("Cancel", Message::Cancel),
+            primary_button("Save", Message::Save),
+        ])
+        .gap(theme.cell_width()),
+    ])
     .width(theme.columns(44.0));
-    let picker = panel(
-        [
-            label("Fruit", theme.small(), theme.muted),
-            list(fruits, theme, |index, selected| {
-                let color = if selected { theme.text } else { theme.muted };
-                Element::row([label(
-                    FRUITS.get(index).copied().unwrap_or_default(),
-                    theme.body(),
-                    color,
-                )])
+    let picker = panel([
+        hint("Fruit"),
+        list(fruits, |index, selected| {
+            let color = if selected { theme.text } else { theme.muted };
+            Element::row([label(FRUITS.get(index).copied().unwrap_or_default()).color(color)])
                 .on_click(Message::Pick(index))
-            }),
-        ],
-        theme,
-    )
+        }),
+    ])
     .width(theme.columns(28.0));
     Element::row([fields, picker])
         .gap(theme.cell_width() * 2.0)
@@ -95,7 +85,9 @@ fn every_widget_renders_and_answers_its_clicks() {
     let focus = Focus::new(Control::Name, [Control::Fruit]);
 
     let mut ui: Ui<Message> = ui();
-    let view = screen(&name, &fruits, &focus, &theme);
+    let view = theme
+        .clone()
+        .scope(|theme| screen(&name, &fruits, &focus, theme));
     render_to_png(&mut ui, &view, SIZE, "katui-widgets");
 
     let click = |x: f32, y: f32| ui.hit_test(x, y).and_then(|hit| hit.on_click.clone());

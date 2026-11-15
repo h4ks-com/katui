@@ -5,16 +5,12 @@ use katui_proto::input::{InputEvent, Key};
 use katui_ui::{Align, Element, Length};
 
 use crate::theme::Theme;
-use crate::view::label;
+use crate::view::styled;
 
 /// A column of radio buttons titled `options`, `selected` filled, each
 /// sending `choose(index)` when clicked.
-pub fn radio<M>(
-    options: &[&str],
-    selected: usize,
-    theme: &Theme,
-    choose: impl Fn(usize) -> M,
-) -> Element<M> {
+pub fn radio<M>(options: &[&str], selected: usize, choose: impl Fn(usize) -> M) -> Element<M> {
+    let theme = Theme::current();
     let side = theme.body();
     let rows = options.iter().enumerate().map(|(index, option)| {
         let chosen = index == selected;
@@ -30,7 +26,7 @@ pub fn radio<M>(
             .border(1.5, theme.outline(chosen))
             .align(Align::Center)
             .justify(Align::Center);
-        Element::row([ring, label(*option, theme.body(), theme.text)])
+        Element::row([ring, styled(*option, theme.body(), theme.text)])
             .gap(theme.cell_width())
             .align(Align::Center)
             .on_click(choose(index))
@@ -40,7 +36,8 @@ pub fn radio<M>(
 
 /// A switch with `text` beside it, on or off, sending `message` when
 /// clicked.
-pub fn switch<M>(text: &str, on: bool, message: M, theme: &Theme) -> Element<M> {
+pub fn switch<M>(text: &str, on: bool, message: M) -> Element<M> {
+    let theme = Theme::current();
     let height = theme.body();
     let knob = Element::row([])
         .size(Length::Px(height - 4.0), Length::Px(height - 4.0))
@@ -58,7 +55,7 @@ pub fn switch<M>(text: &str, on: bool, message: M, theme: &Theme) -> Element<M> 
         .background(track)
         .align(Align::Center)
         .justify(justify);
-    Element::row([pill, label(text, theme.body(), theme.text)])
+    Element::row([pill, styled(text, theme.body(), theme.text)])
         .gap(theme.cell_width())
         .align(Align::Center)
         .on_click(message)
@@ -67,7 +64,8 @@ pub fn switch<M>(text: &str, on: bool, message: M, theme: &Theme) -> Element<M> 
 /// A slider at `value`, from 0.0 to 1.0, that fills its parent's width.
 /// Pressing or dragging it sends `message` with the value under the
 /// pointer.
-pub fn slider<M>(value: f32, theme: &Theme, message: impl Fn(f32) -> M + 'static) -> Element<M> {
+pub fn slider<M>(value: f32, message: impl Fn(f32) -> M + 'static) -> Element<M> {
+    let theme = Theme::current();
     let value = value.clamp(0.0, 1.0);
     let height = theme.body();
     let track = height * 0.3;

@@ -15,7 +15,7 @@ Here is the finished program. The sections below take it apart.
 use katui::app::{Control, UiApp, run};
 use katui::proto::input::{InputEvent, Key};
 use katui::ui::Element;
-use katui::widgets::{Edit, ListState, TextField, Theme, checkbox, label, list, panel, text_field};
+use katui::widgets::{Edit, ListState, TextField, Theme, checkbox, list, panel, text_field, title};
 
 const VISIBLE_ROWS: usize = 10;
 
@@ -34,20 +34,17 @@ enum Message {
 impl UiApp for Shopping {
     type Message = Message;
 
-    fn view(&self, theme: &Theme) -> Element<Message> {
-        let rows = list(&self.selection, theme, |index, _selected| {
+    fn view(&self) -> Element<Message> {
+        let rows = list(&self.selection, |index, _selected| {
             let (name, bought) = self.items.get(index).cloned().unwrap_or_default();
-            checkbox(&name, bought, Message::Toggle(index), theme)
+            checkbox(&name, bought, Message::Toggle(index))
         });
-        panel(
-            [
-                label("Shopping", theme.title(), theme.text).weight(800),
-                text_field(&self.draft, "Add an item", true, theme),
-                rows,
-            ],
-            theme,
-        )
-        .width(theme.columns(40.0))
+        panel([
+            title("Shopping"),
+            text_field(&self.draft, "Add an item", true),
+            rows,
+        ])
+        .width(Theme::current().columns(40.0))
     }
 
     fn update(&mut self, message: Message) -> Control {
@@ -137,14 +134,16 @@ which one has the focus and moves it with <kbd>Tab</kbd> and
 
 ## Widgets
 
-The widgets are plain functions that return elements. They all take the
-`theme`, which holds the colors and sizes so your app looks consistent.
-Widgets that keep state between frames have a state type you store in your
-app struct and pass to the widget in `view`.
+The widgets are plain functions that return elements. They draw with the
+app's theme, which holds the colors and sizes so your app looks
+consistent. Widgets that keep state between frames have a state type you
+store in your app struct and pass to the widget in `view`.
 
 | Widget | State | What it shows |
 |---|---|---|
-| `label`, `button`, `panel` | | Text, a button that sends a message, a raised card |
+| `label`, `title`, `hint` | | Body text, a heading, small muted text |
+| `button`, `primary_button` | | A button that sends a message, in the accent color for the main action |
+| `panel`, `page` | | A raised card, and the whole screen in the theme's background |
 | `text_field` | `TextField` | A one-line text input |
 | `text_area` | `TextArea` | A multi-line text input that scrolls with its cursor |
 | `list` | `ListState` | The rows of a list, built by a function you pass |
@@ -215,13 +214,29 @@ Element::column([header, body, footer])
 
 - `Length::Px(n)` is an exact size, `Length::Fill` takes all the space the
   parent offers, and `Length::Content` fits the content.
-- `theme.columns(n)` and `theme.rows(n)` give a length of `n` terminal
-  cells, so your layout scales with the font.
+- `Theme::current().columns(n)` and `.rows(n)` give a length of `n`
+  terminal cells, so your layout scales with the font.
 - `.grow(1.0)` lets an element take the leftover space, and
   `Element::spacer()` is an empty element that does exactly that.
 - `.align` places children across the main axis and `.justify` along it.
 - `.background(paint)`, `.border(width, paint)` and `.radius(r)` style the
   box. `.color`, `.font_size` and `.weight` style text.
+
+## Themes
+
+The app's `theme` method picks the theme, and katui asks for it before
+every frame, so returning another one switches the look at once:
+
+```rust,ignore
+fn theme(&self, cell: CellPixels) -> Theme {
+    let theme = if self.light { Theme::light(cell) } else { Theme::dark(cell) };
+    theme.scaled(self.zoom)
+}
+```
+
+The default is `Theme::dark`. Inside `view`, `Theme::current()` gives the
+theme's colors and sizes for your own elements, like
+`label("Saved").color(Theme::current().accent)`.
 
 ## Work in the background
 

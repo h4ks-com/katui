@@ -7,7 +7,7 @@ use katui_proto::input::{InputEvent, Key};
 use katui_ui::{Align, Element, Length};
 
 use crate::theme::Theme;
-use crate::view::label;
+use crate::view::styled;
 
 /// One node of a tree: an id unique in the tree, its text and its
 /// children.
@@ -136,17 +136,17 @@ impl TreeState {
 pub fn tree<M>(
     roots: &[TreeNode],
     state: &TreeState,
-    theme: &Theme,
     toggle: impl Fn(u64) -> M,
     select: impl Fn(u64) -> M,
 ) -> Element<M> {
+    let theme = Theme::current();
     let rows = state.rows(roots).into_iter().map(|row| {
         let node = row.node;
         let marker = if node.children.is_empty() {
             Element::row([]).width(theme.columns(1.5))
         } else {
             let sign = if state.is_open(node.id) { "−" } else { "+" };
-            Element::row([label(sign, theme.body(), theme.muted).weight(700)])
+            Element::row([styled(sign, theme.body(), theme.muted).weight(700)])
                 .width(theme.columns(1.5))
                 .justify(Align::Center)
                 .on_click(toggle(node.id))
@@ -155,7 +155,7 @@ pub fn tree<M>(
         let line = Element::row([
             indent,
             marker,
-            label(node.text.clone(), theme.body(), theme.text),
+            styled(node.text.clone(), theme.body(), theme.text),
         ])
         .align(Align::Center)
         .padding_xy(theme.cell_width() * 0.5, theme.cell_height() * 0.15)

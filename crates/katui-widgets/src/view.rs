@@ -1,37 +1,63 @@
 //! Widget views: functions from state and theme to elements.
 
-use katui_draw::Paint;
+use std::sync::Arc;
+
+use katui_draw::{Paint, Rgba};
 use katui_ui::{Align, Element, Length};
 
 use crate::field::TextField;
 use crate::list::ListState;
 use crate::theme::Theme;
 
-/// How much a button asks for attention.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Emphasis {
-    /// The main action, in the accent color.
-    Primary,
-    /// Any other action.
-    Plain,
+/// Body text.
+pub fn label<M>(text: impl Into<Arc<str>>) -> Element<M> {
+    let theme = Theme::current();
+    styled(text, theme.body(), theme.text)
+}
+
+/// A bold heading.
+pub fn title<M>(text: impl Into<Arc<str>>) -> Element<M> {
+    let theme = Theme::current();
+    styled(text, theme.title(), theme.text).weight(800)
+}
+
+/// Small, muted text for hints and captions.
+pub fn hint<M>(text: impl Into<Arc<str>>) -> Element<M> {
+    let theme = Theme::current();
+    styled(text, theme.small(), theme.muted)
 }
 
 /// Text in `size` and `color`.
-pub fn label<M>(
-    text: impl Into<std::sync::Arc<str>>,
-    size: f32,
-    color: katui_draw::Rgba,
-) -> Element<M> {
+pub(crate) fn styled<M>(text: impl Into<Arc<str>>, size: f32, color: Rgba) -> Element<M> {
     Element::text(text).font_size(size).color(color)
 }
 
 /// A button that sends `message` when clicked.
-pub fn button<M>(text: &str, message: M, emphasis: Emphasis, theme: &Theme) -> Element<M> {
-    let (background, color) = match emphasis {
-        Emphasis::Primary => (Paint::Solid(theme.accent), theme.on_accent),
-        Emphasis::Plain => (theme.raised.clone(), theme.text),
-    };
-    Element::column([label(text, theme.body(), color).weight(700)])
+pub fn button<M>(text: &str, message: M) -> Element<M> {
+    let theme = Theme::current();
+    button_in(text, message, theme.raised.clone(), theme.text, &theme)
+}
+
+/// A button in the accent color, for the action that matters most.
+pub fn primary_button<M>(text: &str, message: M) -> Element<M> {
+    let theme = Theme::current();
+    button_in(
+        text,
+        message,
+        Paint::Solid(theme.accent),
+        theme.on_accent,
+        &theme,
+    )
+}
+
+fn button_in<M>(
+    text: &str,
+    message: M,
+    background: Paint,
+    color: Rgba,
+    theme: &Theme,
+) -> Element<M> {
+    Element::column([styled(text, theme.body(), color).weight(700)])
         .align(Align::Center)
         .padding_xy(theme.cell_width() * 2.0, theme.cell_height() * 0.4)
         .radius(theme.radius())
@@ -41,7 +67,8 @@ pub fn button<M>(text: &str, message: M, emphasis: Emphasis, theme: &Theme) -> E
 }
 
 /// A raised panel around `children`, stacked top to bottom.
-pub fn panel<M>(children: impl IntoIterator<Item = Element<M>>, theme: &Theme) -> Element<M> {
+pub fn panel<M>(children: impl IntoIterator<Item = Element<M>>) -> Element<M> {
+    let theme = Theme::current();
     Element::column(children)
         .gap(theme.cell_height() * 0.6)
         .padding(theme.cell_height())
@@ -50,28 +77,35 @@ pub fn panel<M>(children: impl IntoIterator<Item = Element<M>>, theme: &Theme) -
         .border(1.0, theme.border.clone())
 }
 
+/// The whole screen in the theme's background, `children` stacked top to
+/// bottom with a cell of padding. Use it as the root of a view.
+pub fn page<M>(children: impl IntoIterator<Item = Element<M>>) -> Element<M> {
+    let theme = Theme::current();
+    Element::column(children)
+        .gap(theme.cell_height() * 0.6)
+        .padding(theme.cell_height())
+        .size(Length::Fill, Length::Fill)
+        .background(theme.background.clone())
+}
+
 /// A text field showing `field`, its caret where the cursor is while
 /// `focused`, and `placeholder` while it is empty.
-pub fn text_field<M>(
-    field: &TextField,
-    placeholder: &str,
-    focused: bool,
-    theme: &Theme,
-) -> Element<M> {
+pub fn text_field<M>(field: &TextField, placeholder: &str, focused: bool) -> Element<M> {
+    let theme = Theme::current();
     let (before, after) = field.split();
     let mut parts = Vec::new();
     if !before.is_empty() {
-        parts.push(label(before, theme.body(), theme.text));
+        parts.push(styled(before, theme.body(), theme.text));
     }
     if focused {
-        parts.push(cursor_bar(theme));
+        parts.push(cursor_bar(&theme));
     }
     if field.text().is_empty() {
-        parts.push(label(placeholder, theme.body(), theme.muted));
+        parts.push(styled(placeholder, theme.body(), theme.muted));
     } else if !after.is_empty() {
-        parts.push(label(after, theme.body(), theme.text));
+        parts.push(styled(after, theme.body(), theme.text));
     }
-    input_box(Element::row(parts).align(Align::Center), focused, theme)
+    input_box(Element::row(parts).align(Align::Center), focused, &theme)
 }
 
 /// The text cursor: a thin bar one line of body text tall.
@@ -94,11 +128,8 @@ pub(crate) fn input_box<M>(content: Element<M>, active: bool, theme: &Theme) -> 
 
 /// The rows of `list` in view, each built by `row(index, selected)`, the
 /// selected one highlighted.
-pub fn list<M>(
-    state: &ListState,
-    theme: &Theme,
-    mut row: impl FnMut(usize, bool) -> Element<M>,
-) -> Element<M> {
+pub fn list<M>(state: &ListState, mut row: impl FnMut(usize, bool) -> Element<M>) -> Element<M> {
+    let theme = Theme::current();
     let rows = state.in_view().map(|index| {
         let selected = index == state.selected();
         let item = row(index, selected)
@@ -115,7 +146,8 @@ pub fn list<M>(
 }
 
 /// A check box with `text`, sending `message` when clicked.
-pub fn checkbox<M>(text: &str, checked: bool, message: M, theme: &Theme) -> Element<M> {
+pub fn checkbox<M>(text: &str, checked: bool, message: M) -> Element<M> {
+    let theme = Theme::current();
     let side = theme.body();
     let mut tick = Element::row([])
         .size(Length::Px(side), Length::Px(side))
@@ -124,14 +156,15 @@ pub fn checkbox<M>(text: &str, checked: bool, message: M, theme: &Theme) -> Elem
     if checked {
         tick = tick.background(Paint::Solid(theme.accent));
     }
-    Element::row([tick, label(text, theme.body(), theme.text)])
+    Element::row([tick, styled(text, theme.body(), theme.text)])
         .gap(theme.cell_width())
         .align(Align::Center)
         .on_click(message)
 }
 
 /// A bar filled to `fraction`, clamped into zero through one.
-pub fn progress<M>(fraction: f32, theme: &Theme) -> Element<M> {
+pub fn progress<M>(fraction: f32) -> Element<M> {
+    let theme = Theme::current();
     let height = theme.cell_height() * 0.4;
     let filled = Element::row([])
         .height(Length::Px(height))
@@ -148,16 +181,12 @@ pub fn progress<M>(fraction: f32, theme: &Theme) -> Element<M> {
 
 /// A row of tabs titled `titles`, `selected` highlighted, each sending
 /// `message(index)` when clicked.
-pub fn tabs<M>(
-    titles: &[&str],
-    selected: usize,
-    theme: &Theme,
-    message: impl Fn(usize) -> M,
-) -> Element<M> {
+pub fn tabs<M>(titles: &[&str], selected: usize, message: impl Fn(usize) -> M) -> Element<M> {
+    let theme = Theme::current();
     let tabs = titles.iter().enumerate().map(|(index, title)| {
         let active = index == selected;
         let color = if active { theme.text } else { theme.muted };
-        let mut tab = Element::column([label(*title, theme.body(), color).weight(if active {
+        let mut tab = Element::column([styled(*title, theme.body(), color).weight(if active {
             700
         } else {
             400

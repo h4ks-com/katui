@@ -7,7 +7,7 @@ use katui_draw::Paint;
 use katui_ui::{Align, Element, Length};
 
 use crate::theme::Theme;
-use crate::view::label;
+use crate::view::styled;
 
 /// How long one dot of the spinner stays lit.
 const SPINNER_STEP: Duration = Duration::from_millis(250);
@@ -17,7 +17,8 @@ const TOAST_TIME: Duration = Duration::from_secs(4);
 
 /// Three dots with one lit, moving on every quarter second of `elapsed`.
 /// Keep redrawing while it shows, for example with `Control::Animate`.
-pub fn spinner<M>(elapsed: Duration, theme: &Theme) -> Element<M> {
+pub fn spinner<M>(elapsed: Duration) -> Element<M> {
+    let theme = Theme::current();
     let lit = elapsed.as_millis() / SPINNER_STEP.as_millis() % 3;
     let side = theme.body() * 0.45;
     let dots = (0..3).map(|index| {
@@ -82,9 +83,10 @@ impl Toasts {
 
 /// The toasts in the bottom right corner, above everything. Put it last
 /// in your root element.
-pub fn toasts<M>(toasts: &Toasts, theme: &Theme) -> Element<M> {
+pub fn toasts<M>(toasts: &Toasts) -> Element<M> {
+    let theme = Theme::current();
     let cards = toasts.texts().map(|text| {
-        Element::column([label(text, theme.body(), theme.text)])
+        Element::column([styled(text, theme.body(), theme.text)])
             .padding_xy(theme.cell_width() * 1.5, theme.cell_height() * 0.5)
             .radius(theme.radius())
             .background(theme.raised.clone())
@@ -101,14 +103,15 @@ pub fn toasts<M>(toasts: &Toasts, theme: &Theme) -> Element<M> {
 
 /// A row of key hints: each key drawn as a key cap, followed by what it
 /// does, like `("Ctrl+S", "save the file")`.
-pub fn key_hints<M>(hints: &[(&str, &str)], theme: &Theme) -> Element<M> {
+pub fn key_hints<M>(hints: &[(&str, &str)]) -> Element<M> {
+    let theme = Theme::current();
     let pairs = hints.iter().map(|(key, action)| {
-        let cap = Element::column([label(*key, theme.small(), theme.text).weight(700)])
+        let cap = Element::column([styled(*key, theme.small(), theme.text).weight(700)])
             .padding_xy(theme.cell_width() * 0.6, theme.cell_height() * 0.05)
             .radius(theme.cell_height() * 0.25)
             .background(theme.highlight.clone())
             .border(1.0, theme.border.clone());
-        Element::row([cap, label(*action, theme.small(), theme.muted)])
+        Element::row([cap, styled(*action, theme.small(), theme.muted)])
             .gap(theme.cell_width() * 0.6)
             .align(Align::Center)
     });

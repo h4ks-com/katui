@@ -1,8 +1,21 @@
 //! The theme: semantic colors plus sizes that follow the terminal's cell,
 //! so type and spacing stay in proportion at every font size.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use katui_draw::{Paint, Rgba};
 use katui_ui::{CellPixels, Length};
+
+/// The cell widgets size themselves by outside [`Theme::scope`].
+const FALLBACK_CELL: CellPixels = CellPixels {
+    width: 10,
+    height: 20,
+};
+
+thread_local! {
+    static CURRENT: RefCell<Option<Rc<Theme>>> = const { RefCell::new(None) };
+}
 
 /// The colors and sizes every widget draws with.
 #[derive(Debug, Clone)]
@@ -77,6 +90,25 @@ impl Theme {
             height: scale(self.cell.height),
         };
         self
+    }
+
+    /// The theme widgets draw with: the one [`Theme::scope`] set on this
+    /// thread, or the dark theme at a 10 by 20 pixel cell outside any scope.
+    #[must_use]
+    pub fn current() -> Rc<Self> {
+        CURRENT
+            .with_borrow(Clone::clone)
+            .unwrap_or_else(|| Rc::new(Self::dark(FALLBACK_CELL)))
+    }
+
+    /// Run `build` with this theme as [`Theme::current`], so the widgets it
+    /// builds draw with it. The app runner does this around every view.
+    pub fn scope<R>(self, build: impl FnOnce(&Self) -> R) -> R {
+        let theme = Rc::new(self);
+        let outer = CURRENT.replace(Some(Rc::clone(&theme)));
+        let elements = build(&theme);
+        CURRENT.set(outer);
+        elements
     }
 
     /// The width of one cell, in pixels.
@@ -154,5 +186,18 @@ mod tests {
         assert_eq!((large.cell.width, large.cell.height), (15, 30));
         assert!(large.body() > Theme::dark(cell).body());
         assert_eq!(Theme::light(cell).scaled(1.0).cell, cell);
+    }
+
+    #[test]
+    fn a_scope_sets_the_current_theme_and_restores_the_outer_one() {
+        let cell = CellPixels {
+            width: 7,
+            height: 14,
+        };
+        let light = Theme::light(cell);
+        let text = light.text;
+        let inner = light.scope(|_| Theme::current().text);
+        assert_eq!(inner, text);
+        assert_ne!(Theme::current().text, text);
     }
 }

@@ -17,9 +17,9 @@ use common::{CELL, render_to_png, ui};
 use katui_proto::input::{InputEvent, Key, Mods};
 use katui_ui::{Element, Length, Ui};
 use katui_widgets::{
-    Column, Emphasis, ListState, Orientation, Scroll, ScrollState, TextArea, Theme, Toasts,
-    TreeNode, TreeState, button, dialog, key_hints, label, menu, panel, radio, scroll_view, select,
-    slider, spinner, split, switch, table, text_area, toasts, tooltip, tree,
+    Column, ListState, Orientation, Scroll, ScrollState, TextArea, Theme, Toasts, TreeNode,
+    TreeState, button, dialog, key_hints, label, menu, panel, primary_button, radio, scroll_view,
+    select, slider, spinner, split, switch, table, text_area, toasts, tooltip, tree,
 };
 
 const SIZE: (u32, u32) = (9 * 110, 19 * 36);
@@ -89,77 +89,60 @@ fn controls(
     ];
     let mut picked = ListState::new(rows.len(), 3);
     picked.select(1);
-    let lines = (1..=20).map(|line| label(format!("Log line {line}"), theme.body(), theme.text));
-    let left = panel(
-        [
-            Element::row([
-                menu(
-                    "File",
-                    &["New", "Open", "Quit"],
-                    open == Open::Menu,
-                    theme,
-                    Message::ToggleMenu,
-                    Message::Menu,
-                ),
-                menu(
-                    "Edit",
-                    &["Undo"],
-                    false,
-                    theme,
-                    Message::ToggleMenu,
-                    Message::Menu,
-                ),
-            ]),
-            select(
-                &FRUITS,
-                2,
-                open == Open::Select,
-                theme,
-                Message::ToggleSelect,
-                Message::Choose,
+    let lines = (1..=20).map(|line| label(format!("Log line {line}")));
+    let left = panel([
+        Element::row([
+            menu(
+                "File",
+                &["New", "Open", "Quit"],
+                open == Open::Menu,
+                Message::ToggleMenu,
+                Message::Menu,
             ),
-            radio(&["Small", "Large"], 1, theme, Message::Radio),
-            switch("Dark mode", true, Message::Switch, theme),
-            slider(0.3, theme, Message::Slide),
-            tooltip(
-                button("Hover me", Message::Show, Emphasis::Plain, theme),
-                "Shows a hint",
-                true,
-                Message::Show,
-                Message::Hide,
-                theme,
-            ),
-            spinner(Duration::from_millis(300), theme),
-        ],
-        theme,
-    )
+            menu("Edit", &["Undo"], false, Message::ToggleMenu, Message::Menu),
+        ]),
+        select(
+            &FRUITS,
+            2,
+            open == Open::Select,
+            Message::ToggleSelect,
+            Message::Choose,
+        ),
+        radio(&["Small", "Large"], 1, Message::Radio),
+        switch("Dark mode", true, Message::Switch),
+        slider(0.3, Message::Slide),
+        tooltip(
+            button("Hover me", Message::Show),
+            "Shows a hint",
+            true,
+            Message::Show,
+            Message::Hide,
+        ),
+        spinner(Duration::from_millis(300)),
+    ])
     .width(theme.columns(40.0));
-    let right = panel(
-        [
-            table(
-                &[
-                    Column::fixed("Name", 12.0),
-                    Column::fixed("Kind", 10.0),
-                    Column::fill("Stars"),
-                ],
-                &rows,
-                &picked,
-                theme,
-                Message::Row,
-            ),
-            text_area(area, "Write a note", true, theme),
-            Element::column([scroll_view(scroll, lines, theme, Message::Scrolled)])
-                .size(Length::Fill, theme.rows(6.0)),
-            key_hints(&[("Ctrl+S", "save"), ("Esc", "close")], theme),
-        ],
-        theme,
-    )
+    let right = panel([
+        table(
+            &[
+                Column::fixed("Name", 12.0),
+                Column::fixed("Kind", 10.0),
+                Column::fill("Stars"),
+            ],
+            &rows,
+            &picked,
+            Message::Row,
+        ),
+        text_area(area, "Write a note", true),
+        Element::column([scroll_view(scroll, lines, Message::Scrolled)])
+            .size(Length::Fill, theme.rows(6.0)),
+        key_hints(&[("Ctrl+S", "save"), ("Esc", "close")]),
+    ])
     .width(theme.columns(56.0));
     Element::column([
         Element::row([left, right])
             .gap(theme.cell_width() * 2.0)
             .padding(theme.cell_height()),
-        toasts(toasts_shown, theme),
+        toasts(toasts_shown),
     ])
     .size(Length::Fill, Length::Fill)
     .background(theme.background.clone())
@@ -181,7 +164,11 @@ fn the_controls_render_with_their_popups_open_and_answer_clicks() {
     let mut shown = Toasts::default();
     shown.push("Saved the note", Instant::now());
     let mut ui = ui();
-    let screen = |open| controls(open, &theme, &area, &scroll, &shown);
+    let screen = |open| {
+        theme
+            .clone()
+            .scope(|theme| controls(open, theme, &area, &scroll, &shown))
+    };
 
     render_to_png(
         &mut ui,
@@ -239,35 +226,26 @@ fn files() -> Vec<TreeNode> {
 }
 
 fn workspace(theme: &Theme, tree_state: &TreeState, open_dialog: bool) -> Element<Message> {
-    let sidebar = Element::column([tree(
-        &files(),
-        tree_state,
-        theme,
-        Message::Open,
-        Message::Pick,
-    )])
-    .padding(theme.cell_height())
-    .background(theme.raised.clone());
-    let editor = Element::column([label("fn main() {}", theme.body(), theme.text)])
-        .padding(theme.cell_height());
+    let sidebar = Element::column([tree(&files(), tree_state, Message::Open, Message::Pick)])
+        .padding(theme.cell_height())
+        .background(theme.raised.clone());
+    let editor = Element::column([label("fn main() {}")]).padding(theme.cell_height());
     let mut root = vec![split(
         sidebar,
         editor,
         0.3,
         Orientation::Horizontal,
-        theme,
         Message::Resize,
     )];
     if open_dialog {
         root.push(dialog(
             "Delete lib.rs?",
-            label("Delete the file from the disk.", theme.body(), theme.muted),
+            label("Delete the file from the disk.").color(theme.muted),
             [
-                button("Cancel", Message::Dismiss, Emphasis::Plain, theme),
-                button("Delete", Message::Confirm, Emphasis::Primary, theme),
+                button("Cancel", Message::Dismiss),
+                primary_button("Delete", Message::Confirm),
             ],
             Message::Dismiss,
-            theme,
         ));
     }
     Element::column(root)
@@ -285,7 +263,9 @@ fn a_split_tree_and_dialog_render_and_answer_presses() {
 
     render_to_png(
         &mut ui,
-        &workspace(&theme, &tree_state, false),
+        &theme
+            .clone()
+            .scope(|theme| workspace(theme, &tree_state, false)),
         SIZE,
         "katui-widgets-split",
     );
@@ -314,7 +294,9 @@ fn a_split_tree_and_dialog_render_and_answer_presses() {
 
     render_to_png(
         &mut ui,
-        &workspace(&theme, &tree_state, true),
+        &theme
+            .clone()
+            .scope(|theme| workspace(theme, &tree_state, true)),
         SIZE,
         "katui-widgets-dialog",
     );

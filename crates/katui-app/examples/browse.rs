@@ -128,7 +128,8 @@ impl HtmlHost<Message> for Browser {
 impl UiApp for Browser {
     type Message = Message;
 
-    fn view(&self, theme: &Theme) -> Element<Message> {
+    fn view(&self) -> Element<Message> {
+        let theme = Theme::current();
         let defaults = HtmlDefaults {
             font_size: theme.body(),
             color: theme.text,
@@ -137,11 +138,9 @@ impl UiApp for Browser {
         };
         let page = match &self.source {
             Ok(source) => html(source, &defaults, self),
-            Err(error) => label(
-                format!("Check the path, the page did not open: {error}"),
-                theme.body(),
-                theme.danger,
-            ),
+            Err(error) => {
+                label(format!("Check the path, the page did not open: {error}")).color(theme.danger)
+            }
         };
         Element::column([page])
             .scroll(self.scroll.offset())
@@ -203,7 +202,7 @@ mod tests {
         let start = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/pages/index.html");
         let mut browser = Browser::open(start);
         assert!(browser.source.is_ok(), "the bundled page opens");
-        let view = browser.view(&Theme::dark(CELL));
+        let view = Theme::dark(CELL).scope(|_| browser.view());
         render_to_png(&view, (9 * 100, 19 * 36), CELL, "katui-browse");
         browser.update(Message::Link("about.html".to_owned()));
         assert!(browser.page.ends_with("about.html"));
@@ -220,7 +219,7 @@ mod tests {
         let showcase = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/pages/showcase.html");
         let browser = Browser::open(showcase);
         assert!(browser.source.is_ok(), "the showcase opens");
-        let view = browser.view(&Theme::dark(CELL));
+        let view = Theme::dark(CELL).scope(|_| browser.view());
         render_to_png(&view, (9 * 110, 19 * 190), CELL, "katui-html-showcase");
         assert!(
             browser

@@ -32,4 +32,7 @@ pub use split::{Orientation, split};
 pub use table::{Column, table};
 pub use theme::Theme;
 pub use tree::{TreeNode, TreeState, tree};
-pub use view::{Emphasis, button, checkbox, label, list, panel, progress, tabs, text_field};
+pub use view::{
+    button, checkbox, hint, label, list, page, panel, primary_button, progress, tabs, text_field,
+    title,
+};

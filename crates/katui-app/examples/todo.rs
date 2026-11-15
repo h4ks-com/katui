@@ -5,9 +5,10 @@
 
 use katui_app::{Control, UiApp, run};
 use katui_proto::input::{InputEvent, Key};
-use katui_ui::{Align, Element, Length};
+use katui_ui::{Align, Element};
 use katui_widgets::{
-    Edit, ListState, TextField, Theme, checkbox, label, list, panel, progress, tabs, text_field,
+    Edit, ListState, TextField, Theme, checkbox, hint, list, page, panel, progress, tabs,
+    text_field, title,
 };
 
 const VISIBLE_TASKS: usize = 10;
@@ -65,20 +66,17 @@ impl Todo {
 impl UiApp for Todo {
     type Message = Message;
 
-    fn view(&self, theme: &Theme) -> Element<Message> {
+    fn view(&self) -> Element<Message> {
+        let theme = Theme::current();
         let shown = self.shown();
         let done = self.tasks.iter().filter(|(_, done)| *done).count();
-        let rows = list(&self.selection, theme, |row, _| {
+        let rows = list(&self.selection, |row, _| {
             let index = shown.get(row).copied().unwrap_or_default();
             let (text, done) = self.tasks.get(index).cloned().unwrap_or_default();
-            checkbox(&text, done, Message::Toggle(index), theme)
+            checkbox(&text, done, Message::Toggle(index))
         });
         let body = if shown.is_empty() {
-            label(
-                "Type a task and press Enter to add it",
-                theme.body(),
-                theme.muted,
-            )
+            hint("Type a task and press Enter to add it")
         } else {
             rows
         };
@@ -87,27 +85,16 @@ impl UiApp for Todo {
         } else {
             done as f32 / self.tasks.len() as f32
         };
-        let card = panel(
-            [
-                label("Tasks", theme.title(), theme.text).weight(800),
-                tabs(&FILTERS, self.filter, theme, Message::Filter),
-                text_field(&self.draft, "Add a task", true, theme),
-                body,
-                progress(fraction, theme),
-                label(
-                    "Press Up and Down to pick a task, Tab to toggle it, Delete to remove it",
-                    theme.small(),
-                    theme.muted,
-                ),
-            ],
-            theme,
-        )
+        let card = panel([
+            title("Tasks"),
+            tabs(&FILTERS, self.filter, Message::Filter),
+            text_field(&self.draft, "Add a task", true),
+            body,
+            progress(fraction),
+            hint("Press Up and Down to pick a task, Tab to toggle it, Delete to remove it"),
+        ])
         .width(theme.columns(60.0));
-        Element::column([card])
-            .align(Align::Center)
-            .padding(theme.cell_height())
-            .size(Length::Fill, Length::Fill)
-            .background(theme.background.clone())
+        page([card]).align(Align::Center)
     }
 
     fn update(&mut self, message: Message) -> Control {
@@ -189,7 +176,7 @@ mod tests {
         todo.update(Message::Filter(1));
         assert_eq!(todo.shown(), vec![0, 2], "active hides done tasks");
 
-        let view = todo.view(&Theme::dark(CELL));
+        let view = Theme::dark(CELL).scope(|_| todo.view());
         render_to_png(&view, (9 * 90, 19 * 22), CELL, "katui-todo");
 
         todo.update(Message::Filter(0));

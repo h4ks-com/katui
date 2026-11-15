@@ -8,7 +8,7 @@ use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::field::{Edit, TextField};
 use crate::theme::Theme;
-use crate::view::{cursor_bar, input_box, label};
+use crate::view::{cursor_bar, input_box, styled};
 
 /// A multi-line text area's state: the text, the cursor, and which rows
 /// are in view.
@@ -158,12 +158,8 @@ fn clean(text: &str) -> String {
 
 /// A text area showing the rows of `area` in view, its caret where the
 /// cursor is while `focused`, and `placeholder` while it is empty.
-pub fn text_area<M>(
-    area: &TextArea,
-    placeholder: &str,
-    focused: bool,
-    theme: &Theme,
-) -> Element<M> {
+pub fn text_area<M>(area: &TextArea, placeholder: &str, focused: bool) -> Element<M> {
+    let theme = Theme::current();
     let line_height = theme.body() * 1.35;
     let cursor_line = area.cursor_line();
     let (line_start, _) = area.line_bounds();
@@ -176,9 +172,9 @@ pub fn text_area<M>(
         .map(|(index, line)| {
             let row = if index == cursor_line && focused {
                 let column = area.field.cursor - line_start;
-                caret_row(line, column, theme)
+                caret_row(line, column, &theme)
             } else {
-                Element::row(label_unless_empty(line, theme))
+                Element::row(label_unless_empty(line, &theme))
             };
             row.align(Align::Center)
                 .height(Length::Px(line_height))
@@ -187,7 +183,7 @@ pub fn text_area<M>(
     let mut body: Vec<Element<M>> = rows.collect();
     if area.text().is_empty() && !focused {
         body = vec![
-            Element::row([label(placeholder, theme.body(), theme.muted)])
+            Element::row([styled(placeholder, theme.body(), theme.muted)])
                 .height(Length::Px(line_height)),
         ];
     }
@@ -197,7 +193,7 @@ pub fn text_area<M>(
     input_box(
         Element::column(body).height(Length::Px(height)),
         focused,
-        theme,
+        &theme,
     )
 }
 
@@ -205,7 +201,7 @@ fn label_unless_empty<M>(text: &str, theme: &Theme) -> Vec<Element<M>> {
     if text.is_empty() {
         Vec::new()
     } else {
-        vec![label(text, theme.body(), theme.text)]
+        vec![styled(text, theme.body(), theme.text)]
     }
 }
 
