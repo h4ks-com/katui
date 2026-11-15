@@ -22,6 +22,8 @@ use crate::library::{Hit, Library};
 /// The widest a page gets, in terminal columns, so lines stay readable.
 const PAGE_COLUMNS: f32 = 100.0;
 const SIDEBAR: f32 = 0.24;
+/// The width of an average letter of the body font, in font sizes.
+const AVERAGE_LETTER: f32 = 0.55;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Pane {
@@ -410,7 +412,7 @@ impl HtmlHost<Message> for Viewer {
 impl Viewer {
     fn sidebar(&self, theme: &Theme) -> Element<Message> {
         let searching = self.pane == Pane::Search;
-        let search = Element::column([text_field(&self.query, "Press / to search", searching)])
+        let search = Element::column([text_field(&self.query, "Search", searching)])
             .padding_xy(theme.cell_width(), self.list_padding())
             .height(Length::Px(self.search_height()))
             .justify(Align::Center)
@@ -452,7 +454,8 @@ impl Viewer {
         let marker = Element::row([text(marker, theme.body(), theme.muted).weight(700)])
             .width(theme.columns(1.8))
             .justify(Align::Center);
-        let name = text(&entry.name, theme.body(), color);
+        let room = self.name_room(entry.depth, theme);
+        let name = text(&fit(&entry.name, room), theme.body(), color);
         let name = if entry.is_folder() {
             name.weight(700)
         } else {
@@ -469,6 +472,22 @@ impl Viewer {
             self.selected == Some(id) && self.pane != Pane::Search,
             theme,
         )
+    }
+
+    /// How many characters of a name fit on one sidebar row at `depth`,
+    /// or no limit when we cannot measure the terminal.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a positive, finite count of letters
+    fn name_room(&self, depth: usize, theme: &Theme) -> usize {
+        let Some((width, _)) = self.screen() else {
+            return usize::MAX;
+        };
+        let used = theme.cell_width() * (1.5 * pixels(depth) + 1.8 + 3.0);
+        let room = (width * self.sidebar - used) / (theme.body() * AVERAGE_LETTER);
+        if room.is_finite() && room > 0.0 {
+            room as usize
+        } else {
+            1
+        }
     }
 
     fn hit_rows(&self, theme: &Theme) -> Vec<Element<Message>> {
@@ -594,6 +613,16 @@ impl Viewer {
             .size(Length::Fill, Length::Px(self.bar_height()))
             .background(theme.raised.clone())
     }
+}
+
+/// `name` cut to `room` characters with an ellipsis, so a row stays one
+/// line tall.
+fn fit(name: &str, room: usize) -> String {
+    if name.chars().count() <= room {
+        return name.to_owned();
+    }
+    let kept: String = name.chars().take(room.saturating_sub(1)).collect();
+    format!("{kept}\u{2026}")
 }
 
 fn text(content: &str, size: f32, color: Rgba) -> Element<Message> {
@@ -782,6 +811,12 @@ mod tests {
             };
             viewer.input(&InputEvent::Key(key, Mods::NONE));
         }
+    }
+
+    #[test]
+    fn long_names_end_in_an_ellipsis() {
+        assert_eq!(super::fit("html-and-markdown.md", 10), "html-and-\u{2026}");
+        assert_eq!(super::fit("go.md", 10), "go.md");
     }
 
     fn page_name(viewer: &Viewer) -> String {
