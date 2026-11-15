@@ -86,6 +86,12 @@ def render(text: str) -> tuple[str, list[dict[str, str]]]:
     """The HTML of a guide and its second-level headings."""
     # Rustdoc fence options like `rust,no_run` would hide the language from the highlighter.
     text = re.sub(r"^```(\w+)[,\w]*$", r"```\1", text, flags=re.M)
+    text = re.sub(
+        r"^```mermaid\n(.*?)^```$",
+        lambda m: f'<pre class="mermaid">\n{html.escape(m.group(1))}</pre>',
+        text,
+        flags=re.M | re.S,
+    )
     converter = markdown.Markdown(
         extensions=["fenced_code", "tables", "sane_lists", "codehilite", "toc"],
         extension_configs={
@@ -144,7 +150,19 @@ def search_box(prefix: str) -> str:
 </div>"""
 
 
+MERMAID = """<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+const light = matchMedia("(prefers-color-scheme: light)").matches;
+mermaid.initialize({
+  startOnLoad: true,
+  theme: light ? "default" : "dark",
+  themeVariables: { fontFamily: getComputedStyle(document.body).fontFamily, fontSize: "16px" },
+});
+</script>"""
+
+
 def page(title: str, prefix: str, body: str, description: str) -> str:
+    diagrams = MERMAID if 'class="mermaid"' in body else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -155,6 +173,7 @@ def page(title: str, prefix: str, body: str, description: str) -> str:
 <link rel="icon" href="{prefix}logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="{prefix}site.css">
 <script src="{prefix}site.js" defer></script>
+{diagrams}
 </head>
 <body>
 {header(prefix)}
