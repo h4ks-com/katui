@@ -194,8 +194,10 @@ node-test-pack:
 node-publish dist:
     #!/usr/bin/env bash
     set -euo pipefail
-    main={{quote(dist)}}/mattfillipe-katui-$(just version).tgz
-    for tarball in {{quote(dist)}}/mattfillipe-katui-*.tgz; do
+    # npm reads a relative `dir/file.tgz` as a GitHub repository, so we pass absolute paths
+    dist=$(cd {{quote(dist)}} && pwd)
+    main="$dist/mattfillipe-katui-$(just version).tgz"
+    for tarball in "$dist"/mattfillipe-katui-*.tgz; do
         if [ "$tarball" != "$main" ]; then
             npx --yes npm@11.6.2 publish "$tarball" --provenance --access public
         fi
@@ -254,7 +256,7 @@ crates-publish:
 py-test-wheel dist:
     uv venv --clear --python 3.14 target/wheel-venv
     VIRTUAL_ENV=target/wheel-venv uv pip install --no-index --find-links {{quote(dist)}} katui
-    VIRTUAL_ENV=target/wheel-venv uv pip install pytest
+    VIRTUAL_ENV=target/wheel-venv uv pip install pytest mypy
     target/wheel-venv/bin/pytest bindings/python/tests
 
 # the source package in `dist` builds a module that imports
