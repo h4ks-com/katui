@@ -4,7 +4,7 @@ package main
 import (
 	"log"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 const speed = 90

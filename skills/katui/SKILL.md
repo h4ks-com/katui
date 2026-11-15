@@ -35,10 +35,10 @@ Then load the reference for the language:
 
 | Language | Command |
 |---|---|
-| Rust (1.90+) | `cargo add katui --git https://github.com/matheusfillipe/katui --features app` (or `game`, `html`, `ratatui`) |
+| Rust (1.90+) | `cargo add katui --git https://github.com/h4ks-com/katui --features app` (or `game`, `html`, `ratatui`) |
 | Python (3.14+) | `pip install katui` |
 | Node.js (22.18+) | `npm install @matheusfillipe/katui` |
-| Go (1.24+, cgo) | `go get github.com/matheusfillipe/katui/bindings/go` |
+| Go (1.24+, cgo) | `go get github.com/h4ks-com/katui/bindings/go` |
 | C | the release archive with `katui.h` and the libraries, see the C README |
 
 katui runs on macOS and Linux.
@@ -203,9 +203,9 @@ every byte passes through tmux, so keep images and video frames smaller
 
 ## Where to look
 
-- Guides, one per kind of program: https://github.com/matheusfillipe/katui/blob/main/docs/README.md
-- API reference (rustdoc): https://matheusfillipe.github.io/katui/katui/
-- Every guide and the public API as one text file: https://matheusfillipe.github.io/katui/llms-full.txt, indexed by https://matheusfillipe.github.io/katui/llms.txt
+- Guides, one per kind of program: https://github.com/h4ks-com/katui/blob/main/docs/README.md
+- API reference (rustdoc): https://h4ks-com.github.io/katui/katui/
+- Every guide and the public API as one text file: https://h4ks-com.github.io/katui/llms-full.txt, indexed by https://h4ks-com.github.io/katui/llms.txt
 - Examples: `crates/katui-app/examples` (widget tour, to-do list, HTML browser),
   `crates/katui-game/examples` (games, video player), and `examples` in each
   of `bindings/python`, `bindings/node`, `bindings/go`, `bindings/c`.

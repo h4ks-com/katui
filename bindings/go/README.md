@@ -6,17 +6,17 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
-  <a href="https://github.com/matheusfillipe/katui/blob/main/docs/go.md">Guide</a> ·
-  <a href="https://github.com/matheusfillipe/katui/tree/main/bindings/go/examples">Examples</a> ·
-  <a href="https://pkg.go.dev/github.com/matheusfillipe/katui/bindings/go">API reference</a>
+  <a href="https://github.com/h4ks-com/katui/blob/main/docs/go.md">Guide</a> ·
+  <a href="https://github.com/h4ks-com/katui/tree/main/bindings/go/examples">Examples</a> ·
+  <a href="https://pkg.go.dev/github.com/h4ks-com/katui/bindings/go">API reference</a>
 </p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/matheusfillipe/katui/main/assets/demos/widgets.webp" alt="The katui widget tour: a file tree, a theme select, a switch with a spinner, a slider and a table" width="800"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/h4ks-com/katui/main/assets/demos/widgets.webp" alt="The katui widget tour: a file tree, a theme select, a switch with a spinner, a slider and a table" width="800"></p>
 
 It sends pictures to the terminal through the kitty graphics protocol, and
 through sixel or blocks of colored cells where that is missing. Only what
 changed between frames is sent. The engine is the
-[katui](https://github.com/matheusfillipe/katui) Rust library, shipped
+[katui](https://github.com/h4ks-com/katui) Rust library, shipped
 inside the module as a prebuilt static library, so you need no Rust to use
 it.
 
@@ -27,7 +27,7 @@ import (
 	"fmt"
 	"log"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 type counter struct{ count int }
@@ -54,7 +54,7 @@ katui runs on Linux and macOS, on x86_64 and arm64, with Go 1.24 or newer
 and a C compiler for cgo. Add it to your module:
 
 ```sh
-go get github.com/matheusfillipe/katui/bindings/go
+go get github.com/h4ks-com/katui/bindings/go
 ```
 
 Save the example above as `main.go` and run it with `go run .`. A panel
@@ -89,7 +89,7 @@ package main
 import (
 	"log"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 type comet struct{ x float32 }
@@ -118,7 +118,7 @@ func main() {
 The left and right arrow keys steer the comet. <kbd>Q</kbd>,
 <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> quits.
 
-The [examples](https://github.com/matheusfillipe/katui/tree/main/bindings/go/examples)
+The [examples](https://github.com/h4ks-com/katui/tree/main/bindings/go/examples)
 include a counter, a to-do list, a Markdown help screen and this comet with
 sparks.
 
@@ -131,6 +131,6 @@ with them. Windows is not supported.
 ## License
 
 katui is licensed under either of the
-[Apache License 2.0](https://github.com/matheusfillipe/katui/blob/main/LICENSE-APACHE)
-or the [MIT license](https://github.com/matheusfillipe/katui/blob/main/LICENSE-MIT),
+[Apache License 2.0](https://github.com/h4ks-com/katui/blob/main/LICENSE-APACHE)
+or the [MIT license](https://github.com/h4ks-com/katui/blob/main/LICENSE-MIT),
 at your option.

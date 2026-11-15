@@ -23,11 +23,11 @@ classifiers = [
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/matheusfillipe/katui"
-Documentation = "https://github.com/matheusfillipe/katui/blob/main/docs/python.md"
-"API reference" = "https://matheusfillipe.github.io/katui/katui/"
-Source = "https://github.com/matheusfillipe/katui/tree/main/bindings/python"
-Issues = "https://github.com/matheusfillipe/katui/issues"
+Homepage = "https://github.com/h4ks-com/katui"
+Documentation = "https://github.com/h4ks-com/katui/blob/main/docs/python.md"
+"API reference" = "https://h4ks-com.github.io/katui/katui/"
+Source = "https://github.com/h4ks-com/katui/tree/main/bindings/python"
+Issues = "https://github.com/h4ks-com/katui/issues"
 
 [dependency-groups]
 dev = ["maturin>=1.9.4,<2", "mypy>=1.13", "pytest>=8", "ruff>=0.8", "ty"]

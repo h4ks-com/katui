@@ -2,7 +2,7 @@
 
 `pip install katui` (Python 3.14+, Linux or macOS). The package is fully
 typed; keep apps typed so mypy and ty check messages. Full guide:
-https://github.com/matheusfillipe/katui/blob/main/docs/python.md
+https://github.com/h4ks-com/katui/blob/main/docs/python.md
 
 Modules: `katui` (`App`, `Action`, `Control`, `Element`, `Event`, `Image`,
 `Theme`, `Waker`, `run`, `row`, `column`, `stack`, `text`, `rich`, `image`,
@@ -169,4 +169,4 @@ the caller of `render`, `click` or `frame`.
 
 `list` is `list_view`. Enums passed as values are strings (`"horizontal"`,
 `"add"`, `"left"`). Points and light colors are tuples. `Focus.is_` is
-Rust's `Focus::is`. Examples: https://github.com/matheusfillipe/katui/tree/main/bindings/python/examples
+Rust's `Focus::is`. Examples: https://github.com/h4ks-com/katui/tree/main/bindings/python/examples

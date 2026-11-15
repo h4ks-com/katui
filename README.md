@@ -13,7 +13,7 @@
   <a href="#terminals">Terminals</a> ·
   <a href="#demos">Demos</a> ·
   <a href="docs/README.md">Guides</a> ·
-  <a href="https://matheusfillipe.github.io/katui/katui/">API docs</a>
+  <a href="https://h4ks-com.github.io/katui/katui/">API docs</a>
 </p>
 
 <p align="center"><img src="assets/demos/shardrift.webp" alt="Shardrift, a katui game: a ship firing through a nebula and splitting crystal rocks" width="800"></p>
@@ -38,7 +38,7 @@ the widgets:
 
 ```
 cargo new counter && cd counter
-cargo add katui --git https://github.com/matheusfillipe/katui --features app
+cargo add katui --git https://github.com/h4ks-com/katui --features app
 ```
 
 For Python 3.14 or newer, install the package from PyPI. The
@@ -60,7 +60,7 @@ each release has an archive with the header and the libraries, and the
 [C guide](docs/c.md) shows how to link it:
 
 ```
-go get github.com/matheusfillipe/katui/bindings/go
+go get github.com/h4ks-com/katui/bindings/go
 ```
 
 ## A first program
@@ -238,7 +238,7 @@ for the sound.
 ## Learn more
 
 The [guides](docs/README.md) walk you through each kind of program, and the
-[API docs](https://matheusfillipe.github.io/katui/katui/) list every type
+[API docs](https://h4ks-com.github.io/katui/katui/) list every type
 and function.
 
 ## Use katui with a coding agent
@@ -250,12 +250,12 @@ in all your projects, or into a project's `.claude/skills/` folder for that
 project alone:
 
 ```
-git clone https://github.com/matheusfillipe/katui
+git clone https://github.com/h4ks-com/katui
 cp -r katui/skills/katui ~/.claude/skills/
 ```
 
 Agents that read llms.txt can start from
-<https://matheusfillipe.github.io/katui/llms.txt>, which links every guide
+<https://h4ks-com.github.io/katui/llms.txt>, which links every guide
 and the API reference.
 
 ## Status

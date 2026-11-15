@@ -3,8 +3,8 @@
 One header, `katui.h`, over a static or shared library. Each GitHub release
 has an archive per platform with the header and both libraries; the C
 README shows how to link it:
-https://github.com/matheusfillipe/katui/blob/main/bindings/c/README.md.
-Full guide: https://github.com/matheusfillipe/katui/blob/main/docs/c.md
+https://github.com/h4ks-com/katui/blob/main/bindings/c/README.md.
+Full guide: https://github.com/h4ks-com/katui/blob/main/docs/c.md
 
 ## Ownership
 
@@ -145,4 +145,4 @@ KatuiImage *picture = katui_frame(&game, 320, 180, 10, held, 1, 1.0f / 60);
 The screen also has `katui_screen_wheel`, `_hover`, `_press`, `_drag`,
 `_release`, `_send` and `katui_screen_quit`. `katui_screen_render` returns
 NULL when a callback failed. Examples:
-https://github.com/matheusfillipe/katui/tree/main/bindings/c/examples
+https://github.com/h4ks-com/katui/tree/main/bindings/c/examples

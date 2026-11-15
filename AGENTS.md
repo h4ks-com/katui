@@ -17,7 +17,7 @@ bindings share: the language-neutral logic lives there, and each binding
 keeps its value conversion, its error style and its exported names;
 `demos/obby-chat/` is an IRC client on the full engine, GPL and
 outside the workspace; `scripts/` holds repo tooling (the commit-message
-gate); `.opencode/` holds repo commands and skills.
+gate).
 
 ## Commands (the justfile is the single source of truth)
 
@@ -57,8 +57,8 @@ gate); `.opencode/` holds repo commands and skills.
 
 1. Keep the change small; one concern per commit.
 2. `just check` after every change, `just ci` before committing.
-3. Review every non-trivial change before committing
-   (`.opencode/skill/review/`). Fix Critical and Important findings first.
+3. Review every non-trivial change before committing. Fix Critical and
+   Important findings first.
 4. Commit with `git commit`. The prek hooks run fmt, clippy and the
    commit-message gate. If a hook fails, fix the cause. Never commit with
    `--no-verify`.

@@ -1,9 +1,9 @@
 # katui in Go
 
-`go get github.com/matheusfillipe/katui/bindings/go` (Go 1.24+, a C compiler
+`go get github.com/h4ks-com/katui/bindings/go` (Go 1.24+, a C compiler
 for cgo, Linux or macOS). Import it as
-`katui "github.com/matheusfillipe/katui/bindings/go"`. Full guide:
-https://github.com/matheusfillipe/katui/blob/main/docs/go.md
+`katui "github.com/h4ks-com/katui/bindings/go"`. Full guide:
+https://github.com/h4ks-com/katui/blob/main/docs/go.md
 
 ## An app
 
@@ -20,7 +20,7 @@ import (
 	"log"
 	"strings"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 type item struct {
@@ -153,4 +153,4 @@ Widgets that share a name with their state type end in `View`
 (`TextFieldView`, `TextAreaView`, `ToastsView`), an image element is
 `ImageView`, a table column is `TableColumn`, held keys are `Keys`, a light
 color is `RGB`, and keys are strings. Examples:
-https://github.com/matheusfillipe/katui/tree/main/bindings/go/examples
+https://github.com/h4ks-com/katui/tree/main/bindings/go/examples

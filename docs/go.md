@@ -8,7 +8,7 @@ Add it to your module on Linux or macOS, with Go 1.24 or newer and a C
 compiler for cgo:
 
 ```sh
-go get github.com/matheusfillipe/katui/bindings/go
+go get github.com/h4ks-com/katui/bindings/go
 ```
 
 ## An app
@@ -23,7 +23,7 @@ import (
 	"log"
 	"strings"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 type item struct {
@@ -82,7 +82,7 @@ package main
 import (
 	"log"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 type editor struct{ saved int }
@@ -177,7 +177,7 @@ package main
 import (
 	"log"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 type ball struct{ x float32 }

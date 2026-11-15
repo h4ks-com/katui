@@ -14,8 +14,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "target" / "doc"
-BLOB = "https://github.com/matheusfillipe/katui/blob/main/"
-SITE = "https://matheusfillipe.github.io/katui/"
+BLOB = "https://github.com/h4ks-com/katui/blob/main/"
+SITE = "https://h4ks-com.github.io/katui/"
 BINDING_CRATES = {"katui-c", "katui-python", "katui-node", "katui-bindings"}
 BINDINGS = [
     ("Python", "bindings/python/README.md", "the `katui` package on PyPI"),
@@ -44,7 +44,7 @@ for games, `katui::content::html` and `markdown_view` for documents inside a vie
 `katui::ratatui` to add images to a ratatui app, and `katui::rt::media::VideoStream` for video.
 - Rust features: `app` (runner and widgets), `game`, `html`, `ratatui`. Python: \
 `pip install katui`. Node.js: `npm install @matheusfillipe/katui`. Go: \
-`go get github.com/matheusfillipe/katui/bindings/go`.
+`go get github.com/h4ks-com/katui/bindings/go`.
 - Every binding has a headless `Screen` and a game `frame` for tests without a terminal.
 - `KATUI_GRAPHICS=kitty|sixel|blocks` overrides the detected backend. Inside tmux, set \
 `allow-passthrough on` and the true color terminal feature, as the README shows.

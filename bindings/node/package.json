@@ -9,10 +9,10 @@
     "sixel",
     "game"
   ],
-  "homepage": "https://github.com/matheusfillipe/katui",
+  "homepage": "https://github.com/h4ks-com/katui",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/matheusfillipe/katui.git",
+    "url": "git+https://github.com/h4ks-com/katui.git",
     "directory": "bindings/node"
   },
   "license": "MIT OR Apache-2.0",

@@ -1,6 +1,6 @@
 //! Every katui crate re-exported under one name, with the optional ones
 //! behind the features listed in `Cargo.toml`. The guides are in
-//! <https://github.com/matheusfillipe/katui/tree/main/docs>.
+//! <https://github.com/h4ks-com/katui/tree/main/docs>.
 
 pub use katui_present as present;
 pub use katui_proto as proto;

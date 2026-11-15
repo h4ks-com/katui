@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 type counter struct {

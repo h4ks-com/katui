@@ -231,7 +231,7 @@ publish token, so the repository holds no registry secret. Before the
 first release:
 
 1. On PyPI, add a pending trusted publisher for the project `katui`: owner
-   `matheusfillipe`, repository `katui`, workflow `release.yml`,
+   `h4ks-com`, repository `katui`, workflow `release.yml`,
    environment `pypi`.
 2. In the repository settings on GitHub, create an environment named
    `pypi`. Add yourself as a required reviewer to approve each release
@@ -241,7 +241,7 @@ first release:
    the release tag: `cargo login` with a token that has the publish-new
    scope, then `just crates-publish`, then revoke the token. On crates.io,
    in the settings of each of the 13 crates, add a trusted publisher:
-   repository `matheusfillipe/katui`, workflow `release.yml`, environment
+   repository `h4ks-com/katui`, workflow `release.yml`, environment
    `crates-io`. Create a GitHub environment named `crates-io` and add
    yourself as a required reviewer. On that first release, reject the
    `crates` job's deployment, since the crates already went up by hand.
@@ -257,7 +257,7 @@ first release:
    `-linux-arm64-gnu`, `-linux-x64-musl`, `-linux-arm64-musl`,
    `-darwin-x64` and `-darwin-arm64`, once by hand with `--access public`,
    as a placeholder. Then, on npmjs.com, add a trusted publisher to each of
-   them: owner `matheusfillipe`, repository `katui`, workflow
+   them: owner `h4ks-com`, repository `katui`, workflow
    `release.yml`, environment `npm`. The workflow publishes with
    provenance and holds no npm token.
 6. Create a GitHub environment named `npm` and add yourself as a required

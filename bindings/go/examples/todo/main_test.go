@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
-	"github.com/matheusfillipe/katui/bindings/go/internal/shots"
+	katui "github.com/h4ks-com/katui/bindings/go"
+	"github.com/h4ks-com/katui/bindings/go/internal/shots"
 )
 
 func press(t *testing.T, screen *katui.Screen, name string) {

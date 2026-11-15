@@ -7,7 +7,7 @@ and how to draw with light.
 Add the `game` feature to your project:
 
 ```sh
-cargo add katui --git https://github.com/matheusfillipe/katui --features game
+cargo add katui --git https://github.com/h4ks-com/katui --features game
 ```
 
 ## The game

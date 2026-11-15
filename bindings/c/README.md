@@ -6,17 +6,17 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
-  <a href="https://github.com/matheusfillipe/katui/blob/main/docs/c.md">Guide</a> ·
-  <a href="https://github.com/matheusfillipe/katui/tree/main/bindings/c/examples">Examples</a> ·
-  <a href="https://github.com/matheusfillipe/katui/blob/main/bindings/c/include/katui.h">Header</a>
+  <a href="https://github.com/h4ks-com/katui/blob/main/docs/c.md">Guide</a> ·
+  <a href="https://github.com/h4ks-com/katui/tree/main/bindings/c/examples">Examples</a> ·
+  <a href="https://github.com/h4ks-com/katui/blob/main/bindings/c/include/katui.h">Header</a>
 </p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/matheusfillipe/katui/main/assets/demos/widgets.webp" alt="The katui widget tour: a file tree, a theme select, a switch with a spinner, a slider and a table" width="800"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/h4ks-com/katui/main/assets/demos/widgets.webp" alt="The katui widget tour: a file tree, a theme select, a switch with a spinner, a slider and a table" width="800"></p>
 
 It sends pictures to the terminal through the kitty graphics protocol, and
 through sixel or blocks of colored cells where that is missing. Only what
 changed between frames is sent. The engine is the
-[katui](https://github.com/matheusfillipe/katui) Rust library, built into
+[katui](https://github.com/h4ks-com/katui) Rust library, built into
 one static or shared library with a single header, `katui.h`.
 
 ```c
@@ -52,7 +52,7 @@ archive per platform with `include/katui.h` and `lib/` holding
 `libkatui.a` and the shared library. On Linux x86_64:
 
 ```sh
-curl -L https://github.com/matheusfillipe/katui/releases/latest/download/katui-c-linux-x86_64.tar.gz | tar xz
+curl -L https://github.com/h4ks-com/katui/releases/latest/download/katui-c-linux-x86_64.tar.gz | tar xz
 ```
 
 <details>
@@ -97,7 +97,7 @@ terminals show the same app in colored block characters.
   back as a status with `katui_last_error()` giving the message. The
   header states who frees what.
 
-The [examples](https://github.com/matheusfillipe/katui/tree/main/bindings/c/examples)
+The [examples](https://github.com/h4ks-com/katui/tree/main/bindings/c/examples)
 include a counter, a to-do list and a comet game.
 
 ## Status
@@ -109,6 +109,6 @@ with them. Windows is not supported.
 ## License
 
 katui is licensed under either of the
-[Apache License 2.0](https://github.com/matheusfillipe/katui/blob/main/LICENSE-APACHE)
-or the [MIT license](https://github.com/matheusfillipe/katui/blob/main/LICENSE-MIT),
+[Apache License 2.0](https://github.com/h4ks-com/katui/blob/main/LICENSE-APACHE)
+or the [MIT license](https://github.com/h4ks-com/katui/blob/main/LICENSE-MIT),
 at your option.

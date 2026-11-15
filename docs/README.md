@@ -28,5 +28,5 @@ one, then pick whichever matches what you want to make.
 
 ## API reference
 
-<https://matheusfillipe.github.io/katui/katui/>, or run `just api-docs` in
+<https://h4ks-com.github.io/katui/katui/>, or run `just api-docs` in
 a clone to build it.

@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	katui "github.com/matheusfillipe/katui/bindings/go"
+	katui "github.com/h4ks-com/katui/bindings/go"
 )
 
 var filters = []string{"All", "Active", "Done"}

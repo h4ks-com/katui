@@ -67,8 +67,8 @@ func runBlock(t *testing.T, module, code string) {
 	if runs {
 		code = strings.NewReplacer("katui.Run(", "headlessRun(", "katui.Play(", "headlessPlay(").Replace(code) + headless
 	}
-	goMod := fmt.Sprintf("module docs\n\ngo 1.24\n\nrequire github.com/matheusfillipe/katui/bindings/go v0.0.0\n\n"+
-		"replace github.com/matheusfillipe/katui/bindings/go => %s\n", module)
+	goMod := fmt.Sprintf("module docs\n\ngo 1.24\n\nrequire github.com/h4ks-com/katui/bindings/go v0.0.0\n\n"+
+		"replace github.com/h4ks-com/katui/bindings/go => %s\n", module)
 	for name, text := range map[string]string{"go.mod": goMod, "main.go": code} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
 			t.Fatal(err)

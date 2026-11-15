@@ -5,7 +5,7 @@ what you build: `app` (runner and widgets), `game`, `html` (with `app` for
 documents in a view), `ratatui`.
 
 ```sh
-cargo add katui --git https://github.com/matheusfillipe/katui --features app
+cargo add katui --git https://github.com/h4ks-com/katui --features app
 ```
 
 Main paths: `katui::app::{run, UiApp, Control, Waker}`,
@@ -267,7 +267,7 @@ and show it with `Element::image(frame)`. `latest` skips frames when the
 terminal falls behind. `ended()` reports the end, and dropping the stream
 stops ffmpeg. `VideoStream::spawn` takes any command that writes raw RGBA.
 Sound is a separate process (`ffplay -nodisp`), as the video demo shows.
-Full example: https://github.com/matheusfillipe/katui/blob/main/docs/video.md
+Full example: https://github.com/h4ks-com/katui/blob/main/docs/video.md
 
 ## ratatui
 
@@ -282,7 +282,7 @@ a `Control`. Give an image a new `ImageId` when its pixels change.
 `KatuiBackend` in a `ratatui::Terminal` and call
 `terminal.backend_mut().draw_images(&frames)` after each `draw`. Images need
 kitty graphics; elsewhere the image areas stay empty.
-Full example: https://github.com/matheusfillipe/katui/blob/main/docs/ratatui.md
+Full example: https://github.com/h4ks-com/katui/blob/main/docs/ratatui.md
 
 ## Tests
 

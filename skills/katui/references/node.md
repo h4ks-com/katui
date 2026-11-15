@@ -3,7 +3,7 @@
 `npm install @matheusfillipe/katui` (Node.js 22.18+, Linux or macOS). The
 package ships its own types, and Node runs `.ts` files directly
 (`node app.ts`). Everything imports from `'@matheusfillipe/katui'`. Full
-guide: https://github.com/matheusfillipe/katui/blob/main/docs/node.md
+guide: https://github.com/h4ks-com/katui/blob/main/docs/node.md
 
 ## An app
 
@@ -159,4 +159,4 @@ the terminal. Tests run with `node --test`.
 camelCase names. `switch` is `toggleSwitch`, `list` is `listView`. Enums
 passed as values are strings. Points, light colors and `V3` arguments are
 arrays; a scroll position is `{ offset, max }`. `V3` has `add`, `sub`,
-`mul` and `equals`. Examples: https://github.com/matheusfillipe/katui/tree/main/bindings/node/examples
+`mul` and `equals`. Examples: https://github.com/h4ks-com/katui/tree/main/bindings/node/examples

@@ -8,7 +8,7 @@ leaves for them.
 Add the `ratatui` feature, and ratatui itself at the version katui uses:
 
 ```sh
-cargo add katui --git https://github.com/matheusfillipe/katui --features ratatui
+cargo add katui --git https://github.com/h4ks-com/katui --features ratatui
 cargo add ratatui@0.30
 ```
 

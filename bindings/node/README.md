@@ -6,17 +6,17 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
-  <a href="https://github.com/matheusfillipe/katui/blob/main/docs/node.md">Guide</a> ·
-  <a href="https://github.com/matheusfillipe/katui/tree/main/bindings/node/examples">Examples</a> ·
-  <a href="https://matheusfillipe.github.io/katui/katui/">API reference</a>
+  <a href="https://github.com/h4ks-com/katui/blob/main/docs/node.md">Guide</a> ·
+  <a href="https://github.com/h4ks-com/katui/tree/main/bindings/node/examples">Examples</a> ·
+  <a href="https://h4ks-com.github.io/katui/katui/">API reference</a>
 </p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/matheusfillipe/katui/main/assets/demos/widgets.webp" alt="The katui widget tour: a file tree, a theme select, a switch with a spinner, a slider and a table" width="800"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/h4ks-com/katui/main/assets/demos/widgets.webp" alt="The katui widget tour: a file tree, a theme select, a switch with a spinner, a slider and a table" width="800"></p>
 
 It sends pictures to the terminal through the kitty graphics protocol, and
 through sixel or blocks of colored cells where that is missing. Only what
 changed between frames is sent. The engine is the
-[katui](https://github.com/matheusfillipe/katui) Rust library, shipped as a
+[katui](https://github.com/h4ks-com/katui) Rust library, shipped as a
 prebuilt native module, so you need no Rust to use it. The package comes
 with its TypeScript types.
 
@@ -97,7 +97,7 @@ The left and right arrow keys steer the comet. <kbd>Q</kbd>,
 
 `run` and `play` keep the thread busy until the app or game ends, so
 timers and promises wait until then. The
-[examples](https://github.com/matheusfillipe/katui/tree/main/bindings/node/examples)
+[examples](https://github.com/h4ks-com/katui/tree/main/bindings/node/examples)
 include a to-do list, the full widget tour, a Markdown help screen, an HTML
 browser and this comet with sparks.
 
@@ -110,6 +110,6 @@ together with them. Windows is not supported.
 ## License
 
 katui is licensed under either of the
-[Apache License 2.0](https://github.com/matheusfillipe/katui/blob/main/LICENSE-APACHE)
-or the [MIT license](https://github.com/matheusfillipe/katui/blob/main/LICENSE-MIT),
+[Apache License 2.0](https://github.com/h4ks-com/katui/blob/main/LICENSE-APACHE)
+or the [MIT license](https://github.com/h4ks-com/katui/blob/main/LICENSE-MIT),
 at your option.
