@@ -5,7 +5,7 @@ use katui_draw::{Paint, Rgba};
 use katui_ui::{Align, Element, Length};
 
 use crate::theme::Theme;
-use crate::view::{input_box, panel, styled};
+use crate::view::{heading, input_box, panel, styled};
 
 /// The dimming behind a dialog.
 const SCRIM: Rgba = Rgba {
@@ -33,13 +33,9 @@ pub fn dialog<M>(
         .gap(theme.cell_width())
         .justify(Align::End)
         .width(Length::Fill);
-    let card = panel([
-        styled(title, theme.body() * 1.3, theme.text).weight(800),
-        body,
-        buttons,
-    ])
-    .width(theme.columns(56.0))
-    .opaque();
+    let card = panel([heading(title), body, buttons])
+        .width(theme.columns(56.0))
+        .opaque();
     Element::column([card])
         .align(Align::Center)
         .justify(Align::Center)

@@ -11,9 +11,9 @@ use katui_proto::input::{InputEvent, Key};
 use katui_ui::{Align, CellPixels, Element, Length};
 use katui_widgets::{
     Column, Edit, Focus, ListState, Orientation, Scroll, ScrollState, TextArea, Theme, Toasts,
-    TreeNode, TreeState, button, dialog, hint, key_hints, label, menu, panel, primary_button,
-    radio, scroll_view, select, slider, spinner, split, switch, table, text_area, toasts, tooltip,
-    tree,
+    TreeNode, TreeState, button, dialog, heading, hint, key_hints, label, menu, panel,
+    primary_button, radio, scroll_view, select, slider, spinner, split, switch, table, text_area,
+    toasts, tooltip, tree,
 };
 
 const SIZES: [&str; 3] = ["Small", "Medium", "Large"];
@@ -152,10 +152,7 @@ impl Tour {
             label("Turn on the switch to start working").color(theme.muted)
         };
         panel([
-            label("Settings")
-                .font_size(theme.body() * 1.2)
-                .color(theme.text)
-                .weight(800),
+            heading("Settings"),
             hint("Theme"),
             select(
                 &THEMES,
@@ -181,12 +178,9 @@ impl Tour {
         .width(Length::Fill)
     }
 
-    fn data(&self, theme: &Theme) -> Element<Message> {
+    fn data(&self) -> Element<Message> {
         panel([
-            label("Tools")
-                .font_size(theme.body() * 1.2)
-                .color(theme.text)
-                .weight(800),
+            heading("Tools"),
             table(
                 &[
                     Column::fixed("Name", 12.0),
@@ -264,18 +258,14 @@ impl UiApp for Tour {
     }
 
     fn start(&mut self, waker: Waker<Message>) {
-        std::thread::spawn(move || {
-            while waker.send(Message::Tick) {
-                std::thread::sleep(TICK);
-            }
-        });
+        waker.every(TICK, Message::Tick);
     }
 
     fn view(&self) -> Element<Message> {
         let theme = Theme::current();
         let page = scroll_view(
             &self.page,
-            [self.controls(&theme), self.data(&theme)],
+            [self.controls(&theme), self.data()],
             Message::Scrolled,
         )
         .padding(theme.cell_height());

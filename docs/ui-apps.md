@@ -141,7 +141,7 @@ store in your app struct and pass to the widget in `view`.
 
 | Widget | State | What it shows |
 |---|---|---|
-| `label`, `title`, `hint` | | Body text, a heading, small muted text |
+| `label`, `title`, `heading`, `hint` | | Body text, a page title, a section heading, small muted text |
 | `button`, `primary_button` | | A button that sends a message, in the accent color for the main action |
 | `panel`, `page` | | A raised card, and the whole screen in the theme's background |
 | `text_field` | `TextField` | A one-line text input |
@@ -242,19 +242,20 @@ theme's colors and sizes for your own elements, like
 
 `view`, `update` and `input` run on the app's thread, so slow work belongs
 on another one. katui hands you a `Waker` in `start`. Clone it into a
-thread and send messages back:
+thread and send messages back with `send`, which returns `false` once the
+app has quit:
 
 ```rust,ignore
 fn start(&mut self, waker: Waker<Message>) {
     std::thread::spawn(move || {
-        while waker.send(Message::Tick) {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
+        let page = download();
+        waker.send(Message::Loaded(page));
     });
 }
 ```
 
-`send` returns `false` once the app has quit, which ends the loop.
+For a clock, a spinner or toasts that expire, `waker.every(interval,
+message)` sends a message on a steady beat until the app quits.
 
 ## Next
 

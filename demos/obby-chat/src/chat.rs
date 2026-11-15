@@ -291,18 +291,8 @@ impl Chat {
     }
 
     pub fn attach(&mut self, waker: Waker<Message>) {
-        let ticker = waker.clone();
-        std::thread::spawn(move || {
-            while ticker.send(Message::Tick) {
-                std::thread::sleep(TICK);
-            }
-        });
-        let drifter = waker.clone();
-        std::thread::spawn(move || {
-            while drifter.send(Message::Drift) {
-                std::thread::sleep(DRIFT_INTERVAL);
-            }
-        });
+        waker.every(TICK, Message::Tick);
+        waker.every(DRIFT_INTERVAL, Message::Drift);
         self.waker = Some(waker);
         if self.connect_when_attached {
             self.connect();

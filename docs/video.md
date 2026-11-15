@@ -30,11 +30,7 @@ impl UiApp for Player {
     type Message = ();
 
     fn start(&mut self, waker: Waker<()>) {
-        std::thread::spawn(move || {
-            while waker.send(()) {
-                std::thread::sleep(Duration::from_secs(1) / FRAMES_PER_SECOND);
-            }
-        });
+        waker.every(Duration::from_secs(1) / FRAMES_PER_SECOND, ());
     }
 
     fn view(&self) -> Element<()> {

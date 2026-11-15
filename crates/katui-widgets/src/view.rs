@@ -21,6 +21,12 @@ pub fn title<M>(text: impl Into<Arc<str>>) -> Element<M> {
     styled(text, theme.title(), theme.text).weight(800)
 }
 
+/// A bold section heading, smaller than a [`title`].
+pub fn heading<M>(text: impl Into<Arc<str>>) -> Element<M> {
+    let theme = Theme::current();
+    styled(text, theme.heading(), theme.text).weight(800)
+}
+
 /// Small, muted text for hints and captions.
 pub fn hint<M>(text: impl Into<Arc<str>>) -> Element<M> {
     let theme = Theme::current();

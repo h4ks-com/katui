@@ -52,6 +52,20 @@ impl<M> Waker<M> {
     }
 }
 
+impl<M: Clone + Send + 'static> Waker<M> {
+    /// Send `message` every `interval` from a thread of its own, until the
+    /// event loop ends. Use it to drive clocks, spinners and expiring
+    /// toasts.
+    pub fn every(&self, interval: Duration, message: M) {
+        let waker = self.clone();
+        std::thread::spawn(move || {
+            while waker.send(message.clone()) {
+                std::thread::sleep(interval);
+            }
+        });
+    }
+}
+
 /// The merged event queue and the thread that reads the terminal.
 #[derive(Debug)]
 pub struct EventPump<M> {

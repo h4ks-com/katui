@@ -135,6 +135,12 @@ impl Theme {
         (self.cell_height() * 0.66).max(10.0)
     }
 
+    /// Section heading text size.
+    #[must_use]
+    pub fn heading(&self) -> f32 {
+        self.body() * 1.25
+    }
+
     /// Title text size.
     #[must_use]
     pub fn title(&self) -> f32 {

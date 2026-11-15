@@ -33,6 +33,6 @@ pub use table::{Column, table};
 pub use theme::Theme;
 pub use tree::{TreeNode, TreeState, tree};
 pub use view::{
-    button, checkbox, hint, label, list, page, panel, primary_button, progress, tabs, text_field,
-    title,
+    button, checkbox, heading, hint, label, list, page, panel, primary_button, progress, tabs,
+    text_field, title,
 };
