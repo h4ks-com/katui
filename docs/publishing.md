@@ -172,7 +172,8 @@ the release tag that no branch contains, and pushes the tag
 `bindings/go/vX.Y.Z`. The Go proxy fetches the module at that tag, and the
 cgo flags in `bindings/go/katui.go` link the library for the platform
 being built. Users need Go and a C compiler, and no Rust. The four static
-libraries add about 180 MB to the module.
+libraries, built with the `dist` profile (fat LTO, no debug info), add
+about 56 MB to the module.
 
 The Linux arm64 runners are free for public repositories only, so the
 repository has to be public before the first release.

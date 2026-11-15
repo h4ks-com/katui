@@ -88,3 +88,10 @@ missing_panics_doc = "allow"
 cast_possible_truncation = "allow"
 # a nursery lint: assert!(x.is_empty()) reads better than the assert_eq form
 assert_is_empty = "allow"
+
+# release artifacts: the C library archives and the libraries the go module ships
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = "debuginfo"

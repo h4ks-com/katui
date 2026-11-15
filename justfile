@@ -243,7 +243,7 @@ c-demo name: c-build
 c-dist target:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo build --release -p katui-c --target {{target}}
+    cargo build --profile dist -p katui-c --target {{target}}
     target={{target}}
     arch=${target%%-*}
     case $target in
@@ -253,7 +253,7 @@ c-dist target:
     out=target/dist/katui-c
     rm -rf "$out" && mkdir -p "$out/include" "$out/lib"
     cp bindings/c/include/katui.h "$out/include/"
-    cp target/{{target}}/release/libkatui.a "target/{{target}}/release/$shared" "$out/lib/"
+    cp target/{{target}}/dist/libkatui.a "target/{{target}}/dist/$shared" "$out/lib/"
     cp bindings/c/README.md LICENSE-MIT LICENSE-APACHE "$out/"
     tar -czf "target/dist/katui-c-$os-$arch.tar.gz" -C target/dist katui-c
     rm -rf "$out"
