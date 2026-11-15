@@ -29,6 +29,10 @@ gate); `.opencode/` holds repo commands and skills.
   (`cargo install rust-code-analysis-cli` once). Report tier only; the
   gate tier stays clippy's cognitive ceiling of 20
 - `just hooks`: install the prek hooks, once per clone
+- `just quality`: lizard's complexity limits (cyclomatic 15, 100 lines, 8
+  parameters per function) and jscpd's duplication gate over every language,
+  plus a fresh `bindings/rust-api.json`; part of `just ci`. `just api`
+  rewrites the manifest after a public Rust API change
 - `just py-check`: the Python package's gates (ruff, strict mypy,
   stubtest, pytest); part of `just ci`, needs uv. `just py-fmt` applies
   ruff's fixes, `just py-demo <name>` runs a Python example

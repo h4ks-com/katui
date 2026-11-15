@@ -25,10 +25,21 @@ every push and pull request. Run it before you commit.
 | `just clippy` | clippy with warnings as errors |
 | `just test` | the Rust tests, the code in the guides, and the IRC demo |
 | `just docs` | rustdoc with warnings as errors |
+| `just quality` | complexity and duplication in every language, and a fresh `bindings/rust-api.json` |
 | `just py-check` | ruff, strict mypy, the stub, and the Python tests |
-| `just c-check` | a fresh `katui.h`, the C examples and tests, the C docs and the C sync check |
-| `just go-check` | go vet, gofmt, and the Go tests, docs and sync check |
-| `just node-check` | fresh generated types, strict tsc, biome, and the Node tests |
+| `just c-check` | a fresh `katui.h`, clang-tidy, the C examples and tests, the C docs and the C sync check |
+| `just go-check` | gofmt, go vet, golangci-lint, and the Go tests, docs and sync check |
+| `just node-check` | biome, fresh generated types, strict tsc, and the Node tests |
+
+Every language meets the same limits. lizard caps each function at a
+cyclomatic complexity of 15, 100 lines and 8 parameters (`just
+complexity`), and jscpd fails above 2% copy-pasted code (`just dupes`).
+Each language's own linter adds its rules on top: clippy's cognitive
+complexity ceiling of 20 for Rust, ruff's mccabe and pylint rules for
+Python, golangci-lint's gocyclo, gocognit and dupl for Go, biome's
+cognitive complexity for TypeScript, and clang-tidy for C. The prek hooks
+(`just hooks`) run the fast ones on every commit: rustfmt, clippy,
+complexity, duplication, the API manifest, ruff, biome and gofmt.
 
 CI runs `just py-check` on Linux x86_64, Linux arm64 and macOS, with the
 oldest and the newest Python the package supports, `just c-check`,
@@ -37,15 +48,27 @@ package supports, and Node 26, all on the same three machines. It also
 runs `just crates-check`, which packages every crate and compiles it the
 way crates.io will.
 
-`just c-check` needs `cbindgen` and a C compiler, `just go-check` needs Go
-and a C compiler, and `just node-check` needs Node 22.18 or newer.
+`just c-check` needs `cbindgen`, `clang-tidy` and a C compiler, `just
+go-check` needs Go and a C compiler, `just node-check` needs Node 22.18 or
+newer, and `just quality` needs uv and Node.
+
+## The Rust API manifest
+
+`bindings/rust-api.json` lists the public Rust API every binding covers:
+the widget, game and content exports, the public methods of the wrapped
+types, the theme's fields, the app and game hooks, the `Control` and
+`Edit` variants, and the version. `scripts/rust-api.py` reads it out of the
+crate sources; `just api` writes the file and `just api-check` fails while
+the committed one is stale. Every binding's sync check compares its names
+against this file, so a change to the Rust API shows up as one diff of it,
+and each binding fails until it follows.
 
 ## Keeping Python in step with Rust
 
 The Python package wraps the Rust API, so a change on the Rust side can
 leave it behind. These checks in `just py-check` catch that:
 
-- **The sync test** reads the Rust sources. Every public widget, game
+- **The sync test** reads the API manifest. Every public widget, game
   item, type method, app and game hook, and `Control` and `Edit` variant
   needs a Python counterpart. When you add a public item in Rust, bind it in
   `bindings/python/src`, or add it to `OMITTED` in
@@ -71,7 +94,7 @@ them:
 - **The header** `bindings/c/include/katui.h` is generated from
   `bindings/c/src` by cbindgen and committed. `just c-header` writes it
   again, and `just c-check` fails while the committed one is stale.
-- **The C sync check**, `bindings/c/tests/sync.py`, reads the Rust sources
+- **The C sync check**, `bindings/c/tests/sync.py`, reads the API manifest
   and the header. Every public widget, game item, type method, theme
   field, app and game hook, and `Control` and `Edit` variant needs a C
   function, type or constant. Bind it in `bindings/c/src`, or add it to
@@ -93,8 +116,8 @@ wrapper follow it too.
 The Node package wraps the same API, and `just node-check` catches the
 same drift:
 
-- **The sync test** in `bindings/node/tests/sync.test.ts` reads the Rust
-  sources the same way the Python one does. Bind a new public item in
+- **The sync test** in `bindings/node/tests/sync.test.ts` reads the API
+  manifest the same way the Python one does. Bind a new public item in
   `bindings/node/src`, or add it to `OMITTED` there with the reason Node
   does without it. A JavaScript name that is not the camelCase of the Rust
   one goes in `RENAMED`.

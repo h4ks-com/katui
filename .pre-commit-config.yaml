@@ -15,6 +15,42 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
+      - id: complexity
+        name: just complexity
+        entry: just complexity
+        language: system
+        types_or: [rust, python, go, ts, c]
+        pass_filenames: false
+      - id: dupes
+        name: just dupes
+        entry: just dupes
+        language: system
+        types_or: [rust, python, go, ts, javascript, c]
+        pass_filenames: false
+      - id: api
+        name: just api-check
+        entry: just api-check
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: python
+        name: just py-lint
+        entry: just py-lint
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: node
+        name: just node-lint
+        entry: just node-lint
+        language: system
+        types_or: [ts, javascript]
+        pass_filenames: false
+      - id: go
+        name: gofmt
+        entry: just go-fmt-check
+        language: system
+        types: [go]
+        pass_filenames: false
       - id: commit-msg
         name: conventional commit message
         entry: scripts/check-commit-msg.sh
@@ -23,8 +59,11 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # the probe fixtures are recorded terminal bytes and stay exactly as recorded
       - id: trailing-whitespace
+        exclude: ^crates/katui-proto/fixtures/
       - id: end-of-file-fixer
+        exclude: ^crates/katui-proto/fixtures/
       - id: check-merge-conflict
       - id: check-toml
       - id: check-yaml

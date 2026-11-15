@@ -88,11 +88,16 @@ py-build:
     uv sync --quiet --no-install-project
     uv run --no-sync maturin develop --quiet --release
 
-# python formatting, lints, types, the stub against the module, and the tests
+# ruff's format and lint checks on the python code, without a build
 [working-directory('bindings/python')]
-py-check: py-build
+py-lint:
+    uv sync --quiet --no-install-project
     uv run --no-sync ruff format --check .
     uv run --no-sync ruff check .
+
+# the python lints, then types, the stub against the module, and the tests
+[working-directory('bindings/python')]
+py-check: py-lint py-build
     uv run --no-sync mypy
     uv run --no-sync python -m mypy.stubtest katui._katui --allowlist stubtest-allowlist.txt
     uv run --no-sync pytest
@@ -117,12 +122,17 @@ node-build:
     npm ci --silent
     npx napi build --platform --release --esm
 
-# node types fresh, strict tsc, biome's lints and formatting, and the tests
+# biome's format and lint checks on the node code, without a build
 [working-directory('bindings/node')]
-node-check: node-build
+node-lint:
+    npm ci --silent
+    npx biome ci .
+
+# the node lints, then fresh generated types, strict tsc, and the tests
+[working-directory('bindings/node')]
+node-check: node-lint node-build
     git diff --exit-code -- index.js index.d.ts
     npx tsc -p .
-    npx biome ci .
     node --test 'tests/*.test.ts'
 
 # apply biome's formatting and fixes to the node code
@@ -291,11 +301,15 @@ go-lib: c-build
 
 # the go module's gates: vet, gofmt, and the tests, which run the examples, the docs and the sync check
 [working-directory('bindings/go')]
-go-check: go-lib
+go-check: go-fmt-check go-lib
     go vet ./...
     go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run ./...
-    test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
     go test ./...
+
+# gofmt's check on the go module, without a build
+[working-directory('bindings/go')]
+go-fmt-check:
+    test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
 
 # a go example, like `just go-demo todo`
 [working-directory('bindings/go')]
