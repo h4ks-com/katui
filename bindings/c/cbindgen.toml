@@ -1,0 +1,59 @@
+language = "C"
+include_guard = "KATUI_H"
+cpp_compat = true
+documentation = true
+style = "both"
+usize_is_size_t = true
+sort_by = "None"
+autogen_warning = "/* Generated from bindings/c/src by cbindgen. Run `just c-header` after a change there. */"
+header = """
+/*
+ * katui: real pixels in the terminal, from C.
+ *
+ * Ownership
+ *
+ * - A function that returns a pointer to a katui type hands it to the
+ *   caller, who frees it with the matching katui_*_free function.
+ * - A function that takes elements (children, a dialog's body, a split's
+ *   panes) takes them over: the caller does not use or free them again.
+ *   NULL entries in a list of children are left out.
+ * - A view callback hands its element to katui, and a theme callback its
+ *   theme.
+ * - Every other pointer argument is borrowed for the length of the call.
+ *   Strings are UTF-8 and NUL-terminated; katui copies what it keeps.
+ * - A string katui returns as char * belongs to the caller, who frees it
+ *   with katui_string_free. A const char * stays katui's.
+ * - Images are shared: an element that shows an image keeps its own
+ *   reference, so the caller can free the image at once.
+ * - Pointers handed to callbacks (messages, events, keys, lights) live
+ *   during the call only.
+ *
+ * Safety
+ *
+ * Every function accepts NULL for any pointer: getters return zero, false
+ * or NULL, builders return NULL or an empty element, and functions that
+ * return a KatuiStatus return KATUI_STATUS_NULL_ARGUMENT. Any other
+ * pointer has to point at a live value of its type. katui never unwinds
+ * into C: a failure returns a status or NULL, and katui_last_error() gives
+ * its message.
+ *
+ * Threads
+ *
+ * katui calls every callback on the thread that called katui_run,
+ * katui_play or a katui_screen function. katui_waker_send and
+ * katui_waker_every work from any thread.
+ */
+"""
+after_includes = """
+/* The children of an element as the pointer and count katui takes:
+ * katui_panel(KATUI_LIST(katui_title("Tasks"), katui_label("None yet"))). */
+#define KATUI_LIST(...) \\
+  (KatuiElement *[]){__VA_ARGS__}, \\
+  (sizeof((KatuiElement *[]){__VA_ARGS__}) / sizeof(KatuiElement *))
+"""
+
+[parse]
+parse_deps = false
+
+[export]
+exclude = ["Node"]

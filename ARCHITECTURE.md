@@ -24,6 +24,9 @@ explains the frame pipeline for readers.
 Each crate depends only on crates below it.
 
 ```
+katui-c         the C ABI (bindings/c): app runner, widgets, html, games
+                and a headless screen behind katui.h; bindings/go wraps it
+                with cgo
 katui-python    the katui Python package (bindings/python): app runner,
                 widgets, html, games and a headless Screen over PyO3
 katui           every crate under one name; features: widgets, layout (default),
