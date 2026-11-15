@@ -465,6 +465,7 @@ impl Span {
                 italic: style.italic.unwrap_or(false),
                 underline: style.underline.unwrap_or(false),
                 strike: style.strike.unwrap_or(false),
+                mono: false,
             },
         })
     }

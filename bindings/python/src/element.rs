@@ -383,6 +383,7 @@ impl PySpan {
                 italic,
                 underline,
                 strike,
+                mono: false,
             },
         })
     }

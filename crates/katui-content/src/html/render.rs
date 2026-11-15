@@ -1,7 +1,7 @@
 //! The walk over the document that builds elements from styled nodes.
 
 use katui_draw::Paint;
-use katui_ui::{Element, Length};
+use katui_ui::{Align, Element, Length};
 use scraper::ElementRef;
 use scraper::node::Node;
 
@@ -17,6 +17,9 @@ pub(super) struct Renderer<'a, M> {
 impl<M: Clone> Renderer<'_, M> {
     pub(super) fn style(&self, element: ElementRef<'_>, parent: &Style) -> Style {
         let mut style = parent.child(element.value().name());
+        if let Some(align) = element.value().attr("align").and_then(super::style::align) {
+            style.text_align = align;
+        }
         for declaration in self.cascade.declarations(element) {
             style.apply(&declaration);
         }
@@ -48,8 +51,9 @@ impl<M: Clone> Renderer<'_, M> {
             return None;
         }
         let mut children = Vec::new();
+        let task = task_checkbox(element);
         let mut run = Run {
-            marker,
+            marker: marker.filter(|_| task.is_none()),
             ..Run::default()
         };
         let ordered = element.value().name() == "ol";
@@ -75,7 +79,16 @@ impl<M: Clone> Renderer<'_, M> {
             }
         }
         children.extend(run.finish(&style, self.host));
-        let container = container(children, &style);
+        if children.is_empty() && matches!(element.value().name(), "td" | "th") {
+            children.push(Element::row([]).height(Length::Px(style.size * 1.3)));
+        }
+        let mut container = container(children, &style);
+        if let Some(checked) = task {
+            container = Element::row([checkbox(checked, &style), container])
+                .gap(style.size * 0.5)
+                .align(Align::Center)
+                .width(Length::Fill);
+        }
         Some(match href(element) {
             Some(href) => container.on_click(self.host.link(href)),
             None => container,
@@ -182,6 +195,33 @@ impl<M: Clone> Renderer<'_, M> {
             Some(href) => image.on_click(self.host.link(href)),
             None => image,
         })
+    }
+}
+
+/// Whether the list item `element` is a task, and whether it is done.
+fn task_checkbox(element: ElementRef<'_>) -> Option<bool> {
+    if element.value().name() != "li" {
+        return None;
+    }
+    let input = element
+        .children()
+        .filter_map(ElementRef::wrap)
+        .find(|child| child.value().name() == "input")?;
+    (input.value().attr("type") == Some("checkbox"))
+        .then(|| input.value().attr("checked").is_some())
+}
+
+fn checkbox<M>(checked: bool, style: &Style) -> Element<M> {
+    let side = (style.size * 0.9).round();
+    let mark = Element::row([])
+        .size(Length::Px(side), Length::Px(side))
+        .radius(side * 0.25)
+        .border(1.5, Paint::Solid(style.color));
+    if checked {
+        mark.background(Paint::Solid(style.link))
+            .border(1.5, Paint::Solid(style.link))
+    } else {
+        mark
     }
 }
 
@@ -294,6 +334,34 @@ mod tests {
             Display::Inline,
             "a span in normal flow stays inline"
         );
+    }
+
+    #[test]
+    fn table_cells_share_their_row_and_task_items_carry_their_checkbox() {
+        let mut page = String::new();
+        pulldown_cmark::html::push_html(
+            &mut page,
+            pulldown_cmark::Parser::new_ext(
+                "| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n- [ ] open\n",
+                crate::html::github_flavor(),
+            ),
+        );
+        let document = Html::parse_document(&page);
+        let renderer = Renderer {
+            cascade: Cascade::new(&document),
+            host: &Host as &dyn HtmlHost<String>,
+        };
+        let root = Style::root(&defaults());
+        let pick = |css: &str| {
+            let selector = Selector::parse(css).expect("a valid selector");
+            document.select(&selector).collect::<Vec<_>>()
+        };
+        let row = renderer.style(pick("tbody tr")[0], &root);
+        assert_eq!(row.display, Display::Flex);
+        let cell = renderer.style(pick("td")[0], &row);
+        assert_eq!(cell.width, Some(katui_ui::Length::Fill));
+        let tasks: Vec<_> = pick("li").into_iter().map(super::task_checkbox).collect();
+        assert_eq!(tasks, [Some(true), Some(false)]);
     }
 
     #[test]

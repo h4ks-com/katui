@@ -98,21 +98,26 @@ HTML document. It supports:
 - Block and flex layout: `display: flex`, `flex-direction`, `gap`,
   `justify-content`, `align-items`, `padding`, `margin`, `width` and
   `height`.
-- Text: headings, paragraphs, lists, quotes, `pre` and `code`, bold,
-  italic, underline, strikethrough, links, and `font-size`, `font-weight`,
-  `font-style`, `text-align` and `color`.
+- Text: headings, paragraphs, lists, quotes, `pre` and `code` in a
+  monospace font, bold, italic, underline, strikethrough, links, and
+  `font-size`, `font-weight`, `font-style`, `font-family: monospace`,
+  `text-align`, the `align` attribute and `color`.
+- Tables, with every column of a row the same width, and `hr` rules.
 - Boxes: `background`, `border` and `border-radius`.
 - `<style>` blocks and `style` attributes, with selectors by type, class
   and id, and specificity that follows CSS.
 - `display: none` hides an element.
 - Images through your host.
 
-It does not run JavaScript, and tables and floats are not supported. It is
+It does not run JavaScript, and floats are not supported. It is
 meant for help pages, release notes and documents you write, not for
 browsing the web.
 
 `markdown_view` turns markdown into HTML and renders it the same way, so
-everything above applies to markdown too.
+everything above applies to markdown too. It reads GitHub's markdown:
+tables, task lists, strikethrough, footnotes and alerts such as
+`> [!NOTE]`. Run `just demo-md` for a reader of a whole folder of markdown
+files.
 
 ## Scrolling
 

@@ -115,6 +115,7 @@ pub(super) struct Style {
     pub(super) italic: bool,
     pub(super) underline: bool,
     pub(super) strike: bool,
+    pub(super) mono: bool,
     pub(super) preformatted: bool,
     pub(super) text_align: Align,
     pub(super) display: Display,
@@ -144,6 +145,7 @@ impl Style {
             italic: false,
             underline: false,
             strike: false,
+            mono: false,
             preformatted: false,
             text_align: Align::Start,
             display: Display::Block,
@@ -200,15 +202,34 @@ impl Style {
             "i" | "em" | "cite" => self.inline_with(|style| style.italic = true),
             "u" | "ins" => self.inline_with(|style| style.underline = true),
             "s" | "del" | "strike" => self.inline_with(|style| style.strike = true),
-            "code" | "kbd" | "samp" | "mark" => {
+            "code" | "kbd" | "samp" => {
+                let tint = self.tint;
+                self.inline_with(|style| {
+                    style.highlight = Some(tint);
+                    style.mono = true;
+                });
+            }
+            "mark" => {
                 let tint = self.tint;
                 self.inline_with(|style| style.highlight = Some(tint));
             }
             "span" | "small" | "label" | "abbr" | "sub" | "sup" | "img" | "br" => {
                 self.display = Display::Inline;
             }
+            "input" => self.display = Display::Hidden,
+            "center" => self.text_align = Align::Center,
+            "summary" | "dt" => self.bold = true,
+            _ => self.apply_block_tag(tag),
+        }
+    }
+
+    /// The look of the block elements: code, quotes, tables, rules and
+    /// lists.
+    pub(super) fn apply_block_tag(&mut self, tag: &str) {
+        match tag {
             "pre" => {
                 self.preformatted = true;
+                self.mono = true;
                 self.background = Some(self.tint);
                 self.padding = [self.size * 0.6; 4];
                 self.radius = self.size * 0.3;
@@ -218,11 +239,36 @@ impl Style {
                 self.padding = [self.size * 0.5, self.size, self.size * 0.5, self.size];
                 self.italic = true;
             }
+            "table" | "thead" | "tbody" | "tfoot" => self.gap = 0.0,
+            "tr" => self.apply_display("flex"),
+            "td" | "th" => self.cell(tag == "th"),
+            "hr" => {
+                self.height = Some(2.0);
+                self.background = Some(self.tint);
+                self.margin = [self.size * 0.4, 0.0, self.size * 0.4, 0.0];
+            }
             "ul" | "ol" => {
                 self.padding = [0.0, 0.0, 0.0, self.size * 1.2];
                 self.gap = self.size * 0.25;
             }
             _ => {}
+        }
+    }
+
+    /// A table cell: every cell of a row takes an equal share of its
+    /// width, so the columns line up from row to row.
+    pub(super) fn cell(&mut self, header: bool) {
+        self.width = Some(Length::Fill);
+        self.padding = [
+            self.size * 0.35,
+            self.size * 0.6,
+            self.size * 0.35,
+            self.size * 0.6,
+        ];
+        self.border = Some((1.0, self.tint));
+        if header {
+            self.bold = true;
+            self.background = Some(self.tint);
         }
     }
 
@@ -270,6 +316,7 @@ impl Style {
             }
             "text-align" => self.text_align = align(value).unwrap_or(self.text_align),
             "white-space" => self.preformatted = value.starts_with("pre"),
+            "font-family" => self.mono = value.contains("monospace"),
             _ => return false,
         }
         true
@@ -319,6 +366,7 @@ impl Style {
             italic: self.italic,
             underline: self.underline,
             strike: self.strike,
+            mono: self.mono,
         }
     }
 }

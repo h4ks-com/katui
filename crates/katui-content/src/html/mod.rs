@@ -41,17 +41,38 @@ pub trait HtmlHost<M> {
     fn image(&self, src: &str) -> Option<Arc<Surface>>;
 }
 
+/// The colors GitHub gives its `> [!NOTE]` style alerts.
+const ALERTS: &str = "<style>\
+    .markdown-alert-note { border: 2px solid #4493f8 }\
+    .markdown-alert-tip { border: 2px solid #3fb950 }\
+    .markdown-alert-important { border: 2px solid #ab7df8 }\
+    .markdown-alert-warning { border: 2px solid #d29922 }\
+    .markdown-alert-caution { border: 2px solid #f85149 }\
+    blockquote { font-style: normal }\
+    </style>";
+
+/// The markdown GitHub reads: tables, task lists, strikethrough,
+/// footnotes and alerts on top of `CommonMark`.
+pub(crate) fn github_flavor() -> pulldown_cmark::Options {
+    use pulldown_cmark::Options;
+    Options::ENABLE_TABLES
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_GFM
+}
+
 /// The element tree of the markdown document `source`, drawn through the
-/// same HTML and CSS subset as [`html`].
+/// same HTML and CSS subset as [`html`], with GitHub's extensions.
 pub fn markdown_view<M: Clone>(
     source: &str,
     defaults: &HtmlDefaults,
     host: &dyn HtmlHost<M>,
 ) -> Element<M> {
-    let mut page = String::new();
+    let mut page = ALERTS.to_owned();
     pulldown_cmark::html::push_html(
         &mut page,
-        pulldown_cmark::Parser::new_ext(source, pulldown_cmark::Options::empty()),
+        pulldown_cmark::Parser::new_ext(source, github_flavor()),
     );
     html(&page, defaults, host)
 }

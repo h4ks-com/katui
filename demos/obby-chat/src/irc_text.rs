@@ -53,6 +53,7 @@ fn styled(span: Span) -> TextSpan {
         italic: emphasis.italic(),
         underline: emphasis.underline(),
         strike: emphasis.strikethrough(),
+        mono: false,
     }
 }
 

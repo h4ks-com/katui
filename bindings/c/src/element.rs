@@ -233,6 +233,7 @@ pub unsafe extern "C" fn katui_rich(spans: *const KatuiSpan, count: usize) -> *m
             italic: span.italic,
             underline: span.underline,
             strike: span.strike,
+            mono: false,
         })
         .collect();
     element(Element::rich(spans))

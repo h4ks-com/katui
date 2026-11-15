@@ -33,6 +33,8 @@ pub struct TextSpan {
     pub italic: bool,
     pub underline: bool,
     pub strike: bool,
+    /// Drawn in the monospace family, for code.
+    pub mono: bool,
 }
 
 /// How a run of text looks.
@@ -84,6 +86,14 @@ impl TextEngine {
             .map(|(name, _)| name.clone())
             .ok_or(DrawError::NoUsableFont)?;
         database.set_sans_serif_family(default_family);
+        let monospace = database
+            .faces()
+            .find(|face| face.monospaced)
+            .and_then(|face| face.families.first())
+            .map(|(name, _)| name.clone());
+        if let Some(monospace) = monospace {
+            database.set_monospace_family(monospace);
+        }
         Ok(Self {
             fonts: FontSystem::new_with_locale_and_db(LOCALE.to_owned(), database),
             scaler: SwashCache::new(),
@@ -114,6 +124,9 @@ impl TextEngine {
             }
             if span.italic {
                 attrs = attrs.style(FontStyle::Italic);
+            }
+            if span.mono {
+                attrs = attrs.family(Family::Monospace);
             }
             (span.text.as_str(), attrs)
         });
@@ -334,6 +347,19 @@ mod span_tests {
             last.iter().all(|rect| rect.y >= middle[0].y),
             "the last span sits on a later line"
         );
+    }
+
+    #[test]
+    fn a_mono_span_gives_every_letter_the_same_width() {
+        let width = |text: &str, mono: bool| {
+            let spans = [TextSpan { mono, ..span(text) }];
+            engine()
+                .layout_spans(&spans, &TextStyle::new(16.0), None)
+                .size()
+                .0
+        };
+        assert!(width("iiii", false) < width("MMMM", false));
+        assert!((width("iiii", true) - width("MMMM", true)).abs() < 0.5);
     }
 
     #[test]
