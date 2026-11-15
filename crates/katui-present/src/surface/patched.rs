@@ -13,7 +13,7 @@ use katui_proto::placeholder::placeholder_row;
 use katui_proto::probe::CellPixels;
 use katui_scene::cell::Position;
 use katui_scene::placement::CellRect;
-use katui_scene::surface::{PixelRect, Surface, diff_tiles};
+use katui_scene::surface::{PixelRect, Surface, diff_rects};
 
 use crate::anchor::Anchor;
 
@@ -159,7 +159,7 @@ impl PatchedKitty {
         }
         let fresh_start = resized || repaint;
         let damage = match self.prev.as_ref() {
-            Some(prev) if !fresh_start => diff_tiles(prev, surface, self.tile_side),
+            Some(prev) if !fresh_start => self.damage(prev, surface, area),
             _ => Vec::new(),
         };
         let dense = damage_is_dense(surface, self.tile_side, damage.len());
@@ -233,7 +233,7 @@ impl PatchedKitty {
             .as_ref()
             .filter(|_| !resized && !repaint)
             .unwrap_or(&blank);
-        let damage = diff_tiles(before, surface, self.tile_side);
+        let damage = self.damage(before, surface, area);
         let mut bytes = Vec::new();
         if resized {
             self.free_tiles(&mut bytes)?;
@@ -288,8 +288,9 @@ impl PatchedKitty {
         Ok(())
     }
 
-    fn tile_index(&self, x: u32, y: u32) -> u32 {
-        x / self.tile_side + (y / self.tile_side) * 4096
+    /// The damaged tiles since `before`.
+    fn damage(&self, before: &Surface, surface: &Surface, area: CellRect) -> Vec<PixelRect> {
+        diff_rects(before, surface, cell_tiles(surface, area, self.tile_side))
     }
 
     fn tile_image(&self, index: u32, second_generation: bool) -> KittyImage {
@@ -309,20 +310,13 @@ impl PatchedKitty {
         rect: PixelRect,
         area: CellRect,
     ) -> io::Result<()> {
-        // the tile's cell span comes from the surface-to-area scale, not
-        // the terminal's cell pixels: the caller's surface may run at any
-        // resolution and the base image already proved the scale
-        let columns = u16::try_from(rect.width * u32::from(area.columns) / surface.width())
-            .unwrap_or(u16::MAX);
-        let rows = u16::try_from(rect.height * u32::from(area.rows) / surface.height())
-            .unwrap_or(u16::MAX);
-        let origin_x = area.x.saturating_add(
-            u16::try_from(rect.x * u32::from(area.columns) / surface.width()).unwrap_or(u16::MAX),
-        );
-        let origin_y = area.y.saturating_add(
-            u16::try_from(rect.y * u32::from(area.rows) / surface.height()).unwrap_or(u16::MAX),
-        );
-        let index = self.tile_index(rect.x, rect.y);
+        let (left, right) = column_span(rect, surface, area);
+        let (top, bottom) = row_span(rect, surface, area);
+        let columns = right.saturating_sub(left).max(1);
+        let rows = bottom.saturating_sub(top).max(1);
+        let origin_x = area.x.saturating_add(left);
+        let origin_y = area.y.saturating_add(top);
+        let index = tile_index(origin_x, origin_y);
         let shown = self.tile_generations.get(&index).copied();
         let generation = shown.is_some_and(|generation| !generation);
         let image = self.tile_image(index, generation);
@@ -364,7 +358,7 @@ impl PatchedKitty {
         cells: (u16, u16),
     ) -> io::Result<()> {
         let (columns, rows) = cells;
-        let index = self.tile_index(rect.x, rect.y);
+        let index = tile_index(origin.x, origin.y);
         let mut place = Place::new(image);
         place.columns = u32::from(columns);
         place.rows = u32::from(rows);
@@ -382,6 +376,80 @@ impl PatchedKitty {
         }
         bytes.write_all(&place.encode())
     }
+}
+
+/// The tile whose top left cell is `column`, `row`.
+fn tile_index(column: u16, row: u16) -> u32 {
+    u32::from(column) + u32::from(row) * 4096
+}
+
+/// The surface cut into tiles about `tile_side` pixels square, on cell
+/// edges: a surface at any resolution then has every tile cover whole
+/// cells, and a tile placed on its cells lines up with the base image.
+fn cell_tiles(surface: &Surface, area: CellRect, tile_side: u32) -> Vec<PixelRect> {
+    let columns = u32::from(area.columns).max(1);
+    let rows = u32::from(area.rows).max(1);
+    let across = cells_per_tile(tile_side, surface.width(), columns);
+    let down = cells_per_tile(tile_side, surface.height(), rows);
+    let mut tiles = Vec::new();
+    for row in (0..rows).step_by(down as usize) {
+        let top = edge(row, surface.height(), rows);
+        let bottom = edge((row + down).min(rows), surface.height(), rows);
+        for column in (0..columns).step_by(across as usize) {
+            let left = edge(column, surface.width(), columns);
+            let right = edge((column + across).min(columns), surface.width(), columns);
+            if right > left && bottom > top {
+                tiles.push(PixelRect {
+                    x: left,
+                    y: top,
+                    width: right - left,
+                    height: bottom - top,
+                });
+            }
+        }
+    }
+    tiles
+}
+
+/// How many of `cells` cells spanning `pixels` pixels make a tile about
+/// `side` pixels long.
+fn cells_per_tile(side: u32, pixels: u32, cells: u32) -> u32 {
+    let per_tile = (u64::from(side) * u64::from(cells) * 2 + u64::from(pixels))
+        / (2 * u64::from(pixels.max(1)));
+    u32::try_from(per_tile).unwrap_or(cells).clamp(1, cells)
+}
+
+/// The pixel nearest where cell `cell` starts, with `cells` cells
+/// spanning `pixels` pixels.
+fn edge(cell: u32, pixels: u32, cells: u32) -> u32 {
+    let at = (u64::from(cell) * u64::from(pixels) * 2 + u64::from(cells))
+        / (2 * u64::from(cells.max(1)));
+    u32::try_from(at).unwrap_or(pixels)
+}
+
+/// The cell edge nearest pixel `pixel`, the inverse of [`edge`].
+fn cell_at(pixel: u32, pixels: u32, cells: u32) -> u16 {
+    let at = (u64::from(pixel) * u64::from(cells) * 2 + u64::from(pixels))
+        / (2 * u64::from(pixels.max(1)));
+    u16::try_from(at).unwrap_or(u16::MAX)
+}
+
+/// The first and past-the-end columns `rect` covers.
+fn column_span(rect: PixelRect, surface: &Surface, area: CellRect) -> (u16, u16) {
+    let columns = u32::from(area.columns);
+    (
+        cell_at(rect.x, surface.width(), columns),
+        cell_at(rect.x + rect.width, surface.width(), columns),
+    )
+}
+
+/// The first and past-the-end rows `rect` covers.
+fn row_span(rect: PixelRect, surface: &Surface, area: CellRect) -> (u16, u16) {
+    let rows = u32::from(area.rows);
+    (
+        cell_at(rect.y, surface.height(), rows),
+        cell_at(rect.y + rect.height, surface.height(), rows),
+    )
 }
 
 /// The smallest tile side in pixels we refit to, so a whole frame stays a
@@ -553,6 +621,23 @@ mod tests {
     }
 
     #[test]
+    fn tiles_of_a_scaled_surface_cover_whole_cells_edge_to_edge() {
+        let surface = plain_surface(50, 37);
+        let area = CellRect::full(16, 9);
+        let tiles = super::cell_tiles(&surface, area, 8);
+        let covered: u32 = tiles.iter().map(|tile| tile.width * tile.height).sum();
+        assert_eq!(covered, 50 * 37, "the tiles cover the surface once");
+        let mut next_column = 0;
+        for tile in tiles.iter().filter(|tile| tile.y == 0) {
+            let (left, right) = super::column_span(*tile, &surface, area);
+            assert_eq!(left, next_column, "each tile starts where the last ended");
+            assert!(right > left, "every tile covers a cell");
+            next_column = right;
+        }
+        assert_eq!(next_column, 16, "the last tile ends at the last column");
+    }
+
+    #[test]
     fn a_small_change_retransmits_only_its_tile() {
         let mut presenter = PatchedKitty::new(90, cell());
         let mut surface = plain_surface(64, 64);
@@ -582,7 +667,7 @@ mod tests {
             "the placement crops the apron away"
         );
         assert!(
-            text.contains("a=p,i=41062") && text.contains("c=2,r=2"),
+            text.contains("a=p,i=82032") && text.contains("c=2,r=2"),
             "the tile covers its 2x2 cells at the surface's scale"
         );
     }
@@ -764,8 +849,8 @@ mod tests {
                 .expect("writing to a Vec cannot fail");
         }
         let text = String::from_utf8_lossy(&wire);
-        let placed = text.find("a=p,i=41063").expect("the second generation");
-        let freed = text.find("d=I,i=41062").expect("the first is freed");
+        let placed = text.find("a=p,i=82033").expect("the second generation");
+        let freed = text.find("d=I,i=82032").expect("the first is freed");
         assert!(placed < freed, "the old tile stays until the new one shows");
     }
 

@@ -231,39 +231,46 @@ pub fn diff_tiles(prev: &Surface, next: &Surface, tile: u32) -> Vec<PixelRect> {
             height: next.height,
         }];
     }
-    let mut damaged = Vec::new();
+    let mut tiles = Vec::new();
     let mut y = 0;
     while y < next.height {
         let mut x = 0;
         while x < next.width {
-            if tile_differs(prev, next, x, y, tile) {
-                damaged.push(PixelRect {
-                    x,
-                    y,
-                    width: tile.min(next.width - x),
-                    height: tile.min(next.height - y),
-                });
-            }
+            tiles.push(PixelRect {
+                x,
+                y,
+                width: tile.min(next.width - x),
+                height: tile.min(next.height - y),
+            });
             x += tile;
         }
         y += tile;
     }
-    damaged
+    diff_rects(prev, next, tiles)
 }
 
-fn tile_differs(prev: &Surface, next: &Surface, x: u32, y: u32, tile: u32) -> bool {
-    let mut row = y;
-    while row < y.saturating_add(tile).min(next.height) {
-        let mut column = x;
-        while column < x.saturating_add(tile).min(next.width) {
-            if prev.get(PixelPos::new(column, row)) != next.get(PixelPos::new(column, row)) {
-                return true;
-            }
-            column += 1;
-        }
-        row += 1;
-    }
-    false
+/// The rectangles of `rects` whose content differs between two surfaces
+/// of the same size, in the order given.
+#[must_use]
+pub fn diff_rects(
+    prev: &Surface,
+    next: &Surface,
+    rects: impl IntoIterator<Item = PixelRect>,
+) -> Vec<PixelRect> {
+    rects
+        .into_iter()
+        .filter(|rect| rect_differs(prev, next, *rect))
+        .collect()
+}
+
+fn rect_differs(prev: &Surface, next: &Surface, rect: PixelRect) -> bool {
+    let bottom = rect.y.saturating_add(rect.height).min(next.height);
+    let right = rect.x.saturating_add(rect.width).min(next.width);
+    (rect.y..bottom).any(|row| {
+        (rect.x..right).any(|column| {
+            prev.get(PixelPos::new(column, row)) != next.get(PixelPos::new(column, row))
+        })
+    })
 }
 
 #[cfg(test)]
