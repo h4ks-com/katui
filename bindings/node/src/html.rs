@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use katui_content::{HtmlDefaults, HtmlHost};
+use katui_bindings::html::{Format, Look, document, link};
+use katui_content::HtmlHost;
 use katui_scene::surface::Surface;
-use katui_widgets::Theme as UiTheme;
 use napi::bindgen_prelude::{JsObjectValue, Object, Unknown};
 use napi::{Env, JsValue, Result, ValueType};
 
@@ -40,10 +40,7 @@ impl Host {
 
 impl HtmlHost<Msg> for Host {
     fn link(&self, href: &str) -> Msg {
-        match &self.on_link {
-            Some(make) => Msg::Link(Arc::clone(make), href.to_owned()),
-            None => Msg::Href(href.to_owned()),
-        }
+        link(self.on_link.as_ref(), href)
     }
 
     fn image(&self, src: &str) -> Option<Arc<Surface>> {
@@ -73,17 +70,16 @@ fn color_option(options: Option<&Object<'_>>, name: &str) -> Result<Option<katui
 }
 
 /// The current theme's body size and colors, with any of them replaced.
-fn defaults(options: Option<&Object<'_>>) -> Result<HtmlDefaults> {
-    let theme = UiTheme::current();
+fn look(options: Option<&Object<'_>>) -> Result<Look> {
     let font_size: Option<f64> = match options {
         Some(options) => options.get_named_property("fontSize")?,
         None => None,
     };
-    Ok(HtmlDefaults {
-        font_size: font_size.map_or_else(|| theme.body(), |size| size as f32),
-        color: color_option(options, "color")?.unwrap_or(theme.text),
-        link: color_option(options, "link")?.unwrap_or(theme.accent),
-        tint: color_option(options, "tint")?.unwrap_or(theme.muted),
+    Ok(Look {
+        font_size: font_size.map(|size| size as f32),
+        color: color_option(options, "color")?,
+        link: color_option(options, "link")?,
+        tint: color_option(options, "tint")?,
     })
 }
 
@@ -100,20 +96,25 @@ fn host(env: Env, options: Option<&Object<'_>>) -> Result<Host> {
     })
 }
 
+fn element(
+    env: Env,
+    format: Format,
+    source: &str,
+    options: Option<&Object<'_>>,
+) -> Result<Element> {
+    let look = look(options)?;
+    let host = host(env, options)?;
+    Ok(Element::new(document(format, source, look, &host)))
+}
+
 /// An HTML document as an element.
 #[napi(ts_args_type = "source: string, options?: DocumentOptions")]
 pub fn html(env: Env, source: String, options: Option<Object<'_>>) -> Result<Element> {
-    let defaults = defaults(options.as_ref())?;
-    let host = host(env, options.as_ref())?;
-    Ok(Element::new(katui_content::html(&source, &defaults, &host)))
+    element(env, Format::Html, &source, options.as_ref())
 }
 
 /// A Markdown document as an element.
 #[napi(ts_args_type = "source: string, options?: DocumentOptions")]
 pub fn markdown(env: Env, source: String, options: Option<Object<'_>>) -> Result<Element> {
-    let defaults = defaults(options.as_ref())?;
-    let host = host(env, options.as_ref())?;
-    Ok(Element::new(katui_content::markdown_view(
-        &source, &defaults, &host,
-    )))
+    element(env, Format::Markdown, &source, options.as_ref())
 }

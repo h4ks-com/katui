@@ -4,16 +4,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use katui_bindings::message::{point, scroll};
+use katui_bindings::picture;
 use katui_draw::TextSpan;
 use katui_scene::surface::Surface;
-use katui_ui::{Element as UiElement, Scroll};
+use katui_ui::Element as UiElement;
 use napi::bindgen_prelude::{Buffer, JsObjectValue, This, Uint8Array, Unknown};
 use napi::{Env, JsValue, Result, ValueType};
 
 use crate::convert::{
-    ColorArg, LengthArg, align, color, instance, invalid, is_nothing, length, paint,
+    ColorArg, LengthArg, align, color, instance, is_nothing, length, paint, raise,
 };
-use crate::message::{Msg, hold};
+use crate::message::{Msg, hold, value};
 use crate::reclaim::{Tree, watch};
 
 pub(crate) type Node = UiElement<Msg>;
@@ -84,10 +86,6 @@ pub(crate) fn node(env: &Env, value: Unknown<'_>) -> Result<Node> {
     Ok(element.inner())
 }
 
-fn message(env: &Env, value: Unknown<'_>) -> Result<Msg> {
-    hold(env, value).map(Msg::Value)
-}
-
 #[napi]
 impl Element {
     #[napi(factory, ts_args_type = "children: Child[]")]
@@ -148,7 +146,7 @@ impl Element {
         this: This<'a>,
         message: Unknown<'_>,
     ) -> Result<This<'a>> {
-        let message = self::message(&env, message)?;
+        let message = value(&env, message)?;
         self.map(|e| e.on_click(message));
         Ok(this)
     }
@@ -161,7 +159,7 @@ impl Element {
         span: u32,
         message: Unknown<'_>,
     ) -> Result<This<'a>> {
-        let message = self::message(&env, message)?;
+        let message = value(&env, message)?;
         self.map(|e| e.on_span_click(span as usize, message));
         Ok(this)
     }
@@ -173,7 +171,7 @@ impl Element {
         this: This<'a>,
         message: Unknown<'_>,
     ) -> Result<This<'a>> {
-        let message = self::message(&env, message)?;
+        let message = value(&env, message)?;
         self.map(|e| e.on_hover(message));
         Ok(this)
     }
@@ -185,7 +183,7 @@ impl Element {
         this: This<'a>,
         message: Unknown<'_>,
     ) -> Result<This<'a>> {
-        let message = self::message(&env, message)?;
+        let message = value(&env, message)?;
         self.map(|e| e.on_leave(message));
         Ok(this)
     }
@@ -199,7 +197,7 @@ impl Element {
         message: Unknown<'_>,
     ) -> Result<This<'a>> {
         let make = hold(&env, message)?;
-        self.map(|e| e.on_scroll(move |scroll: Scroll| Msg::Scroll(Arc::clone(&make), scroll)));
+        self.map(|e| e.on_scroll(scroll(make)));
         Ok(this)
     }
 
@@ -213,9 +211,7 @@ impl Element {
         message: Unknown<'_>,
     ) -> Result<This<'a>> {
         let make = hold(&env, message)?;
-        self.map(|e| {
-            e.on_press(move |x, y| Msg::Point(Arc::clone(&make), f64::from(x), f64::from(y)))
-        });
+        self.map(|e| e.on_press(point(make)));
         Ok(this)
     }
 
@@ -227,9 +223,7 @@ impl Element {
         message: Unknown<'_>,
     ) -> Result<This<'a>> {
         let make = hold(&env, message)?;
-        self.map(|e| {
-            e.on_grip_press(move |x, y| Msg::Point(Arc::clone(&make), f64::from(x), f64::from(y)))
-        });
+        self.map(|e| e.on_grip_press(point(make)));
         Ok(this)
     }
 
@@ -382,10 +376,8 @@ impl Image {
         }
     }
 
-    fn from_pixels(width: u32, height: u32, pixels: Vec<u8>) -> Result<Self> {
-        Surface::from_rgba(width, height, pixels)
-            .map(Self::new)
-            .ok_or_else(|| invalid(format!("give exactly {width} x {height} x 4 bytes of RGBA")))
+    fn made(surface: std::result::Result<Surface, katui_bindings::Error>) -> Result<Self> {
+        surface.map(Self::new).map_err(raise)
     }
 }
 
@@ -394,25 +386,19 @@ impl Image {
     /// An image from straight-alpha RGBA bytes, four per pixel.
     #[napi(factory)]
     pub fn from_rgba(width: u32, height: u32, pixels: Uint8Array) -> Result<Self> {
-        Self::from_pixels(width, height, pixels.to_vec())
+        Self::made(picture::from_rgba(width, height, pixels.to_vec()))
     }
 
     /// An image decoded from PNG, JPEG, GIF or WebP bytes.
     #[napi(factory)]
     pub fn decode(data: Uint8Array) -> Result<Self> {
-        let decoded = image::load_from_memory(&data)
-            .map_err(|error| invalid(format!("decode the image: {error}")))?
-            .into_rgba8();
-        let (width, height) = decoded.dimensions();
-        Self::from_pixels(width, height, decoded.into_raw())
+        Self::made(picture::decode(&data))
     }
 
     /// An image read from a PNG, JPEG, GIF or WebP file.
     #[napi(factory)]
     pub fn open(path: String) -> Result<Self> {
-        let data = std::fs::read(&path)
-            .map_err(|error| napi::Error::from_reason(format!("read {path}: {error}")))?;
-        Self::decode(data.into())
+        Self::made(picture::open(path.as_ref()))
     }
 
     #[napi(getter)]
@@ -434,24 +420,13 @@ impl Image {
     /// The color at `x`, `y` as `[r, g, b, a]`, or `null` outside the image.
     #[napi(ts_return_type = "[number, number, number, number] | null")]
     pub fn pixel(&self, x: u32, y: u32) -> Option<Vec<u8>> {
-        if x >= self.surface.width() {
-            return None;
-        }
-        let at = (y as usize * self.surface.width() as usize + x as usize) * 4;
-        self.surface.pixels().get(at..at + 4).map(<[u8]>::to_vec)
+        picture::pixel(&self.surface, x, y).map(Vec::from)
     }
 
     /// Write the image to `path` as a PNG.
     #[napi]
     pub fn save(&self, path: String) -> Result<()> {
-        image::save_buffer(
-            &path,
-            self.surface.pixels(),
-            self.surface.width(),
-            self.surface.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .map_err(|error| napi::Error::from_reason(format!("write {path}: {error}")))
+        picture::save(&self.surface, path.as_ref()).map_err(raise)
     }
 }
 

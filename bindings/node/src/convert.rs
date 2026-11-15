@@ -1,6 +1,7 @@
 //! JavaScript values to katui ones: colors, lengths, alignments and
 //! elements, plus the errors a wrong one raises.
 
+use katui_bindings::{ErrorKind, names};
 use katui_draw::{Paint, Rgba};
 use katui_ui::{Align, Length};
 use napi::bindgen_prelude::{
@@ -8,6 +9,14 @@ use napi::bindgen_prelude::{
     Unknown,
 };
 use napi::{Env, Error, Result, Status, ValueType};
+
+/// `error` as the JavaScript error of its kind.
+pub(crate) fn raise(error: katui_bindings::Error) -> Error {
+    match error.kind() {
+        ErrorKind::Argument => invalid(error.to_string()),
+        ErrorKind::Io | ErrorKind::Runtime => Error::from_reason(error.to_string()),
+    }
+}
 
 /// A color: `"#rrggbb"`, `"#rrggbbaa"`, `[r, g, b]` or `[r, g, b, a]`.
 pub(crate) type ColorArg = Either<String, Vec<u8>>;
@@ -33,7 +42,7 @@ pub(crate) fn color(value: ColorArg) -> Result<Rgba> {
 }
 
 fn hex(text: &str) -> Result<Rgba> {
-    Rgba::from_hex(text).ok_or_else(|| invalid(format!("write the color {text:?} as \"#rrggbb\"")))
+    names::hex(text).map_err(raise)
 }
 
 pub(crate) fn paint(value: ColorArg) -> Result<Paint> {
@@ -55,25 +64,12 @@ pub(crate) fn paint_array(paint: &Paint) -> Option<Vec<u8>> {
 pub(crate) fn length(value: LengthArg) -> Result<Length> {
     match value {
         Either::A(pixels) => Ok(Length::Px(pixels as f32)),
-        Either::B(name) => match name.as_str() {
-            "fill" => Ok(Length::Fill),
-            "content" => Ok(Length::Content),
-            other => Err(invalid(format!(
-                "give a length in pixels, \"fill\" or \"content\", not {other:?}"
-            ))),
-        },
+        Either::B(name) => names::length(&name).map_err(raise),
     }
 }
 
 pub(crate) fn align(value: &str) -> Result<Align> {
-    match value {
-        "start" => Ok(Align::Start),
-        "center" => Ok(Align::Center),
-        "end" => Ok(Align::End),
-        other => Err(invalid(format!(
-            "align to \"start\", \"center\" or \"end\", not {other:?}"
-        ))),
-    }
+    names::align(value).map_err(raise)
 }
 
 /// Whether `value` is `null` or `undefined`.

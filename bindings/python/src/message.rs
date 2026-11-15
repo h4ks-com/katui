@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-use katui_ui::Scroll;
 use pyo3::prelude::*;
 
 use crate::state::PyScroll;
@@ -11,36 +10,27 @@ use crate::state::PyScroll;
 /// A Python object we can clone without holding the interpreter.
 pub(crate) type Obj = Arc<Py<PyAny>>;
 
+pub(crate) type Msg = katui_bindings::Msg<Obj>;
+
 pub(crate) fn obj(value: &Bound<'_, PyAny>) -> Obj {
     Arc::new(value.clone().unbind())
 }
 
-#[derive(Clone)]
-pub(crate) enum Msg {
-    Value(Obj),
-    Index(Obj, usize),
-    Id(Obj, u64),
-    Float(Obj, f32),
-    Point(Obj, f32, f32),
-    Scroll(Obj, Scroll),
-    Link(Obj, String),
-    /// Python raised while we drew, so the app has to end.
-    Stop,
+pub(crate) fn value(message: &Bound<'_, PyAny>) -> Msg {
+    Msg::Value(obj(message))
 }
 
-impl Msg {
-    /// The message as the app's `update` receives it.
-    pub(crate) fn resolve(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
-        let called = match self {
-            Self::Value(value) => return Ok(Some(value.clone_ref(py))),
-            Self::Stop => return Ok(None),
-            Self::Index(make, index) => make.call1(py, (*index,)),
-            Self::Id(make, id) => make.call1(py, (*id,)),
-            Self::Float(make, value) => make.call1(py, (*value,)),
-            Self::Point(make, x, y) => make.call1(py, (*x, *y)),
-            Self::Scroll(make, scroll) => make.call1(py, (PyScroll::from(*scroll),)),
-            Self::Link(make, href) => make.call1(py, (href.as_str(),)),
-        };
-        called.map(Some)
+/// The message as the app's `update` receives it.
+pub(crate) fn resolve(py: Python<'_>, message: &Msg) -> PyResult<Py<PyAny>> {
+    match message {
+        Msg::Value(value) => Ok(value.clone_ref(py)),
+        Msg::Href(href) => Ok(href.into_pyobject(py)?.into_any().unbind()),
+        Msg::Stop => Ok(py.None()),
+        Msg::Index(make, index) => make.call1(py, (*index,)),
+        Msg::Id(make, id) => make.call1(py, (*id,)),
+        Msg::Float(make, value) => make.call1(py, (*value,)),
+        Msg::Point(make, x, y) => make.call1(py, (*x, *y)),
+        Msg::Scroll(make, scroll) => make.call1(py, (PyScroll::from(*scroll),)),
+        Msg::Link(make, href) => make.call1(py, (href.as_str(),)),
     }
 }

@@ -3,15 +3,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use katui_bindings::{message, picture};
 use katui_draw::TextSpan;
 use katui_scene::surface::Surface;
-use katui_ui::{Element, Scroll};
-use pyo3::exceptions::{PyOSError, PyValueError};
+use katui_ui::Element;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyTuple};
 
-use crate::convert::{align, color, length, paint};
-use crate::message::{Msg, obj};
+use crate::convert::{align, color, length, paint, raise};
+use crate::message::{Msg, obj, value};
 
 pub(crate) type Node = Element<Msg>;
 
@@ -121,7 +121,7 @@ impl PyElement {
     }
 
     fn on_click<'py>(slf: PyRefMut<'py, Self>, message: &Bound<'py, PyAny>) -> PyRefMut<'py, Self> {
-        let message = Msg::Value(obj(message));
+        let message = value(message);
         Self::map(slf, |e| e.on_click(message))
     }
 
@@ -130,17 +130,17 @@ impl PyElement {
         span: usize,
         message: &Bound<'py, PyAny>,
     ) -> PyRefMut<'py, Self> {
-        let message = Msg::Value(obj(message));
+        let message = value(message);
         Self::map(slf, |e| e.on_span_click(span, message))
     }
 
     fn on_hover<'py>(slf: PyRefMut<'py, Self>, message: &Bound<'py, PyAny>) -> PyRefMut<'py, Self> {
-        let message = Msg::Value(obj(message));
+        let message = value(message);
         Self::map(slf, |e| e.on_hover(message))
     }
 
     fn on_leave<'py>(slf: PyRefMut<'py, Self>, message: &Bound<'py, PyAny>) -> PyRefMut<'py, Self> {
-        let message = Msg::Value(obj(message));
+        let message = value(message);
         Self::map(slf, |e| e.on_leave(message))
     }
 
@@ -150,18 +150,14 @@ impl PyElement {
         message: &Bound<'py, PyAny>,
     ) -> PyRefMut<'py, Self> {
         let make = obj(message);
-        Self::map(slf, |e| {
-            e.on_scroll(move |scroll: Scroll| Msg::Scroll(Arc::clone(&make), scroll))
-        })
+        Self::map(slf, |e| e.on_scroll(message::scroll(make)))
     }
 
     /// `message(x, y)` makes the message for the press and each move until
     /// the release, `x` and `y` as fractions of the element's box.
     fn on_press<'py>(slf: PyRefMut<'py, Self>, message: &Bound<'py, PyAny>) -> PyRefMut<'py, Self> {
         let make = obj(message);
-        Self::map(slf, |e| {
-            e.on_press(move |x, y| Msg::Point(Arc::clone(&make), x, y))
-        })
+        Self::map(slf, |e| e.on_press(message::point(make)))
     }
 
     fn on_grip_press<'py>(
@@ -169,9 +165,7 @@ impl PyElement {
         message: &Bound<'py, PyAny>,
     ) -> PyRefMut<'py, Self> {
         let make = obj(message);
-        Self::map(slf, |e| {
-            e.on_grip_press(move |x, y| Msg::Point(Arc::clone(&make), x, y))
-        })
+        Self::map(slf, |e| e.on_grip_press(message::point(make)))
     }
 
     fn grip(slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
@@ -307,29 +301,21 @@ impl PyImage {
     /// An image from straight-alpha RGBA bytes, four per pixel.
     #[staticmethod]
     fn from_rgba(width: u32, height: u32, pixels: Vec<u8>) -> PyResult<Self> {
-        Surface::from_rgba(width, height, pixels)
+        picture::from_rgba(width, height, pixels)
             .map(Self::new)
-            .ok_or_else(|| {
-                PyValueError::new_err(format!("give exactly {width} x {height} x 4 bytes of RGBA"))
-            })
+            .map_err(raise)
     }
 
     /// An image decoded from PNG, JPEG, GIF or WebP bytes.
     #[staticmethod]
     fn decode(data: &[u8]) -> PyResult<Self> {
-        let decoded = image::load_from_memory(data)
-            .map_err(|error| PyValueError::new_err(format!("decode the image: {error}")))?
-            .into_rgba8();
-        let (width, height) = decoded.dimensions();
-        Self::from_rgba(width, height, decoded.into_raw())
+        picture::decode(data).map(Self::new).map_err(raise)
     }
 
     /// An image read from a PNG, JPEG, GIF or WebP file.
     #[staticmethod]
     fn open(path: PathBuf) -> PyResult<Self> {
-        let data = std::fs::read(&path)
-            .map_err(|error| PyOSError::new_err(format!("read {}: {error}", path.display())))?;
-        Self::decode(&data)
+        picture::open(&path).map(Self::new).map_err(raise)
     }
 
     #[getter]
@@ -349,26 +335,13 @@ impl PyImage {
 
     /// The color at `x`, `y` as `(r, g, b, a)`.
     fn pixel(&self, x: u32, y: u32) -> Option<(u8, u8, u8, u8)> {
-        let at = (y as usize * self.surface.width() as usize + x as usize) * 4;
-        let pixel = self.surface.pixels().get(at..at + 4)?;
-        match pixel {
-            [red, green, blue, alpha] if x < self.surface.width() => {
-                Some((*red, *green, *blue, *alpha))
-            }
-            _ => None,
-        }
+        picture::pixel(&self.surface, x, y)
+            .map(|[red, green, blue, alpha]| (red, green, blue, alpha))
     }
 
     /// Write the image to `path` as a PNG.
     fn save(&self, path: PathBuf) -> PyResult<()> {
-        image::save_buffer(
-            &path,
-            self.surface.pixels(),
-            self.surface.width(),
-            self.surface.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .map_err(|error| PyOSError::new_err(format!("write {}: {error}", path.display())))
+        picture::save(&self.surface, &path).map_err(raise)
     }
 }
 

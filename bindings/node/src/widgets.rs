@@ -3,35 +3,24 @@
 //! parameter named like `choose` takes a function that makes the message
 //! from what was picked.
 
-use std::cell::RefCell;
-use std::sync::Arc;
-use std::time::Duration;
-
+use katui_bindings::message::{float, id, index, scroll};
+use katui_bindings::names;
+use katui_bindings::state::duration;
+use katui_bindings::widgets::{hints, list, strs};
 use katui_widgets as w;
 use napi::bindgen_prelude::{Function, Unknown};
 use napi::{Env, Result};
 
-use crate::convert::invalid;
+use crate::convert::raise;
 use crate::element::{Element, Node, children, node};
-use crate::message::{Msg, hold};
+use crate::event::Event;
+use crate::message::{hold, value};
 use crate::state::{
-    Event, ListState, ScrollState, TextArea, TextField, Toasts, TreeNode, TreeState, roots,
+    ListState, ScrollState, TextArea, TextField, Toasts, TreeNode, TreeState, roots,
 };
 
 fn element(inner: Node) -> Element {
     Element::new(inner)
-}
-
-fn value(env: &Env, message: Unknown<'_>) -> Result<Msg> {
-    hold(env, message).map(Msg::Value)
-}
-
-fn strs(items: &[String]) -> Vec<&str> {
-    items.iter().map(String::as_str).collect()
-}
-
-fn index(index: usize) -> u32 {
-    u32::try_from(index).unwrap_or(u32::MAX)
 }
 
 #[napi]
@@ -103,23 +92,11 @@ pub fn list_view(
     state: &ListState,
     row: Function<'_, napi::bindgen_prelude::FnArgs<(u32, bool)>, Unknown<'_>>,
 ) -> Result<Element> {
-    let failed = RefCell::new(None);
-    let built = w::list(&state.inner, |at, selected| {
-        match row
-            .call((index(at), selected).into())
-            .and_then(|made| node(&env, made))
-        {
-            Ok(made) => made,
-            Err(error) => {
-                failed.borrow_mut().get_or_insert(error);
-                katui_ui::Element::spacer()
-            }
-        }
-    });
-    match failed.into_inner() {
-        Some(error) => Err(error),
-        None => Ok(element(built)),
-    }
+    list(&state.inner, |at, selected| {
+        let made = row.call((crate::message::index(at), selected).into())?;
+        node(&env, made)
+    })
+    .map(element)
 }
 
 #[napi]
@@ -140,9 +117,11 @@ pub fn progress(fraction: f64) -> Element {
 #[napi(ts_args_type = "titles: string[], selected: number, choose: (index: number) => unknown")]
 pub fn tabs(env: Env, titles: Vec<String>, selected: u32, choose: Unknown<'_>) -> Result<Element> {
     let make = hold(&env, choose)?;
-    Ok(element(w::tabs(&strs(&titles), selected as usize, |at| {
-        Msg::Index(Arc::clone(&make), index(at))
-    })))
+    Ok(element(w::tabs(
+        &strs(&titles),
+        selected as usize,
+        index(make),
+    )))
 }
 
 #[napi(ts_args_type = "options: string[], selected: number, choose: (index: number) => unknown")]
@@ -156,7 +135,7 @@ pub fn radio(
     Ok(element(w::radio(
         &strs(&options),
         selected as usize,
-        |at| Msg::Index(Arc::clone(&make), index(at)),
+        index(make),
     )))
 }
 
@@ -164,9 +143,7 @@ pub fn radio(
 #[napi(ts_args_type = "value: number, change: (value: number) => unknown")]
 pub fn slider(env: Env, value: f64, change: Unknown<'_>) -> Result<Element> {
     let make = hold(&env, change)?;
-    Ok(element(w::slider(value as f32, move |at| {
-        Msg::Float(Arc::clone(&make), f64::from(at))
-    })))
+    Ok(element(w::slider(value as f32, float(make))))
 }
 
 #[napi]
@@ -177,7 +154,7 @@ pub fn nudge(value: f64, event: &Event, step: f64) -> Option<f64> {
 /// Three dots with one lit, moving every quarter second of `elapsed` seconds.
 #[napi]
 pub fn spinner(elapsed: f64) -> Element {
-    element(w::spinner(Duration::from_secs_f64(elapsed.max(0.0))))
+    element(w::spinner(duration(elapsed)))
 }
 
 #[napi]
@@ -187,11 +164,7 @@ pub fn toasts(toasts: &Toasts) -> Element {
 
 #[napi]
 pub fn key_hints(hints: Vec<(String, String)>) -> Element {
-    let hints: Vec<(&str, &str)> = hints
-        .iter()
-        .map(|(key, action)| (key.as_str(), action.as_str()))
-        .collect();
-    element(w::key_hints(&hints))
+    element(w::key_hints(&self::hints(&hints)))
 }
 
 #[napi(ts_args_type = "title: string, body: Element, actions: Child[], dismiss: unknown")]
@@ -227,7 +200,7 @@ pub fn select(
         selected as usize,
         open,
         value(&env, toggle)?,
-        |at| Msg::Index(Arc::clone(&make), index(at)),
+        index(make),
     )))
 }
 
@@ -248,7 +221,7 @@ pub fn menu(
         &strs(&items),
         open,
         value(&env, toggle)?,
-        |at| Msg::Index(Arc::clone(&make), index(at)),
+        index(make),
     )))
 }
 
@@ -285,18 +258,8 @@ pub fn scroll_view(
     Ok(element(w::scroll_view(
         &state.inner,
         children(&env, content)?,
-        move |scroll| Msg::Scroll(Arc::clone(&make), scroll),
+        scroll(make),
     )))
-}
-
-fn orientation(name: &str) -> Result<w::Orientation> {
-    match name {
-        "horizontal" => Ok(w::Orientation::Horizontal),
-        "vertical" => Ok(w::Orientation::Vertical),
-        other => Err(invalid(format!(
-            "split \"horizontal\" or \"vertical\", not {other:?}"
-        ))),
-    }
 }
 
 /// Two panes and a divider; `resize(fraction)` makes the message as it moves.
@@ -312,13 +275,14 @@ pub fn split(
     orientation: Option<String>,
 ) -> Result<Element> {
     let make = hold(&env, resize)?;
-    let orientation = self::orientation(orientation.as_deref().unwrap_or("horizontal"))?;
+    let orientation =
+        names::orientation(orientation.as_deref().unwrap_or("horizontal")).map_err(raise)?;
     Ok(element(w::split(
         node(&env, first)?,
         node(&env, second)?,
         fraction as f32,
         orientation,
-        move |at| Msg::Float(Arc::clone(&make), f64::from(at)),
+        float(make),
     )))
 }
 
@@ -365,9 +329,12 @@ pub fn table(
         })
         .collect();
     let make = hold(&env, pick)?;
-    Ok(element(w::table(&columns, &rows, &state.inner, |at| {
-        Msg::Index(Arc::clone(&make), index(at))
-    })))
+    Ok(element(w::table(
+        &columns,
+        &rows,
+        &state.inner,
+        index(make),
+    )))
 }
 
 #[napi(
@@ -380,11 +347,10 @@ pub fn tree(
     toggle: Unknown<'_>,
     select: Unknown<'_>,
 ) -> Result<Element> {
-    let (toggle, select) = (hold(&env, toggle)?, hold(&env, select)?);
     Ok(element(w::tree(
         &self::roots(&roots),
         &state.inner,
-        |id| Msg::Id(Arc::clone(&toggle), id as u32),
-        |id| Msg::Id(Arc::clone(&select), id as u32),
+        id(hold(&env, toggle)?),
+        id(hold(&env, select)?),
     )))
 }

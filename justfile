@@ -76,7 +76,7 @@ docs:
 
 # the public api reference, as github pages publishes it
 api-docs:
-    cargo doc --workspace --exclude katui-python --exclude katui-node --no-deps --all-features
+    cargo doc --workspace --exclude katui-python --exclude katui-node --exclude katui-bindings --no-deps --all-features
     echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
 
 # every gate, before every commit

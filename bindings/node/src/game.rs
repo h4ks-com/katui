@@ -1,22 +1,21 @@
 //! Arcade games: a JavaScript game drawn into a `Light` buffer at a fixed step.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::time::Instant;
-
+use katui_bindings::failure::catching;
+use katui_bindings::game::{Frame, GameHost, held};
+use katui_bindings::names;
 use katui_game::{
-    Blend, Camera as UiCamera, Game as UiGame, HeldKeys, Light as UiLight, P2, Rgb, Rng as UiRng,
-    Spark as UiSpark, Sparks as UiSparks, V3 as UiV3, v3,
+    Blend, Camera as UiCamera, HeldKeys, Light as UiLight, P2, Rgb, Rng as UiRng, Spark as UiSpark,
+    Sparks as UiSparks, V3 as UiV3, v3,
 };
 use katui_proto::input::Key;
 use napi::bindgen_prelude::{ClassInstance, Either, FnArgs, Function, JavaScriptClassExt, Object};
-use napi::{Env, JsValue, Result};
+use napi::{Env, Error, JsValue, Result};
 
-use crate::app::{Failure, call_optional, keep, object, take, terminal_error};
-use crate::convert::invalid;
+use crate::app::{call_optional, object};
+use crate::convert::raise;
 use crate::element::Image;
+use crate::event::key;
 use crate::message::{Obj, fetch, hold};
-use crate::state::key;
 
 type Color = (f64, f64, f64);
 type Point = (f64, f64);
@@ -34,12 +33,7 @@ fn p2((x, y): Point) -> P2 {
 }
 
 fn blend(name: Option<&str>, default: Blend) -> Result<Blend> {
-    match name {
-        None => Ok(default),
-        Some("over") => Ok(Blend::Over),
-        Some("add") => Ok(Blend::Add),
-        Some(other) => Err(invalid(format!("blend \"over\" or \"add\", not {other:?}"))),
-    }
+    name.map_or(Ok(default), |name| names::blend(name).map_err(raise))
 }
 
 /// The light that shows as the sRGB color `red`, `green`, `blue`.
@@ -112,21 +106,15 @@ impl Light {
     /// Fill every pixel with `shade(x, y)`, for backdrops baked once.
     #[napi(ts_args_type = "shade: (x: number, y: number) => LightColor")]
     pub fn paint(&mut self, shade: Function<'_, FnArgs<(u32, u32)>, Color>) -> Result<()> {
-        let failed = RefCell::new(None);
-        self.inner.paint(|x, y| {
-            let at = (
-                u32::try_from(x).unwrap_or(u32::MAX),
-                u32::try_from(y).unwrap_or(u32::MAX),
-            );
-            match shade.call(at.into()) {
-                Ok(color) => rgb(color),
-                Err(error) => {
-                    failed.borrow_mut().get_or_insert(error);
-                    [0.0; 3]
-                }
-            }
-        });
-        failed.into_inner().map_or(Ok(()), Err)
+        catching(|catch| {
+            self.inner.paint(|x, y| {
+                let at = (
+                    u32::try_from(x).unwrap_or(u32::MAX),
+                    u32::try_from(y).unwrap_or(u32::MAX),
+                );
+                catch.or(shade.call(at.into()).map(rgb), || [0.0; 3])
+            });
+        })
     }
 
     #[napi]
@@ -528,16 +516,11 @@ impl Sparks {
     /// screen, or `null` to skip it.
     #[napi(ts_args_type = "light: Light, place: (at: V3) => Point | null | undefined")]
     pub fn draw(&self, light: &mut Light, place: Function<'_, V3, Option<Point>>) -> Result<()> {
-        let failed = RefCell::new(None);
-        self.inner
-            .draw(&mut light.inner, |at| match place.call(at.into()) {
-                Ok(spot) => spot.map(p2),
-                Err(error) => {
-                    failed.borrow_mut().get_or_insert(error);
-                    None
-                }
+        catching(|catch| {
+            self.inner.draw(&mut light.inner, |at| {
+                catch.or(place.call(at.into()), || None).map(p2)
             });
-        failed.into_inner().map_or(Ok(()), Err)
+        })
     }
 
     #[napi(getter)]
@@ -551,17 +534,16 @@ impl Sparks {
     }
 }
 
-/// A JavaScript game, as the arcade loop sees it.
-struct GameBridge {
+/// A JavaScript game, as the shared bridge calls it.
+struct NodeGame {
     env: Env,
     game: Obj,
     light: Obj,
     keys: Obj,
-    failure: Failure,
 }
 
-impl GameBridge {
-    fn new(env: Env, game: Object<'_>, failure: Failure) -> Result<Self> {
+impl NodeGame {
+    fn new(env: Env, game: Object<'_>) -> Result<Self> {
         let light = Light::new(1, 1, None).into_instance(&env)?;
         let keys = Keys {
             inner: HeldKeys::default(),
@@ -572,66 +554,63 @@ impl GameBridge {
             game: hold(&env, game.to_unknown())?,
             light: hold(&env, light.as_object(&env).to_unknown())?,
             keys: hold(&env, keys.as_object(&env).to_unknown())?,
-            failure,
         })
     }
 
-    fn scoped<T>(&self, body: impl FnOnce(&Env, Object<'_>) -> Result<T>) -> Option<T> {
+    fn scoped<T>(&self, body: impl FnOnce(&Env, Object<'_>) -> Result<T>) -> Result<T> {
         let env = self.env;
-        let outcome = env.run_in_scope(|| body(&env, object(&env, &self.game)?));
-        outcome.map_err(|error| keep(&self.failure, error)).ok()
+        env.run_in_scope(|| body(&env, object(&env, &self.game)?))
     }
 
-    fn call_with_light(&self, name: &str, light: &mut UiLight) {
+    /// Lend `light` to the game's `name` through our own `Light`.
+    fn call_with_light(&self, name: &str, light: &mut UiLight) -> Result<()> {
         self.scoped(|env, game| {
             let mut shared: ClassInstance<'_, Light> = fetch(env, &self.light)?;
             std::mem::swap(&mut shared.inner, light);
             let called = call_optional(&game, name, shared.as_object(env));
             std::mem::swap(&mut shared.inner, light);
             called.map(drop)
-        });
-    }
-
-    fn failed(&self) -> bool {
-        self.failure.borrow().is_some()
+        })
     }
 }
 
-impl UiGame for GameBridge {
-    fn press(&mut self, key: Key) {
-        self.scoped(|_, game| call_optional(&game, "press", key.name()).map(drop));
+impl GameHost for NodeGame {
+    type Error = Error;
+
+    fn refused(error: katui_bindings::Error) -> Error {
+        raise(error)
     }
 
-    fn repeat(&mut self, key: Key) {
-        self.scoped(|_, game| call_optional(&game, "repeat", key.name()).map(drop));
+    fn press(&mut self, key: Key) -> Result<()> {
+        self.scoped(|_, game| call_optional(&game, "press", key.name()).map(drop))
     }
 
-    fn resize(&mut self, light: &UiLight) {
-        let mut copy = light.clone();
-        self.call_with_light("resize", &mut copy);
+    fn repeat(&mut self, key: Key) -> Result<()> {
+        self.scoped(|_, game| call_optional(&game, "repeat", key.name()).map(drop))
     }
 
-    fn step(&mut self, keys: &HeldKeys, dt: f32) {
+    fn resize(&mut self, light: &mut UiLight) -> Result<()> {
+        self.call_with_light("resize", light)
+    }
+
+    fn step(&mut self, keys: &HeldKeys, dt: f32) -> Result<()> {
         self.scoped(|env, game| {
             let mut shared: ClassInstance<'_, Keys> = fetch(env, &self.keys)?;
             shared.inner.clone_from(keys);
             let args = FnArgs::from((shared.as_object(env), f64::from(dt)));
             call_optional(&game, "step", args).map(drop)
-        });
+        })
     }
 
-    fn render(&mut self, light: &mut UiLight) {
-        self.call_with_light("render", light);
+    fn render(&mut self, light: &mut UiLight) -> Result<()> {
+        self.call_with_light("render", light)
     }
 
-    fn finished(&self) -> bool {
-        self.failed()
-            || self
-                .scoped(|_, game| match call_optional(&game, "finished", ())? {
-                    Some(over) => over.coerce_to_bool(),
-                    None => Ok(false),
-                })
-                .unwrap_or(true)
+    fn finished(&self) -> Result<bool> {
+        self.scoped(|_, game| match call_optional(&game, "finished", ())? {
+            Some(over) => over.coerce_to_bool(),
+            None => Ok(false),
+        })
     }
 }
 
@@ -640,13 +619,7 @@ impl UiGame for GameBridge {
 /// caller after the terminal is restored.
 #[napi(ts_args_type = "game: GameLike")]
 pub fn play(env: Env, game: Object<'_>) -> Result<()> {
-    let failure = Failure::default();
-    let bridge = GameBridge::new(env, game, Rc::clone(&failure))?;
-    let finished = katui_game::play(bridge);
-    if let Some(error) = take(&failure) {
-        return Err(error);
-    }
-    finished.map_err(|error| terminal_error(&error))
+    katui_bindings::game::play(NodeGame::new(env, game)?)
 }
 
 /// How `frame` draws a game.
@@ -665,26 +638,12 @@ pub struct FrameOptions {
 #[napi(ts_args_type = "game: GameLike, options?: FrameOptions")]
 pub fn frame(env: Env, game: Object<'_>, options: Option<FrameOptions>) -> Result<Image> {
     let options = options.unwrap_or_default();
-    let failure = Failure::default();
-    let mut bridge = GameBridge::new(env, game, Rc::clone(&failure))?;
-    let mut light = UiLight::new(
-        options.width.unwrap_or(320),
-        options.height.unwrap_or(180),
-        1.0,
-    );
-    let mut keys = HeldKeys::default();
-    let now = Instant::now();
-    for name in options.held.unwrap_or_default() {
-        keys.press(key(&name)?, now);
-    }
-    let dt = options.dt.map_or(1.0 / 60.0, |dt| dt as f32);
-    bridge.resize(&light);
-    for _ in 0..options.steps.unwrap_or(1) {
-        bridge.step(&keys, dt);
-    }
-    bridge.render(&mut light);
-    if let Some(error) = take(&failure) {
-        return Err(error);
-    }
-    Ok(Image::new(light.to_surface()))
+    let frame = Frame {
+        width: options.width.unwrap_or(320),
+        height: options.height.unwrap_or(180),
+        steps: options.steps.unwrap_or(1),
+        held: held(&options.held.unwrap_or_default()).map_err(raise)?,
+        dt: options.dt.map_or(1.0 / 60.0, |dt| dt as f32),
+    };
+    katui_bindings::game::frame(NodeGame::new(env, game)?, &frame).map(Image::new)
 }
