@@ -21,7 +21,7 @@ prebuilt native module, so you need no Rust to use it. The package comes
 with its TypeScript types.
 
 ```ts
-import { App, label, panel, primaryButton, run } from 'katui'
+import { App, label, panel, primaryButton, run } from '@matheusfillipe/katui'
 
 class Counter extends App {
   count = 0
@@ -45,7 +45,7 @@ katui runs on Linux and macOS with Node.js 22.18 or newer. Install it into
 your project:
 
 ```sh
-npm install katui
+npm install @matheusfillipe/katui
 ```
 
 Save the example above as `counter.ts` and run it with `node counter.ts`.
@@ -74,7 +74,7 @@ in colored block characters at a lower resolution.
 ## A game
 
 ```ts
-import { Game, type Keys, type Light, play, srgb } from 'katui'
+import { Game, type Keys, type Light, play, srgb } from '@matheusfillipe/katui'
 
 class Comet extends Game {
   x = 40

@@ -16,7 +16,7 @@ import {
   ScrollState,
   Theme,
   text,
-} from 'katui'
+} from '@matheusfillipe/katui'
 
 export const SHOWCASE = fileURLToPath(
   new URL('../../../crates/katui-app/examples/pages/showcase.html', import.meta.url),

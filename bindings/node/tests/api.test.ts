@@ -34,7 +34,7 @@ import {
   TreeState,
   tabs,
   V3,
-} from 'katui'
+} from '@matheusfillipe/katui'
 
 class Recorder extends App {
   messages: unknown[] = []

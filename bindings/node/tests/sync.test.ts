@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import * as katui from 'katui'
+import * as katui from '@matheusfillipe/katui'
 import { BINDINGS, REPO } from './paths.ts'
 
 const CRATES = join(REPO, 'crates')

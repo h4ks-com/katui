@@ -13,7 +13,7 @@ import {
   scaled,
   srgb,
   V3,
-} from 'katui'
+} from '@matheusfillipe/katui'
 
 const SPEED = 90
 const TAIL = srgb(255, 140, 60)

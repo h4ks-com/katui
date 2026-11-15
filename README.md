@@ -50,7 +50,7 @@ For Node.js 22.18 or newer, install the package from npm. The
 [Node.js guide](docs/node.md) starts from there:
 
 ```
-npm install katui
+npm install @matheusfillipe/katui
 ```
 
 For Go, add the module; the [Go guide](docs/go.md) starts there. For C,

@@ -43,7 +43,7 @@ import {
   tooltip,
   tree,
   type Waker,
-} from 'katui'
+} from '@matheusfillipe/katui'
 
 const THEMES = ['Dusk', 'Forest', 'Paper']
 const SIZES = ['Small', 'Medium', 'Large']

@@ -19,7 +19,7 @@ import {
   tabs,
   textField,
   title,
-} from 'katui'
+} from '@matheusfillipe/katui'
 
 const FILTERS = ['All', 'Active', 'Done']
 const VISIBLE = 10

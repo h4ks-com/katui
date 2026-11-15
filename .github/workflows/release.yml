@@ -323,7 +323,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm
-      url: https://www.npmjs.com/package/katui
+      url: https://www.npmjs.com/package/@matheusfillipe/katui
     permissions:
       contents: read
       id-token: write
