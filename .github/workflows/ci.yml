@@ -85,6 +85,64 @@ jobs:
           path: target/python-shots
           retention-days: 14
 
+  # the C library against the rust crates in this commit: a fresh header,
+  # the examples, the C tests, the docs and the sync check against the rust api
+  c:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cbindgen
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: just c-check
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: c-shots-${{ matrix.os }}
+          path: target/c-shots
+          retention-days: 14
+
+  # the go module over the C library: vet, gofmt, the examples, the docs and
+  # the sync check against the rust api
+  go:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: bindings/go/go.mod
+          cache: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: just go-check
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: go-shots-${{ matrix.os }}
+          path: target/go-shots
+          retention-days: 14
+
   # every crate packages and compiles the way crates.io will see it
   crates:
     runs-on: ubuntu-latest

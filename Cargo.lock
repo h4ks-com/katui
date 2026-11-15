@@ -508,6 +508,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "katui-c"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "katui-app",
+ "katui-content",
+ "katui-draw",
+ "katui-game",
+ "katui-proto",
+ "katui-scene",
+ "katui-ui",
+ "katui-widgets",
+ "thiserror",
+]
+
+[[package]]
 name = "katui-content"
 version = "0.1.0"
 dependencies = [

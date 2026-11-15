@@ -1,0 +1,4 @@
+# `just go-lib` copies the header and the static library here; release
+# commits add them for `go get`
+/include/
+/lib/

@@ -60,7 +60,7 @@ api-docs:
     echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
 
 # every gate, before every commit
-ci: fmt-check clippy test docs typos py-check
+ci: fmt-check clippy test docs typos py-check c-check go-check
 
 # the python package, built in release into bindings/python/.venv
 [working-directory('bindings/python')]
@@ -126,6 +126,106 @@ py-test-sdist dist:
 [working-directory('bindings/python')]
 py-demo name *args: py-build
     uv run --no-sync python examples/{{name}}.py {{args}}
+
+c_flags := "-std=c11 -Wall -Wextra -Werror -pedantic -Ibindings/c/include"
+c_libs := if os() == "macos" { "-framework CoreFoundation -liconv -lm" } else { "-lm -ldl -lpthread -lrt -lutil" }
+
+# the C library, static and shared, in release into target/release
+c-build:
+    cargo build --release -p katui-c
+
+# write bindings/c/include/katui.h from bindings/c/src
+c-header:
+    cbindgen --quiet --config bindings/c/cbindgen.toml --crate katui-c --output bindings/c/include/katui.h bindings/c
+
+# the C library's gates: a fresh header, the examples, the C tests, the docs and the sync check
+c-check: c-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cbindgen --quiet --verify --config bindings/c/cbindgen.toml --crate katui-c --output bindings/c/include/katui.h bindings/c
+    mkdir -p target/c-tests target/c-shots
+    for source in bindings/c/examples/*.c; do
+      cc {{c_flags}} "$source" target/release/libkatui.a {{c_libs}} -o "target/c-tests/$(basename "$source" .c)"
+    done
+    version="-DKATUI_EXPECTED_VERSION=\"$(just version)\""
+    for source in bindings/c/tests/test_*.c; do
+      test="target/c-tests/$(basename "$source" .c)"
+      cc {{c_flags}} "$version" "$source" target/release/libkatui.a {{c_libs}} -o "$test"
+      "$test"
+    done
+    cc {{c_flags}} bindings/c/tests/test_counter.c -Ltarget/release -lkatui -Wl,-rpath,"$PWD/target/release" -o target/c-tests/test_shared
+    target/c-tests/test_shared
+    python3 bindings/c/tests/docs.py target/release/libkatui.a {{c_libs}}
+    python3 bindings/c/tests/sync.py
+
+# a C example, like `just c-demo todo`
+c-demo name: c-build
+    mkdir -p target/c-tests
+    cc {{c_flags}} bindings/c/examples/{{name}}.c target/release/libkatui.a {{c_libs}} -o target/c-tests/{{name}}
+    target/c-tests/{{name}}
+
+# the C archive for a rust target, like aarch64-apple-darwin, into target/dist
+c-dist target:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build --release -p katui-c --target {{target}}
+    target={{target}}
+    arch=${target%%-*}
+    case $target in
+      *-linux-*) os=linux shared=libkatui.so ;;
+      *-apple-*) os=macos shared=libkatui.dylib ;;
+    esac
+    out=target/dist/katui-c
+    rm -rf "$out" && mkdir -p "$out/include" "$out/lib"
+    cp bindings/c/include/katui.h "$out/include/"
+    cp target/{{target}}/release/libkatui.a "target/{{target}}/release/$shared" "$out/lib/"
+    cp bindings/c/README.md LICENSE-MIT LICENSE-APACHE "$out/"
+    tar -czf "target/dist/katui-c-$os-$arch.tar.gz" -C target/dist katui-c
+    rm -rf "$out"
+
+# copy the header and this machine's static library into the go module
+go-lib: c-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    lib="bindings/go/lib/$(go env GOOS)_$(go env GOARCH)"
+    mkdir -p bindings/go/include "$lib"
+    cp bindings/c/include/katui.h bindings/go/include/
+    cp target/release/libkatui.a "$lib/"
+
+# the go module's gates: vet, gofmt, and the tests, which run the examples, the docs and the sync check
+[working-directory('bindings/go')]
+go-check: go-lib
+    go vet ./...
+    test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+    go test ./...
+
+# a go example, like `just go-demo todo`
+[working-directory('bindings/go')]
+go-demo name: go-lib
+    go run ./examples/{{name}}
+
+# commit the static libraries of the C archives in `dist` into the go module, on a commit tagged bindings/go/v<version>
+go-release dist:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for archive in {{quote(dist)}}/katui-c-*.tar.gz; do
+      platform=$(basename "$archive" .tar.gz)
+      platform=${platform#katui-c-}
+      os=${platform%-*} arch=${platform#*-}
+      [ "$os" = macos ] && os=darwin
+      case $arch in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
+      mkdir -p "bindings/go/lib/${os}_$arch"
+      tar -xzf "$archive" -C "bindings/go/lib/${os}_$arch" --strip-components=2 katui-c/lib/libkatui.a
+    done
+    mkdir -p bindings/go/include
+    cp bindings/c/include/katui.h bindings/go/include/
+    git add --force bindings/go/include bindings/go/lib
+    git commit --quiet -m "chore: ship the go module libraries for v$(just version)"
+    git tag "bindings/go/v$(just version)"
+
+# push the tag `go-release` made, which publishes the go module
+go-publish:
+    git push origin "bindings/go/v$(just version)"
 
 # print what katui detects in this terminal
 info:

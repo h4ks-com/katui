@@ -1,0 +1,32 @@
+[package]
+name = "katui-c"
+description = "A C ABI for katui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "katui"
+crate-type = ["cdylib", "staticlib"]
+test = false
+doctest = false
+# the katui crate already documents under this name
+doc = false
+
+[dependencies]
+image.workspace = true
+katui-app.workspace = true
+katui-content = { workspace = true, features = ["html"] }
+katui-draw.workspace = true
+katui-game.workspace = true
+katui-proto.workspace = true
+katui-scene.workspace = true
+katui-ui.workspace = true
+katui-widgets.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
