@@ -227,8 +227,7 @@ impl<A: UiApp> App for Runner<A> {
             u32::from(size.columns) * u32::from(self.cell.width),
             u32::from(rows) * u32::from(self.cell.height),
         );
-        let app = &self.app;
-        let root = app.theme(self.cell).scope(|_| app.view());
+        let root = self.app.theme(self.cell).scope(|_| self.app.view());
         let output = self.ui.render(&root, pixels, self.cell);
         match &mut self.screen {
             Screen::Kitty(screen) => {

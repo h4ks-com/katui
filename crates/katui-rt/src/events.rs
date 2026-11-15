@@ -52,14 +52,14 @@ impl<M> Waker<M> {
     }
 }
 
-impl<M: Clone + Send + 'static> Waker<M> {
-    /// Send `message` every `interval` from a thread of its own, until the
-    /// event loop ends. Use it to drive clocks, spinners and expiring
-    /// toasts.
-    pub fn every(&self, interval: Duration, message: M) {
+impl<M: Send + 'static> Waker<M> {
+    /// Send the message `message` makes every `interval` from a thread of
+    /// its own, until the event loop ends. Use it to drive clocks, spinners
+    /// and expiring toasts.
+    pub fn every(&self, interval: Duration, message: impl Fn() -> M + Send + 'static) {
         let waker = self.clone();
         std::thread::spawn(move || {
-            while waker.send(message.clone()) {
+            while waker.send(message()) {
                 std::thread::sleep(interval);
             }
         });

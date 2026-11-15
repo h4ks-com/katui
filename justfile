@@ -6,12 +6,15 @@ check: clippy
 
 fmt:
     cargo fmt --all
+    cargo fmt --manifest-path demos/obby-chat/Cargo.toml
 
 fmt-check:
     cargo fmt --all -- --check
+    cargo fmt --manifest-path demos/obby-chat/Cargo.toml -- --check
 
 clippy:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --manifest-path demos/obby-chat/Cargo.toml --all-targets -- -D warnings
 
 # apply clippy's and rustfmt's fixes
 fix:
@@ -21,6 +24,7 @@ fix:
 test:
     cargo test --workspace --all-features --all-targets
     cargo test --workspace --all-features --doc
+    cargo test --manifest-path demos/obby-chat/Cargo.toml
 
 # licenses, advisories and sources, from deny.toml
 deny:

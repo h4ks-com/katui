@@ -118,7 +118,8 @@ impl Tour {
         self.toasts.push(text, Instant::now());
     }
 
-    fn menu_bar(&self, theme: &Theme) -> Element<Message> {
+    fn menu_bar(&self) -> Element<Message> {
+        let theme = Theme::current();
         Element::row([
             menu(
                 "File",
@@ -140,7 +141,8 @@ impl Tour {
         .background(theme.raised.clone())
     }
 
-    fn controls(&self, theme: &Theme) -> Element<Message> {
+    fn controls(&self) -> Element<Message> {
+        let theme = Theme::current();
         let busy: Element<Message> = if self.busy {
             Element::row([
                 spinner(self.started.elapsed()),
@@ -197,7 +199,8 @@ impl Tour {
         .width(Length::Fill)
     }
 
-    fn file_tree(theme: &Theme, state: &TreeState) -> Element<Message> {
+    fn file_tree(state: &TreeState) -> Element<Message> {
+        let theme = Theme::current();
         let roots = sample_files();
         Element::column([tree(&roots, state, Message::Open, Message::Pick)])
             .padding(theme.cell_height() * 0.5)
@@ -258,25 +261,25 @@ impl UiApp for Tour {
     }
 
     fn start(&mut self, waker: Waker<Message>) {
-        waker.every(TICK, Message::Tick);
+        waker.every(TICK, || Message::Tick);
     }
 
     fn view(&self) -> Element<Message> {
         let theme = Theme::current();
         let page = scroll_view(
             &self.page,
-            [self.controls(&theme), self.data()],
+            [self.controls(), self.data()],
             Message::Scrolled,
         )
         .padding(theme.cell_height());
         let body = split(
-            Tour::file_tree(&theme, &self.files),
+            Tour::file_tree(&self.files),
             page,
             self.sidebar,
             Orientation::Horizontal,
             Message::Resize,
         );
-        let mut root = vec![self.menu_bar(&theme), body, toasts(&self.toasts)];
+        let mut root = vec![self.menu_bar(), body, toasts(&self.toasts)];
         if self.popup == Popup::Quit {
             root.push(dialog(
                 "Quit the tour?",

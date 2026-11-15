@@ -1,4 +1,4 @@
-//! Widget views: functions from state and theme to elements.
+//! Widget views: functions from state to elements.
 
 use std::sync::Arc;
 

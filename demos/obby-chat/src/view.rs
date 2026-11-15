@@ -2,7 +2,7 @@
 
 use katui_draw::Paint;
 use katui_ui::{Align, Element, Length};
-use katui_widgets::{Theme, label, primary_button, text_field};
+use katui_widgets::{Theme, hint, label, primary_button, text_field, title};
 use obby_client::{Channel, ChatMessage, MessageKind};
 
 use crate::chat::{Action, Chat, Command, Field, Preview, Server};
@@ -125,7 +125,7 @@ fn channel_list(chat: &Chat, theme: &Theme) -> Node {
     let server = &chat.servers[index];
     let mut rows = vec![
         label(server.endpoint.host.clone()).color(ASH).weight(700),
-        label(server.status()).font_size(theme.small()).color(PUMICE),
+        hint(server.status()).color(PUMICE),
     ];
     for channel in server.channels() {
         rows.push(channel_row(chat, index, channel, theme));
@@ -147,14 +147,15 @@ fn channel_row(chat: &Chat, server: usize, channel: &Channel, theme: &Theme) -> 
         PUMICE
     };
     let mut parts = vec![
-        label(channel.name.clone()).color(name_color)
+        label(channel.name.clone())
+            .color(name_color)
             .weight(if channel.unread > 0 { 700 } else { 400 })
             .grow(1.0),
     ];
     if !selected && channel.mentions > 0 {
-        parts.push(label(channel.mentions.to_string()).font_size(theme.small()).color(SULFUR).weight(700));
+        parts.push(hint(channel.mentions.to_string()).color(SULFUR).weight(700));
     } else if !selected && channel.unread > 0 {
-        parts.push(label(channel.unread.to_string()).font_size(theme.small()).color(PUMICE));
+        parts.push(hint(channel.unread.to_string()).color(PUMICE));
     }
     let row = Element::row(parts)
         .gap(theme.cell_width())
@@ -209,7 +210,7 @@ fn command_menu(matches: &[&Command], selected: usize, theme: &Theme) -> Node {
     let rows = matches.iter().enumerate().map(|(index, command)| {
         let row = Element::row([
             label(format!("/{}", command.name)).color(ASH).weight(700),
-            label(command.usage).font_size(theme.small()).color(PUMICE),
+            hint(command.usage).color(PUMICE),
         ])
         .gap(theme.cell_width())
         .align(Align::Center)
@@ -240,8 +241,8 @@ fn shows_in_log(message: &ChatMessage) -> bool {
 fn header(channel: &Channel, theme: &Theme) -> Node {
     let topic = channel.topic.clone().unwrap_or_default();
     Element::column([
-        label(channel.name.clone()).font_size(theme.title()).color(ASH).weight(800),
-        label(topic).font_size(theme.small()).color(PUMICE),
+        title(channel.name.clone()).color(ASH),
+        hint(topic).color(PUMICE),
     ])
     .padding_xy(theme.cell_width() * 2.0, theme.cell_height() * 0.5)
     .width(Length::Fill)
@@ -352,10 +353,12 @@ fn message_heading(
     theme: &Theme,
 ) -> Node {
     let mut parts = vec![
-        label(message.sender.clone()).color(nick_color(&message.sender))
-        .weight(700),
-        label(relative_age(chat.now_ms(), message.key.time_ms)).font_size(theme.small()).color(PUMICE)
-        .grow(1.0),
+        label(message.sender.clone())
+            .color(nick_color(&message.sender))
+            .weight(700),
+        hint(relative_age(chat.now_ms(), message.key.time_ms))
+            .color(PUMICE)
+            .grow(1.0),
     ];
     if hovered && let Some(msgid) = &message.msgid {
         parts.push(hover_actions(channel, msgid, &message.sender, theme));
@@ -370,7 +373,8 @@ fn hover_actions(channel: &Channel, msgid: &str, sender: &str, theme: &Theme) ->
     let mut actions: Vec<Node> = REACTIONS
         .iter()
         .map(|emoji| {
-            label(*emoji).color(ASH)
+            label(*emoji)
+                .color(ASH)
                 .padding_xy(theme.cell_width() * 0.4, 0.0)
                 .on_click(Action::React(
                     channel.name.clone(),
@@ -380,7 +384,8 @@ fn hover_actions(channel: &Channel, msgid: &str, sender: &str, theme: &Theme) ->
         })
         .collect();
     actions.push(
-        label("Reply").font_size(theme.small()).color(ASH)
+        hint("Reply")
+            .color(ASH)
             .padding_xy(theme.cell_width(), 0.0)
             .on_click(Action::Reply(msgid.to_owned(), sender.to_owned())),
     );
@@ -399,12 +404,12 @@ fn reply_quote(channel: &Channel, message: &ChatMessage, theme: &Theme) -> Optio
         .background(Paint::Solid(accent));
     let quote = Element::column([
         Element::row([
-            label("\u{21A9}").font_size(theme.small()).color(accent),
-            label(original.sender.clone()).font_size(theme.small()).color(accent).weight(700),
+            hint("\u{21A9}").color(accent),
+            hint(original.sender.clone()).color(accent).weight(700),
         ])
         .gap(theme.cell_width() * 0.5)
         .align(Align::Center),
-        label(excerpt).font_size(theme.small()).color(PUMICE),
+        hint(excerpt).color(PUMICE),
     ])
     .gap(theme.cell_height() * 0.1)
     .padding_xy(theme.cell_width(), theme.cell_height() * 0.25);
@@ -429,13 +434,13 @@ fn preview_card(chat: &Chat, message: &ChatMessage, theme: &Theme) -> Option<Nod
                     Length::Px(surface.height() as f32),
                 )
                 .radius(theme.cell_height() * 0.5);
-            let title = link.map(|preview| label(preview.title.clone()).font_size(theme.small()).color(PUMICE));
+            let title = link.map(|preview| hint(preview.title.clone()).color(PUMICE));
             Some(
                 Element::column(std::iter::once(picture).chain(title))
                     .gap(theme.cell_height() * 0.2),
             )
         }
-        Preview::Loading => Some(label("Loading image").font_size(theme.small()).color(PUMICE)),
+        Preview::Loading => Some(hint("Loading image").color(PUMICE)),
         Preview::Failed => None,
     }
 }
@@ -453,19 +458,20 @@ fn reaction_chips(
     let me = server.client.nick();
     let chips = message.reactions.iter().map(|(emoji, who)| {
         let mine = who.iter().any(|nick| nick.eq_ignore_ascii_case(me));
-        label(format!("{emoji} {}", who.len())).font_size(theme.small()).color(if mine { SULFUR } else { ASH })
-        .padding_xy(theme.cell_width() * 0.7, theme.cell_height() * 0.05)
-        .radius(theme.cell_height() * 0.5)
-        .background(if mine {
-            theme::raised()
-        } else {
-            theme::lifted()
-        })
-        .on_click(Action::React(
-            channel.name.clone(),
-            msgid.clone(),
-            emoji.clone(),
-        ))
+        hint(format!("{emoji} {}", who.len()))
+            .color(if mine { SULFUR } else { ASH })
+            .padding_xy(theme.cell_width() * 0.7, theme.cell_height() * 0.05)
+            .radius(theme.cell_height() * 0.5)
+            .background(if mine {
+                theme::raised()
+            } else {
+                theme::lifted()
+            })
+            .on_click(Action::React(
+                channel.name.clone(),
+                msgid.clone(),
+                emoji.clone(),
+            ))
     });
     Some(Element::row(chips).gap(theme.cell_width() * 0.5))
 }
@@ -482,19 +488,26 @@ fn composer(chat: &Chat, channel: &Channel, theme: &Theme) -> Node {
             )
         });
     if let Some(line) = typing {
-        lines.push(label(line).font_size(theme.small()).color(PUMICE));
+        lines.push(hint(line).color(PUMICE));
     }
     if let Some((_, nick)) = &chat.replying_to {
         lines.push(
             Element::row([
-                label(format!("Replying to {nick}")).font_size(theme.small()).color(nick_color(nick))
-                .grow(1.0),
-                label("Cancel reply").font_size(theme.small()).color(PUMICE).on_click(Action::CancelReply),
+                hint(format!("Replying to {nick}"))
+                    .color(nick_color(nick))
+                    .grow(1.0),
+                hint("Cancel reply")
+                    .color(PUMICE)
+                    .on_click(Action::CancelReply),
             ])
             .align(Align::Center),
         );
     }
-    lines.push(text_field(&chat.draft, &format!("Message {}", channel.name), !chat.form.visible));
+    lines.push(text_field(
+        &chat.draft,
+        &format!("Message {}", channel.name),
+        !chat.form.visible,
+    ));
     Element::column(lines)
         .gap(theme.cell_height() * 0.25)
         .padding_xy(theme.cell_width() * 2.0, theme.cell_height() * 0.5)
@@ -514,7 +527,7 @@ fn typing_line(channel: &Channel, me: &str) -> Option<String> {
 }
 
 fn members(server: &Server, channel: &Channel, theme: &Theme) -> Node {
-    let mut rows = vec![label(format!("{} here", channel.members.len())).font_size(theme.small()).color(PUMICE)];
+    let mut rows = vec![hint(format!("{} here", channel.members.len())).color(PUMICE)];
     rows.extend(
         server
             .member_names(channel)
@@ -522,7 +535,7 @@ fn members(server: &Server, channel: &Channel, theme: &Theme) -> Node {
             .take(80)
             .map(|(prefix, nick)| {
                 Element::row([
-                    label(prefix).font_size(theme.small()).color(SULFUR),
+                    hint(prefix).color(SULFUR),
                     label(nick.clone()).color(nick_color(&nick)),
                 ])
                 .gap(theme.cell_width() * 0.3)
@@ -544,10 +557,10 @@ fn connecting(chat: &Chat, theme: &Theme) -> Node {
     else {
         return Element::spacer();
     };
-    let heading = label(server.status()).font_size(theme.title()).color(ASH).weight(800);
+    let heading = title(server.status()).color(ASH);
     let mut lines = vec![heading];
     if server.is_connecting() {
-        lines.push(spinner(chat.spinner_step()));
+        lines.push(spinner(chat.spinner_step(), theme));
         lines.push(label("Some servers take up to 20 seconds to let you in.").color(PUMICE));
     }
     Element::column([Element::column(lines)
@@ -578,7 +591,7 @@ fn welcome(chat: &Chat, theme: &Theme) -> Node {
 fn form(chat: &Chat, theme: &Theme) -> Node {
     let field = |kind: Field, name: &str| {
         Element::column([
-            label(name.to_owned()).font_size(theme.small()).color(PUMICE),
+            hint(name.to_owned()).color(PUMICE),
             text_field(chat.form.field(kind), "", chat.form.focus.is(kind)),
         ])
         .gap(theme.cell_height() * 0.2)
@@ -587,7 +600,7 @@ fn form(chat: &Chat, theme: &Theme) -> Node {
     };
     let connect = primary_button("Connect", Action::Connect).width(Length::Fill);
     Element::column([
-        label("Add a server").font_size(theme.title()).color(ASH).weight(800),
+        title("Add a server").color(ASH),
         field(Field::Host, "Host and port"),
         field(Field::Nick, "Nick"),
         field(Field::Channel, "Channel"),

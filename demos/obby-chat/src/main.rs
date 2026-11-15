@@ -256,8 +256,7 @@ mod tests {
     /// moment first.
     fn composed_with(chat: &Chat, effect: Option<Kind>, steps: u64) -> Surface {
         let metrics = crate::theme::widgets(CELL);
-        let engine = TextEngine::new(bundled_fonts())
-            .expect("fonts parse");
+        let engine = TextEngine::new(bundled_fonts()).expect("fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let (width, height) = (9 * 170, 19 * 46);
         let output = ui.render(&view(chat, &metrics), (width, height), CELL);
@@ -397,8 +396,7 @@ mod tests {
         let mut chat = Chat::new("acme".to_owned());
         chat.add_scripted_server("acme", &lines, "#bots");
         let metrics = crate::theme::widgets(CELL);
-        let engine = TextEngine::new(bundled_fonts())
-            .expect("the bundled fonts parse");
+        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let rows = 46;
         let output = ui.render(&view(&chat, &metrics), (9 * 170, 19 * rows), CELL);
@@ -415,8 +413,7 @@ mod tests {
         let mut chat = Chat::new("acme".to_owned());
         chat.add_scripted_server("acme", SCRIPT, "#bots");
         let metrics = crate::theme::widgets(CELL);
-        let engine = TextEngine::new(bundled_fonts())
-            .expect("the bundled fonts parse");
+        let engine = TextEngine::new(bundled_fonts()).expect("the bundled fonts parse");
         let mut ui: Ui<Action> = Ui::new(engine, UiOptions::default());
         let screen = (9 * 170, 19 * 46);
         let before = ui.render(&view(&chat, &metrics), screen, CELL);

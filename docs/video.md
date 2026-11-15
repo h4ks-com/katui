@@ -30,7 +30,7 @@ impl UiApp for Player {
     type Message = ();
 
     fn start(&mut self, waker: Waker<()>) {
-        waker.every(Duration::from_secs(1) / FRAMES_PER_SECOND, ());
+        waker.every(Duration::from_secs(1) / FRAMES_PER_SECOND, || ());
     }
 
     fn view(&self) -> Element<()> {

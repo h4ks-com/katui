@@ -254,8 +254,8 @@ fn start(&mut self, waker: Waker<Message>) {
 }
 ```
 
-For a clock, a spinner or toasts that expire, `waker.every(interval,
-message)` sends a message on a steady beat until the app quits.
+For a clock, a spinner or toasts that expire, `waker.every(interval, ||
+Message::Tick)` sends a message on a steady beat until the app quits.
 
 ## Next
 

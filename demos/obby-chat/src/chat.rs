@@ -291,8 +291,8 @@ impl Chat {
     }
 
     pub fn attach(&mut self, waker: Waker<Message>) {
-        waker.every(TICK, Message::Tick);
-        waker.every(DRIFT_INTERVAL, Message::Drift);
+        waker.every(TICK, || Message::Tick);
+        waker.every(DRIFT_INTERVAL, || Message::Drift);
         self.waker = Some(waker);
         if self.connect_when_attached {
             self.connect();
