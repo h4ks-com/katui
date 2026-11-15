@@ -24,7 +24,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-go@v6
         with:
-          go-version-file: bindings/go/go.mod
+          go-version: stable
           cache: false
       - uses: actions/setup-node@v7
         with:
@@ -33,6 +33,7 @@ jobs:
         with:
           tool: just,typos,cbindgen
       - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get install --yes --no-install-recommends clang-tidy
       - run: just release-check "$TAG"
         env:
           TAG: ${{ github.ref_name }}

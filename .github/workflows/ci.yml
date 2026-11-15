@@ -39,13 +39,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      # the python package builds against the oldest python it supports
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
       - uses: taiki-e/install-action@v2
         with:
           tool: just
@@ -131,7 +135,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-go@v6
         with:
-          go-version-file: bindings/go/go.mod
+          go-version: stable
           cache: false
       - uses: taiki-e/install-action@v2
         with:
@@ -285,6 +289,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}

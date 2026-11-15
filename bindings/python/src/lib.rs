@@ -35,7 +35,8 @@ macro_rules! add_functions {
 }
 
 #[pymodule]
-fn _katui(module: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pyo3(name = "_katui")]
+fn katui_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     add_classes!(
         module,

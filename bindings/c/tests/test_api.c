@@ -196,11 +196,9 @@ static void a_link_click_sends_its_href(void) {
 
 static KatuiElement *revealed_view(void *user) {
   (void)user;
-  char source[512] = "";
-  for (int i = 0; i < 20; i++) {
-    strcat(source, "filler\n\n");
-  }
-  strcat(source, "## The target\n\nend");
+#define FILLER "filler\n\nfiller\n\nfiller\n\nfiller\n\n"
+  static const char source[] = FILLER FILLER FILLER FILLER FILLER "## The target\n\nend";
+#undef FILLER
   KatuiElement *doc = katui_column(KATUI_LIST(katui_markdown(source, NULL)));
   doc = katui_element_reveal(katui_element_scroll(doc, 0), katui_anchor_id("#the-target"));
   return katui_element_size(katui_element_on_scroll(doc, SCROLL), katui_fill(), katui_fill());
