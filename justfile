@@ -31,6 +31,7 @@ typos:
 
 # complexity per function, into target/metrics (cargo install rust-code-analysis-cli)
 metrics:
+    mkdir -p target/metrics
     rust-code-analysis-cli -m -p crates -l rust -O json -o target/metrics -j 8
 
 # copy-paste duplication, from .jscpd.json

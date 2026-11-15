@@ -226,35 +226,15 @@ mod tests {
         let mut image = vec![None; width * height];
         let (mut color, mut x, mut band) = (0usize, 0usize, 0usize);
         let mut chars = body.chars().peekable();
-        let number = |chars: &mut std::iter::Peekable<std::str::Chars<'_>>| {
-            let mut value = 0usize;
-            while let Some(digit) = chars.peek().and_then(|c| c.to_digit(10)) {
-                value = value * 10 + digit as usize;
-                chars.next();
-            }
-            value
-        };
         while let Some(c) = chars.next() {
             match c {
                 '"' => {
-                    for _ in 0..4 {
-                        number(&mut chars);
-                        if chars.peek() == Some(&';') {
-                            chars.next();
-                        }
-                    }
+                    numbers(&mut chars, 4);
                 }
                 '#' => {
                     color = number(&mut chars);
-                    if chars.peek() == Some(&';') {
-                        chars.next();
-                        let mut fields = [0usize; 4];
-                        for field in &mut fields {
-                            *field = number(&mut chars);
-                            if chars.peek() == Some(&';') {
-                                chars.next();
-                            }
-                        }
+                    if chars.next_if_eq(&';').is_some() {
+                        let fields = numbers(&mut chars, 4);
                         palette[color] = [1, 2, 3].map(|i| (fields[i] * 255 / 100) as u8);
                     }
                 }
@@ -278,6 +258,27 @@ mod tests {
             }
         }
         image
+    }
+
+    type Chars<'a> = std::iter::Peekable<std::str::Chars<'a>>;
+
+    fn number(chars: &mut Chars<'_>) -> usize {
+        let mut value = 0usize;
+        while let Some(digit) = chars.peek().and_then(|c| c.to_digit(10)) {
+            value = value * 10 + digit as usize;
+            chars.next();
+        }
+        value
+    }
+
+    fn numbers(chars: &mut Chars<'_>, count: usize) -> Vec<usize> {
+        (0..count)
+            .map(|_| {
+                let value = number(chars);
+                chars.next_if_eq(&';');
+                value
+            })
+            .collect()
     }
 
     fn paint(

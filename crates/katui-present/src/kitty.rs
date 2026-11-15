@@ -127,6 +127,29 @@ impl Kitty {
         Ok(())
     }
 
+    fn upload(
+        &self,
+        bytes: &mut Vec<u8>,
+        image: ImageId,
+        payload: &RgbaImage<'_>,
+    ) -> io::Result<()> {
+        let band = if self.banded {
+            MULTIPLEXER_BAND_BYTES
+        } else {
+            usize::MAX
+        };
+        for frame in kitty::banded_upload(
+            self.wire(image),
+            payload.width,
+            payload.height,
+            payload.pixels,
+            band,
+        )? {
+            bytes.write_all(&frame)?;
+        }
+        Ok(())
+    }
+
     /// Write `delta` as kitty graphics frames and return the byte count,
     /// the input of the frame budget pacing. The whole exchange sits in
     /// DEC 2026 synchronized output and leaves in one write, so a
@@ -159,20 +182,7 @@ impl Kitty {
                 && !transmitted.contains(&image)
                 && let Some(payload) = images.get(image)
             {
-                let band = if self.banded {
-                    MULTIPLEXER_BAND_BYTES
-                } else {
-                    usize::MAX
-                };
-                for frame in kitty::banded_upload(
-                    self.wire(image),
-                    payload.width,
-                    payload.height,
-                    payload.pixels,
-                    band,
-                )? {
-                    bytes.write_all(&frame)?;
-                }
+                self.upload(&mut bytes, image, &payload)?;
                 transmitted.insert(image);
             }
             if self.sent.contains(&image) || transmitted.contains(&image) {
