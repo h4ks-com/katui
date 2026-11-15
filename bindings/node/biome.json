@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": {
+    "includes": [
+      "katui.js",
+      "katui.d.ts",
+      "examples/**",
+      "tests/**",
+      "*.json",
+      "!package-lock.json"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded"
+    }
+  },
+  "linter": {
+    "rules": {
+      "suspicious": {
+        "noConfusingVoidType": "off"
+      }
+    }
+  }
+}

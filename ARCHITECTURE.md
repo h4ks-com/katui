@@ -26,6 +26,8 @@ Each crate depends only on crates below it.
 ```
 katui-python    the katui Python package (bindings/python): app runner,
                 widgets, html, games and a headless Screen over PyO3
+katui-node      the katui npm package (bindings/node): the same surface over
+                napi-rs, with generated TypeScript types
 katui           every crate under one name; features: widgets, layout (default),
                 draw, ui, app, game, content, html, ratatui
 katui-ratatui   ratatui Backend adapter, image decode and fit, an event loop

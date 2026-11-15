@@ -1,0 +1,62 @@
+{
+  "name": "katui",
+  "version": "0.1.0",
+  "description": "Apps, games and documents drawn in pixels inside the terminal",
+  "keywords": [
+    "terminal",
+    "tui",
+    "kitty-graphics",
+    "sixel",
+    "game"
+  ],
+  "homepage": "https://github.com/matheusfillipe/katui",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matheusfillipe/katui.git",
+    "directory": "bindings/node"
+  },
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "main": "katui.js",
+  "types": "katui.d.ts",
+  "exports": {
+    ".": {
+      "types": "./katui.d.ts",
+      "default": "./katui.js"
+    }
+  },
+  "files": [
+    "katui.js",
+    "katui.d.ts",
+    "index.js",
+    "index.d.ts",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "napi": {
+    "binaryName": "katui",
+    "dtsHeaderFile": "index.header.d.ts",
+    "constEnum": false,
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "@napi-rs/cli": "3.10.12",
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
+  }
+}

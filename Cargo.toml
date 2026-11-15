@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "bindings/node",
     "bindings/python",
     "crates/katui",
     "crates/katui-app",

@@ -9,7 +9,8 @@ it before writing code; it is the contract this guide enforces.
 
 The crate map lives in [ARCHITECTURE.md](ARCHITECTURE.md). Outside
 `crates/`: `bindings/python/` is the `katui` Python package (PyO3, built
-with maturin); `demos/obby-chat/` is an IRC client on the full engine, GPL and
+with maturin); `bindings/node/` is the `katui` npm package (napi-rs);
+`demos/obby-chat/` is an IRC client on the full engine, GPL and
 outside the workspace; `scripts/` holds repo tooling (the commit-message
 gate); `.opencode/` holds repo commands and skills.
 
@@ -29,6 +30,10 @@ gate); `.opencode/` holds repo commands and skills.
 - `just py-check`: the Python package's gates (ruff, strict mypy,
   stubtest, pytest); part of `just ci`, needs uv. `just py-fmt` applies
   ruff's fixes, `just py-demo <name>` runs a Python example
+- `just node-check`: the Node package's gates (fresh generated types,
+  strict tsc, biome, node:test); part of `just ci`, needs Node 22.18 or
+  newer. `just node-fmt` applies biome's fixes, `just node-demo <name>`
+  runs a Node example
 - CI (`.github/workflows/ci.yml`) runs `just ci`'s checks plus deny, dupes
   and machete, which `just ci` skips, and a raw `cargo check` on the MSRV.
   Never run a raw tool in CI when a just target exists for it.
@@ -83,6 +88,10 @@ gate); `.opencode/` holds repo commands and skills.
   stub `_katui.pyi`, and the Python guide and examples it affects, or with
   an `OMITTED` entry in `tests/test_sync.py` that says why Python does
   without it. `just py-check` fails until one of them is done.
+- The same holds for the Node package: the binding in `bindings/node/src`,
+  the regenerated `index.js` and `index.d.ts`, the Node guide and examples,
+  or an `OMITTED` entry in `bindings/node/tests/sync.test.ts`.
+  `just node-check` fails until one of them is done.
 - Do not weaken a gate to make it pass. Fix the code, or change the rule in
   a commit of its own with the argument.
 

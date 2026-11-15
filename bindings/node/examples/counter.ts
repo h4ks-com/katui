@@ -1,0 +1,23 @@
+// A click counter, the smallest katui program.
+
+import { fileURLToPath } from 'node:url'
+import { App, label, panel, primaryButton, run } from 'katui'
+
+export class Counter extends App {
+  count = 0
+
+  view() {
+    return panel(
+      label(`Clicked ${this.count} times`),
+      primaryButton('Add one', () => this.add()),
+    ).align('center')
+  }
+
+  add() {
+    this.count += 1
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  run(new Counter())
+}
