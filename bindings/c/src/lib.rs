@@ -7,29 +7,17 @@
 #![allow(clippy::missing_safety_doc)]
 // other languages call these functions, where `#[must_use]` means nothing
 #![allow(clippy::must_use_candidate)]
+#![warn(clippy::undocumented_unsafe_blocks)]
 
-mod app;
-mod element;
-mod ffi;
-mod game;
-mod html;
-mod message;
+pub mod app;
+pub mod element;
+pub mod ffi;
+pub mod game;
+pub mod html;
+pub mod message;
 
-mod event;
-mod state;
-mod testing;
-mod theme;
-mod widgets;
-
-pub use app::*;
-pub use element::*;
-pub use ffi::*;
-pub use game::*;
-pub use html::*;
-pub use message::*;
-
-pub use event::*;
-pub use state::*;
-pub use testing::*;
-pub use theme::*;
-pub use widgets::*;
+pub mod event;
+pub mod state;
+pub mod testing;
+pub mod theme;
+pub mod widgets;

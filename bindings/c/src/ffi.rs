@@ -103,13 +103,8 @@ pub(crate) fn owned<T>(value: T) -> *mut T {
 /// # Safety
 /// `pointer` is NULL or points at a live `T`.
 pub(crate) unsafe fn borrow<'a, T>(pointer: *const T) -> Option<&'a T> {
+    // SAFETY: our caller promises a NULL or live pointer, and `as_ref` maps NULL to `None`.
     unsafe { pointer.as_ref() }
-}
-
-/// # Safety
-/// `pointer` is NULL or points at a live `T` nothing else uses now.
-pub(crate) unsafe fn borrow_mut<'a, T>(pointer: *mut T) -> Option<&'a mut T> {
-    unsafe { pointer.as_mut() }
 }
 
 /// # Safety
@@ -118,15 +113,8 @@ pub(crate) unsafe fn take<T>(pointer: *mut T) -> Option<T> {
     if pointer.is_null() {
         return None;
     }
+    // SAFETY: `owned` made the pointer with `Box::into_raw` and our caller gives it up.
     Some(*unsafe { Box::from_raw(pointer) })
-}
-
-/// # Safety
-/// `pointer` is NULL or came from `owned` and is not used again.
-pub(crate) unsafe fn free<T>(pointer: *mut T) {
-    if !pointer.is_null() {
-        drop(unsafe { Box::from_raw(pointer) });
-    }
 }
 
 /// # Safety
@@ -135,6 +123,7 @@ pub(crate) unsafe fn text<'a>(pointer: *const c_char) -> Cow<'a, str> {
     if pointer.is_null() {
         return Cow::Borrowed("");
     }
+    // SAFETY: our caller promises a NUL-terminated string, and we checked NULL above.
     unsafe { CStr::from_ptr(pointer) }.to_string_lossy()
 }
 
@@ -144,6 +133,7 @@ pub(crate) unsafe fn slice<'a, T>(pointer: *const T, count: usize) -> &'a [T] {
     if pointer.is_null() || count == 0 {
         return &[];
     }
+    // SAFETY: our caller promises `count` live values, and we checked NULL above.
     unsafe { std::slice::from_raw_parts(pointer, count) }
 }
 
@@ -151,9 +141,11 @@ pub(crate) unsafe fn slice<'a, T>(pointer: *const T, count: usize) -> &'a [T] {
 /// `pointer` is NULL or points at `count` strings, each NULL or
 /// NUL-terminated.
 pub(crate) unsafe fn texts(pointer: *const *const c_char, count: usize) -> Vec<String> {
+    // SAFETY: our caller promises `count` strings, each NULL or NUL-terminated.
     let pointers = unsafe { slice(pointer, count) };
     pointers
         .iter()
+        // SAFETY: our caller promises that each of these is NULL or NUL-terminated.
         .map(|&item| unsafe { text(item) }.into_owned())
         .collect()
 }
@@ -179,6 +171,7 @@ pub extern "C" fn katui_last_error() -> *const c_char {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_string_free(text: *mut c_char) {
     if !text.is_null() {
+        // SAFETY: the header allows only strings from `c_string`, which `CString::into_raw` made.
         drop(unsafe { CString::from_raw(text) });
     }
 }

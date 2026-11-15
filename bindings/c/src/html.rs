@@ -46,7 +46,9 @@ impl HtmlHost<Msg> for Host {
         let document = self.0?;
         let image = document.image?;
         let src = CString::new(src.replace('\0', "")).ok()?;
+        // SAFETY: `read` requires `image` to take `user`.
         let found = unsafe { image(document.user, src.as_ptr()) };
+        // SAFETY: the header requires `image` to return NULL or a live image.
         unsafe { borrow(found) }.map(|image| Arc::clone(&image.0))
     }
 }
@@ -64,10 +66,23 @@ fn look(document: Option<KatuiDocument>) -> Look {
     }
 }
 
-fn read(format: Format, source: &str, document: Option<KatuiDocument>) -> *mut KatuiElement {
+/// `source` read as `format` in the look and with the images `document`
+/// gives.
+///
+/// # Safety
+/// `source` is NULL or NUL-terminated, and the `image` callback of
+/// `document` takes its `user`.
+unsafe fn read(
+    format: Format,
+    source: *const c_char,
+    document: Option<&KatuiDocument>,
+) -> *mut KatuiElement {
+    let document = document.copied();
+    // SAFETY: our caller promises a NULL or NUL-terminated `source`.
+    let source = unsafe { text(source) };
     element(self::document(
         format,
-        source,
+        &source,
         look(document),
         &Host(document),
     ))
@@ -77,18 +92,18 @@ fn read(format: Format, source: &str, document: Option<KatuiDocument>) -> *mut K
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_html(
     source: *const c_char,
-    document: *const KatuiDocument,
+    document: Option<&KatuiDocument>,
 ) -> *mut KatuiElement {
-    let document = unsafe { borrow(document) }.copied();
-    read(Format::Html, &unsafe { text(source) }, document)
+    // SAFETY: the header requires a NUL-terminated `source` and an `image` that takes `user`.
+    unsafe { read(Format::Html, source, document) }
 }
 
 /// A Markdown document as an element.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_markdown(
     source: *const c_char,
-    document: *const KatuiDocument,
+    document: Option<&KatuiDocument>,
 ) -> *mut KatuiElement {
-    let document = unsafe { borrow(document) }.copied();
-    read(Format::Markdown, &unsafe { text(source) }, document)
+    // SAFETY: the header requires a NUL-terminated `source` and an `image` that takes `user`.
+    unsafe { read(Format::Markdown, source, document) }
 }
