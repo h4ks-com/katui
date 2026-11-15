@@ -6,6 +6,8 @@ use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use katui_bindings::ErrorKind;
+
 /// What a function that does something returns: `KATUI_STATUS_OK`, or the
 /// kind of failure, with `katui_last_error()` giving the message.
 pub type KatuiStatus = i32;
@@ -44,6 +46,15 @@ impl Error {
             Self::Callback(_) => KATUI_STATUS_CALLBACK,
             Self::Panic(_) => KATUI_STATUS_PANIC,
         }
+    }
+}
+
+/// `error` as the status of its kind.
+pub(crate) fn raise(error: katui_bindings::Error) -> Error {
+    match error {
+        katui_bindings::Error::EmptyScreen => Error::Invalid(error.to_string()),
+        other if other.kind() == ErrorKind::Argument => Error::Invalid(other.to_string()),
+        other => Error::Io(other.to_string()),
     }
 }
 

@@ -1,52 +1,19 @@
 //! The state widgets keep between frames: fields, lists, scrolling, trees,
-//! focus and toasts, plus the input events that change them.
+//! focus and toasts.
 
 use std::ffi::c_char;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction};
+use katui_bindings::state::{duration, next_expiry};
 use katui_widgets::{
     Edit, Focus, ListState, ScrollState, TextArea, TextField, Toasts, TreeNode, TreeState,
 };
 
+use crate::event::{KatuiEvent, event};
 use crate::ffi::{
     Error, borrow, borrow_mut, c_string, free, owned, owned_or_null, slice, take, text,
 };
 use crate::message::KatuiScroll;
-
-/// A key press, a release, a mouse event, a paste or a focus change.
-pub struct KatuiEvent(pub(crate) InputEvent);
-
-/// The key named `name`: one character, `"enter"`, `"up"`, `"f1"` and so on.
-pub(crate) fn key(name: &str) -> Result<Key, Error> {
-    Key::from_name(name).ok_or_else(|| Error::Invalid(format!("name a key, not {name:?}")))
-}
-
-/// What kind of event a `KatuiEvent` is.
-pub type KatuiEventKind = u32;
-pub const KATUI_EVENT_OTHER: KatuiEventKind = 0;
-pub const KATUI_EVENT_KEY: KatuiEventKind = 1;
-pub const KATUI_EVENT_KEY_UP: KatuiEventKind = 2;
-pub const KATUI_EVENT_MOUSE: KatuiEventKind = 3;
-pub const KATUI_EVENT_PASTE: KatuiEventKind = 4;
-pub const KATUI_EVENT_FOCUS: KatuiEventKind = 5;
-
-/// What the mouse did.
-pub type KatuiMouseAction = u32;
-pub const KATUI_MOUSE_NONE: KatuiMouseAction = 0;
-pub const KATUI_MOUSE_PRESS: KatuiMouseAction = 1;
-pub const KATUI_MOUSE_RELEASE: KatuiMouseAction = 2;
-pub const KATUI_MOUSE_DRAG: KatuiMouseAction = 3;
-pub const KATUI_MOUSE_MOVE: KatuiMouseAction = 4;
-pub const KATUI_MOUSE_WHEEL_UP: KatuiMouseAction = 5;
-pub const KATUI_MOUSE_WHEEL_DOWN: KatuiMouseAction = 6;
-
-/// Which mouse button.
-pub type KatuiButton = u32;
-pub const KATUI_BUTTON_NONE: KatuiButton = 0;
-pub const KATUI_BUTTON_LEFT: KatuiButton = 1;
-pub const KATUI_BUTTON_MIDDLE: KatuiButton = 2;
-pub const KATUI_BUTTON_RIGHT: KatuiButton = 3;
 
 /// What an event did to a text field.
 pub type KatuiEdit = u32;
@@ -61,158 +28,6 @@ fn edit(edit: Edit) -> KatuiEdit {
         Edit::Moved => KATUI_EDIT_MOVED,
         Edit::Submitted => KATUI_EDIT_SUBMITTED,
         Edit::Ignored => KATUI_EDIT_IGNORED,
-    }
-}
-
-/// # Safety
-/// `event` is NULL or a live event.
-unsafe fn event<'a>(event: *const KatuiEvent) -> Option<&'a InputEvent> {
-    unsafe { borrow(event) }.map(|event| &event.0)
-}
-
-/// A press of the key `name`, for tests and for handing keys to widgets.
-/// NULL when `name` names no key.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_press(
-    name: *const c_char,
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-) -> *mut KatuiEvent {
-    let mods = Mods { shift, alt, ctrl };
-    owned_or_null(key(&unsafe { text(name) }).map(|key| KatuiEvent(InputEvent::Key(key, mods))))
-}
-
-/// A paste of `text`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_paste(text: *const c_char) -> *mut KatuiEvent {
-    owned(KatuiEvent(InputEvent::Paste(
-        unsafe { self::text(text) }.into_owned(),
-    )))
-}
-
-/// A copy of `event` the caller owns.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_clone(event: *const KatuiEvent) -> *mut KatuiEvent {
-    unsafe { self::event(event) }.map_or(std::ptr::null_mut(), |event| {
-        owned(KatuiEvent(event.clone()))
-    })
-}
-
-/// Free an event the caller owns. NULL does nothing.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_free(event: *mut KatuiEvent) {
-    unsafe { free(event) };
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_kind(event: *const KatuiEvent) -> KatuiEventKind {
-    match unsafe { self::event(event) } {
-        Some(InputEvent::Key(..)) => KATUI_EVENT_KEY,
-        Some(InputEvent::KeyUp(..)) => KATUI_EVENT_KEY_UP,
-        Some(InputEvent::Mouse(_)) => KATUI_EVENT_MOUSE,
-        Some(InputEvent::Paste(_)) => KATUI_EVENT_PASTE,
-        Some(InputEvent::Focus(_)) => KATUI_EVENT_FOCUS,
-        _ => KATUI_EVENT_OTHER,
-    }
-}
-
-/// The key's name: one character, `"enter"`, `"up"`, `"f1"` and so on, or
-/// NULL for an event without a key. The caller frees it with
-/// `katui_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_key(event: *const KatuiEvent) -> *mut c_char {
-    match unsafe { self::event(event) } {
-        Some(InputEvent::Key(key, _) | InputEvent::KeyUp(key, _)) => c_string(&key.name()),
-        _ => std::ptr::null_mut(),
-    }
-}
-
-fn mods(event: Option<&InputEvent>) -> Mods {
-    match event {
-        Some(InputEvent::Key(_, mods) | InputEvent::KeyUp(_, mods)) => *mods,
-        Some(InputEvent::Mouse(mouse)) => mouse.mods,
-        _ => Mods::NONE,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_ctrl(event: *const KatuiEvent) -> bool {
-    mods(unsafe { self::event(event) }).ctrl
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_alt(event: *const KatuiEvent) -> bool {
-    mods(unsafe { self::event(event) }).alt
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_shift(event: *const KatuiEvent) -> bool {
-    mods(unsafe { self::event(event) }).shift
-}
-
-/// The pasted text, or NULL for another event. The caller frees it with
-/// `katui_string_free`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_text(event: *const KatuiEvent) -> *mut c_char {
-    match unsafe { self::event(event) } {
-        Some(InputEvent::Paste(text)) => c_string(text),
-        _ => std::ptr::null_mut(),
-    }
-}
-
-/// Whether the window has the focus, for a focus event.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_focused(event: *const KatuiEvent) -> bool {
-    matches!(unsafe { self::event(event) }, Some(InputEvent::Focus(true)))
-}
-
-/// Write the cell under the pointer into `column` and `row`. False for an
-/// event without a pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_position(
-    event: *const KatuiEvent,
-    column: *mut u32,
-    row: *mut u32,
-) -> bool {
-    let Some(InputEvent::Mouse(mouse)) = (unsafe { self::event(event) }) else {
-        return false;
-    };
-    if let Some(column) = unsafe { borrow_mut(column) } {
-        *column = mouse.x;
-    }
-    if let Some(row) = unsafe { borrow_mut(row) } {
-        *row = mouse.y;
-    }
-    true
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_action(event: *const KatuiEvent) -> KatuiMouseAction {
-    let Some(InputEvent::Mouse(mouse)) = (unsafe { self::event(event) }) else {
-        return KATUI_MOUSE_NONE;
-    };
-    match mouse.action {
-        MouseAction::Press(_) => KATUI_MOUSE_PRESS,
-        MouseAction::Release(_) => KATUI_MOUSE_RELEASE,
-        MouseAction::Drag(_) => KATUI_MOUSE_DRAG,
-        MouseAction::Move => KATUI_MOUSE_MOVE,
-        MouseAction::WheelUp => KATUI_MOUSE_WHEEL_UP,
-        MouseAction::WheelDown => KATUI_MOUSE_WHEEL_DOWN,
-    }
-}
-
-/// The button of a press, release or drag.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katui_event_button(event: *const KatuiEvent) -> KatuiButton {
-    let Some(InputEvent::Mouse(mouse)) = (unsafe { self::event(event) }) else {
-        return KATUI_BUTTON_NONE;
-    };
-    match mouse.action.button() {
-        Some(Button::Left) => KATUI_BUTTON_LEFT,
-        Some(Button::Middle) => KATUI_BUTTON_MIDDLE,
-        Some(Button::Right) => KATUI_BUTTON_RIGHT,
-        None => KATUI_BUTTON_NONE,
     }
 }
 
@@ -663,11 +478,10 @@ pub unsafe extern "C" fn katui_toasts_push_for(
     seconds: f64,
 ) {
     if let Some(toasts) = unsafe { borrow_mut(toasts) } {
-        let time = Duration::try_from_secs_f64(seconds).unwrap_or_default();
         toasts.0.push_for(
             unsafe { self::text(text) }.into_owned(),
             Instant::now(),
-            time,
+            duration(seconds),
         );
     }
 }
@@ -685,11 +499,11 @@ pub unsafe extern "C" fn katui_toasts_next_expiry(
     toasts: *const KatuiToasts,
     seconds: *mut f64,
 ) -> bool {
-    let Some(at) = unsafe { borrow(toasts) }.and_then(|toasts| toasts.0.next_expiry()) else {
+    let Some(left) = unsafe { borrow(toasts) }.and_then(|toasts| next_expiry(&toasts.0)) else {
         return false;
     };
     if let Some(seconds) = unsafe { borrow_mut(seconds) } {
-        *seconds = at.saturating_duration_since(Instant::now()).as_secs_f64();
+        *seconds = left;
     }
     true
 }

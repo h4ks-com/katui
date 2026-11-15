@@ -3,13 +3,13 @@
 use std::ffi::{CString, c_char, c_void};
 use std::sync::Arc;
 
-use katui_content::{HtmlDefaults, HtmlHost};
+use katui_bindings::html::{Format, Look, document};
+use katui_content::HtmlHost;
 use katui_scene::surface::Surface;
-use katui_widgets::Theme;
 
 use crate::element::{KatuiColor, KatuiElement, KatuiImage, element, visible};
 use crate::ffi::{borrow, text};
-use crate::message::{Msg, Payload};
+use crate::message::Msg;
 
 /// What links and images in a document do, and how its text looks. A zeroed
 /// struct, or NULL, takes every default.
@@ -39,7 +39,7 @@ struct Host(Option<KatuiDocument>);
 impl HtmlHost<Msg> for Host {
     fn link(&self, href: &str) -> Msg {
         let key = self.0.map_or(0, |document| document.link_key);
-        Msg::User(key, Payload::Link(Arc::from(href)))
+        Msg::Link(key, href.to_owned())
     }
 
     fn image(&self, src: &str) -> Option<Arc<Surface>> {
@@ -51,18 +51,26 @@ impl HtmlHost<Msg> for Host {
     }
 }
 
-fn defaults(document: Option<&KatuiDocument>) -> HtmlDefaults {
-    let theme = Theme::current();
-    let pick = |color: Option<KatuiColor>, fallback| color.and_then(visible).unwrap_or(fallback);
-    HtmlDefaults {
-        font_size: document
-            .map(|document| document.font_size)
-            .filter(|size| *size > 0.0)
-            .unwrap_or_else(|| theme.body()),
-        color: pick(document.map(|document| document.color), theme.text),
-        link: pick(document.map(|document| document.link), theme.accent),
-        tint: pick(document.map(|document| document.tint), theme.muted),
+/// What `document` sets of the text's look; zeros take the theme's.
+fn look(document: Option<KatuiDocument>) -> Look {
+    let Some(document) = document else {
+        return Look::default();
+    };
+    Look {
+        font_size: (document.font_size > 0.0).then_some(document.font_size),
+        color: visible(document.color),
+        link: visible(document.link),
+        tint: visible(document.tint),
     }
+}
+
+fn read(format: Format, source: &str, document: Option<KatuiDocument>) -> *mut KatuiElement {
+    element(self::document(
+        format,
+        source,
+        look(document),
+        &Host(document),
+    ))
 }
 
 /// An HTML document as an element.
@@ -71,13 +79,8 @@ pub unsafe extern "C" fn katui_html(
     source: *const c_char,
     document: *const KatuiDocument,
 ) -> *mut KatuiElement {
-    let document = unsafe { borrow(document) };
-    let source = unsafe { text(source) };
-    element(katui_content::html(
-        &source,
-        &defaults(document),
-        &Host(document.copied()),
-    ))
+    let document = unsafe { borrow(document) }.copied();
+    read(Format::Html, &unsafe { text(source) }, document)
 }
 
 /// A Markdown document as an element.
@@ -86,11 +89,6 @@ pub unsafe extern "C" fn katui_markdown(
     source: *const c_char,
     document: *const KatuiDocument,
 ) -> *mut KatuiElement {
-    let document = unsafe { borrow(document) };
-    let source = unsafe { text(source) };
-    element(katui_content::markdown_view(
-        &source,
-        &defaults(document),
-        &Host(document.copied()),
-    ))
+    let document = unsafe { borrow(document) }.copied();
+    read(Format::Markdown, &unsafe { text(source) }, document)
 }

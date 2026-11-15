@@ -1,18 +1,18 @@
 //! Arcade games: a C game drawn into a `KatuiLight` buffer at a fixed step.
 
-use std::cell::RefCell;
 use std::ffi::{CString, c_char, c_void};
-use std::time::Instant;
+use std::sync::Arc;
 
-use katui_game::{Blend, Camera, Game, HeldKeys, Light, P2, Rgb, Rng, Spark, Sparks, V3, v3};
+use katui_bindings::game::{Frame, GameHost, held};
+use katui_game::{Blend, Camera, HeldKeys, Light, P2, Rgb, Rng, Spark, Sparks, V3, v3};
 use katui_proto::input::Key;
 
 use crate::element::{KatuiImage, image};
+use crate::event::key;
 use crate::ffi::{
-    Error, KatuiStatus, borrow, borrow_mut, free, guard, owned, owned_or_null, slice, status, text,
-    texts,
+    Error, KatuiStatus, borrow, borrow_mut, free, guard, owned, owned_or_null, raise, slice,
+    status, text, texts,
 };
-use crate::state::key;
 
 /// The first kitty image id games use.
 pub const KATUI_BASE_IMAGE: u32 = 900;
@@ -598,13 +598,13 @@ pub struct KatuiGame {
     pub finished: Option<unsafe extern "C" fn(user: *mut c_void) -> bool>,
 }
 
-/// A C game, as the arcade loop sees it.
-struct GameBridge {
+/// A C game, as the shared bridge calls it.
+struct CGame {
     game: KatuiGame,
-    light: RefCell<KatuiLight>,
+    light: KatuiLight,
 }
 
-impl GameBridge {
+impl CGame {
     fn new(game: &KatuiGame) -> Result<Self, Error> {
         if game.step.is_none() {
             return Err(Error::Null("step callback"));
@@ -614,7 +614,7 @@ impl GameBridge {
         }
         Ok(Self {
             game: *game,
-            light: RefCell::new(KatuiLight(Light::new(1, 1, 1.0))),
+            light: KatuiLight(Light::new(1, 1, 1.0)),
         })
     }
 
@@ -626,47 +626,57 @@ impl GameBridge {
     }
 
     /// Lend `light` to `call` through our own `KatuiLight`, then take it back.
-    fn with_light(&self, light: &mut Light, call: impl FnOnce(*mut KatuiLight)) {
-        let mut ours = self.light.borrow_mut();
-        std::mem::swap(&mut ours.0, light);
-        call(&raw mut *ours);
-        std::mem::swap(&mut ours.0, light);
+    fn with_light(&mut self, light: &mut Light, call: impl FnOnce(*mut c_void, *mut KatuiLight)) {
+        std::mem::swap(&mut self.light.0, light);
+        call(self.game.user, &raw mut self.light);
+        std::mem::swap(&mut self.light.0, light);
     }
 }
 
-impl Game for GameBridge {
-    fn press(&mut self, key: Key) {
+impl GameHost for CGame {
+    type Error = Error;
+
+    fn refused(error: katui_bindings::Error) -> Error {
+        raise(error)
+    }
+
+    fn press(&mut self, key: Key) -> Result<(), Error> {
         self.key(self.game.press, key);
+        Ok(())
     }
 
-    fn repeat(&mut self, key: Key) {
+    fn repeat(&mut self, key: Key) -> Result<(), Error> {
         self.key(self.game.repeat, key);
+        Ok(())
     }
 
-    fn resize(&mut self, light: &Light) {
+    fn resize(&mut self, light: &mut Light) -> Result<(), Error> {
         if let Some(resize) = self.game.resize {
-            let mut copy = light.clone();
-            self.with_light(&mut copy, |light| unsafe { resize(self.game.user, light) });
+            self.with_light(light, |user, light| unsafe { resize(user, light) });
         }
+        Ok(())
     }
 
-    fn step(&mut self, keys: &HeldKeys, dt: f32) {
+    fn step(&mut self, keys: &HeldKeys, dt: f32) -> Result<(), Error> {
         if let Some(step) = self.game.step {
             let keys = KatuiKeys(keys.clone());
             unsafe { step(self.game.user, &raw const keys, dt) };
         }
+        Ok(())
     }
 
-    fn render(&mut self, light: &mut Light) {
+    fn render(&mut self, light: &mut Light) -> Result<(), Error> {
         if let Some(render) = self.game.render {
-            self.with_light(light, |light| unsafe { render(self.game.user, light) });
+            self.with_light(light, |user, light| unsafe { render(user, light) });
         }
+        Ok(())
     }
 
-    fn finished(&self) -> bool {
-        self.game
+    fn finished(&self) -> Result<bool, Error> {
+        Ok(self
+            .game
             .finished
-            .is_some_and(|finished| unsafe { finished(self.game.user) })
+            .is_some_and(|finished| unsafe { finished(self.game.user) }))
     }
 }
 
@@ -676,7 +686,7 @@ impl Game for GameBridge {
 pub unsafe extern "C" fn katui_play(game: *const KatuiGame) -> KatuiStatus {
     let played = guard(|| {
         let game = unsafe { borrow(game) }.ok_or(Error::Null("game"))?;
-        katui_game::play(GameBridge::new(game)?).map_err(|error| Error::Io(error.to_string()))
+        katui_bindings::game::play(CGame::new(game)?)
     });
     status(played)
 }
@@ -697,19 +707,16 @@ pub unsafe extern "C" fn katui_frame(
     let held = unsafe { texts(held, held_count) };
     let drawn = guard(|| {
         let game = unsafe { borrow(game) }.ok_or(Error::Null("game"))?;
-        let mut bridge = GameBridge::new(game)?;
-        let mut keys = HeldKeys::default();
-        let now = Instant::now();
-        for name in &held {
-            keys.press(key(name)?, now);
-        }
-        let mut light = Light::new(width, height, 1.0);
-        bridge.resize(&light);
-        for _ in 0..steps {
-            bridge.step(&keys, dt);
-        }
-        bridge.render(&mut light);
-        Ok(KatuiImage(std::sync::Arc::new(light.to_surface())))
+        let host = CGame::new(game)?;
+        let frame = Frame {
+            width,
+            height,
+            steps,
+            held: self::held(&held).map_err(raise)?,
+            dt,
+        };
+        let surface = katui_bindings::game::frame(host, &frame)?;
+        Ok(KatuiImage(Arc::new(surface)))
     });
     owned_or_null(drawn)
 }

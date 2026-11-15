@@ -84,6 +84,9 @@ leave it behind. These checks in `just py-check` catch that:
 
 A change to the Rust API is finished when `just ci` passes, with the
 binding, the stub, the Python guide and the examples updated with it.
+Logic the three bindings share, like the app bridge or the headless
+screen, lives once in `bindings/core`, the internal `katui-bindings`
+crate, so one change there applies to Python, Node and C together.
 
 ## Keeping C and Go in step with Rust
 
@@ -164,8 +167,9 @@ The release workflow then:
 1. checks that the tag names the workspace version (`just release-check`),
    and runs `just ci`;
 2. builds wheels for Linux x86_64 and arm64 (glibc and musl) and macOS
-   Apple Silicon and Intel, and builds the source package and checks that
-   it compiles a working module (`just py-test-sdist`);
+   Apple Silicon and Intel, and builds the source package, which carries
+   `bindings/core` with the Python crate, and checks that it compiles a
+   working module (`just py-test-sdist`);
 3. installs the glibc and macOS wheels on matching machines and runs the
    Python tests against them (`just py-test-wheel`); the musl wheels ship
    without that test;

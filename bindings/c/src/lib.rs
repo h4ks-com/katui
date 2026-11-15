@@ -14,6 +14,8 @@ mod ffi;
 mod game;
 mod html;
 mod message;
+
+mod event;
 mod state;
 mod testing;
 mod theme;
@@ -25,6 +27,8 @@ pub use ffi::*;
 pub use game::*;
 pub use html::*;
 pub use message::*;
+
+pub use event::*;
 pub use state::*;
 pub use testing::*;
 pub use theme::*;

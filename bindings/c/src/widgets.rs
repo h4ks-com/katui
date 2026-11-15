@@ -3,25 +3,24 @@
 //! reports what was picked.
 
 use std::ffi::{c_char, c_void};
-use std::time::Duration;
 
+use katui_bindings::message::{float, id, index, scroll};
+use katui_bindings::state::duration;
+use katui_bindings::widgets::{hints, strs};
 use katui_ui::Element;
 use katui_widgets as w;
 
 use crate::element::{KatuiElement, children, element, node};
+use crate::event::KatuiEvent;
 use crate::ffi::{borrow, borrow_mut, slice, text, texts};
-use crate::message::{Msg, Payload, plain};
+use crate::message::Msg;
 use crate::state::{
-    KatuiEvent, KatuiListState, KatuiScrollState, KatuiTextArea, KatuiTextField, KatuiToasts,
-    KatuiTreeNode, KatuiTreeState, roots,
+    KatuiListState, KatuiScrollState, KatuiTextArea, KatuiTextField, KatuiToasts, KatuiTreeNode,
+    KatuiTreeState, roots,
 };
 
-fn index(key: u64) -> impl Fn(usize) -> Msg {
-    move |index| Msg::User(key, Payload::Index(index))
-}
-
-fn float(key: u64) -> impl Fn(f32) -> Msg {
-    move |value| Msg::User(key, Payload::Float(value))
+fn plain(key: u64) -> Msg {
+    Msg::Value(key)
 }
 
 /// # Safety
@@ -169,8 +168,7 @@ pub unsafe extern "C" fn katui_tabs(
     key: u64,
 ) -> *mut KatuiElement {
     let titles = unsafe { texts(titles, count) };
-    let titles: Vec<&str> = titles.iter().map(String::as_str).collect();
-    element(w::tabs(&titles, selected, index(key)))
+    element(w::tabs(&strs(&titles), selected, index(key)))
 }
 
 /// `count` options, one picked; a click sends `key` with the option's index.
@@ -182,8 +180,7 @@ pub unsafe extern "C" fn katui_radio(
     key: u64,
 ) -> *mut KatuiElement {
     let options = unsafe { texts(options, count) };
-    let options: Vec<&str> = options.iter().map(String::as_str).collect();
-    element(w::radio(&options, selected, index(key)))
+    element(w::radio(&strs(&options), selected, index(key)))
 }
 
 /// A slider at `value`, from 0 to 1; a drag sends `key` with each new value.
@@ -217,9 +214,7 @@ pub unsafe extern "C" fn katui_nudge(
 /// seconds.
 #[unsafe(no_mangle)]
 pub extern "C" fn katui_spinner(elapsed: f64) -> *mut KatuiElement {
-    element(w::spinner(
-        Duration::try_from_secs_f64(elapsed).unwrap_or_default(),
-    ))
+    element(w::spinner(duration(elapsed)))
 }
 
 #[unsafe(no_mangle)]
@@ -248,11 +243,7 @@ pub unsafe extern "C" fn katui_key_hints(
         .iter()
         .map(|hint| unsafe { (text(hint.key).into_owned(), text(hint.action).into_owned()) })
         .collect();
-    let hints: Vec<(&str, &str)> = hints
-        .iter()
-        .map(|(key, action)| (key.as_str(), action.as_str()))
-        .collect();
-    element(w::key_hints(&hints))
+    element(w::key_hints(&self::hints(&hints)))
 }
 
 /// A card over a dimmed screen; a click outside it sends `dismiss_key`.
@@ -287,9 +278,8 @@ pub unsafe extern "C" fn katui_select(
     choose_key: u64,
 ) -> *mut KatuiElement {
     let options = unsafe { texts(options, count) };
-    let options: Vec<&str> = options.iter().map(String::as_str).collect();
     element(w::select(
-        &options,
+        &strs(&options),
         selected,
         open,
         plain(toggle_key),
@@ -310,10 +300,9 @@ pub unsafe extern "C" fn katui_menu(
 ) -> *mut KatuiElement {
     let title = unsafe { text(title) };
     let items = unsafe { texts(items, count) };
-    let items: Vec<&str> = items.iter().map(String::as_str).collect();
     element(w::menu(
         &title,
-        &items,
+        &strs(&items),
         open,
         plain(toggle_key),
         index(choose_key),
@@ -353,9 +342,7 @@ pub unsafe extern "C" fn katui_scroll_view(
     let Some(state) = (unsafe { borrow(state) }) else {
         return element(Element::column(content));
     };
-    element(w::scroll_view(&state.0, content, move |scroll| {
-        Msg::User(key, Payload::Scroll(scroll))
-    }))
+    element(w::scroll_view(&state.0, content, scroll(key)))
 }
 
 /// How `katui_split` lays out its panes.
@@ -446,12 +433,7 @@ pub unsafe extern "C" fn katui_tree(
 ) -> *mut KatuiElement {
     let roots = unsafe { self::roots(roots, count) };
     match unsafe { borrow(state) } {
-        Some(state) => element(w::tree(
-            &roots,
-            &state.0,
-            move |id| Msg::User(toggle_key, Payload::Id(id)),
-            move |id| Msg::User(select_key, Payload::Id(id)),
-        )),
+        Some(state) => element(w::tree(&roots, &state.0, id(toggle_key), id(select_key))),
         None => element(Element::spacer()),
     }
 }

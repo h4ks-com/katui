@@ -633,8 +633,8 @@ dependencies = [
 name = "katui-c"
 version = "0.1.0"
 dependencies = [
- "image",
  "katui-app",
+ "katui-bindings",
  "katui-content",
  "katui-draw",
  "katui-game",

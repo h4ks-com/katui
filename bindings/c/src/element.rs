@@ -2,16 +2,20 @@
 //! text spans it uses.
 
 use std::ffi::c_char;
+use std::path::Path;
 use std::sync::Arc;
 
+use katui_bindings::message::{point, scroll};
+use katui_bindings::picture;
 use katui_draw::{Paint, Rgba, TextSpan};
 use katui_scene::surface::Surface;
-use katui_ui::{Align, Element, Length, Scroll};
+use katui_ui::{Align, Element, Length};
 
 use crate::ffi::{
-    Error, KatuiStatus, borrow, borrow_mut, free, owned, owned_or_null, slice, status, take, text,
+    Error, KatuiStatus, borrow, borrow_mut, free, owned, owned_or_null, raise, slice, status, take,
+    text,
 };
-use crate::message::{Msg, Payload, plain};
+use crate::message::Msg;
 
 pub(crate) type Node = Element<Msg>;
 
@@ -275,7 +279,7 @@ pub unsafe extern "C" fn katui_element_on_click(
     element: *mut KatuiElement,
     key: u64,
 ) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.on_click(plain(key))) }
+    unsafe { change(element, |e| e.on_click(Msg::Value(key))) }
 }
 
 /// A click on the span at `span` of a rich text sends `key`.
@@ -285,7 +289,7 @@ pub unsafe extern "C" fn katui_element_on_span_click(
     span: usize,
     key: u64,
 ) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.on_span_click(span, plain(key))) }
+    unsafe { change(element, |e| e.on_span_click(span, Msg::Value(key))) }
 }
 
 /// The pointer entering sends `key`.
@@ -294,7 +298,7 @@ pub unsafe extern "C" fn katui_element_on_hover(
     element: *mut KatuiElement,
     key: u64,
 ) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.on_hover(plain(key))) }
+    unsafe { change(element, |e| e.on_hover(Msg::Value(key))) }
 }
 
 /// The pointer leaving sends `key`.
@@ -303,7 +307,7 @@ pub unsafe extern "C" fn katui_element_on_leave(
     element: *mut KatuiElement,
     key: u64,
 ) -> *mut KatuiElement {
-    unsafe { change(element, |e| e.on_leave(plain(key))) }
+    unsafe { change(element, |e| e.on_leave(Msg::Value(key))) }
 }
 
 /// Each new scroll position sends `key` with a scroll payload.
@@ -312,11 +316,7 @@ pub unsafe extern "C" fn katui_element_on_scroll(
     element: *mut KatuiElement,
     key: u64,
 ) -> *mut KatuiElement {
-    unsafe {
-        change(element, |e| {
-            e.on_scroll(move |scroll: Scroll| Msg::User(key, Payload::Scroll(scroll)))
-        })
-    }
+    unsafe { change(element, |e| e.on_scroll(scroll(key))) }
 }
 
 /// The press and each move until the release send `key` with a point
@@ -326,11 +326,7 @@ pub unsafe extern "C" fn katui_element_on_press(
     element: *mut KatuiElement,
     key: u64,
 ) -> *mut KatuiElement {
-    unsafe {
-        change(element, |e| {
-            e.on_press(move |x, y| Msg::User(key, Payload::Point(x, y)))
-        })
-    }
+    unsafe { change(element, |e| e.on_press(point(key))) }
 }
 
 /// Like `on_press`, for presses on a child marked with `grip`.
@@ -339,11 +335,7 @@ pub unsafe extern "C" fn katui_element_on_grip_press(
     element: *mut KatuiElement,
     key: u64,
 ) -> *mut KatuiElement {
-    unsafe {
-        change(element, |e| {
-            e.on_grip_press(move |x, y| Msg::User(key, Payload::Point(x, y)))
-        })
-    }
+    unsafe { change(element, |e| e.on_grip_press(point(key))) }
 }
 
 /// Mark this element as the handle of its parent's `on_grip_press`.
@@ -524,18 +516,12 @@ pub(crate) fn image(surface: Surface) -> *mut KatuiImage {
     owned(KatuiImage(Arc::new(surface)))
 }
 
-fn from_rgba(width: u32, height: u32, pixels: Vec<u8>) -> Result<KatuiImage, Error> {
-    Surface::from_rgba(width, height, pixels)
-        .map(|surface| KatuiImage(Arc::new(surface)))
-        .ok_or_else(|| Error::Invalid(format!("give exactly {width} x {height} x 4 bytes of RGBA")))
-}
-
-fn decode(data: &[u8]) -> Result<KatuiImage, Error> {
-    let decoded = image::load_from_memory(data)
-        .map_err(|error| Error::Invalid(format!("decode the image: {error}")))?
-        .into_rgba8();
-    let (width, height) = decoded.dimensions();
-    from_rgba(width, height, decoded.into_raw())
+fn made(surface: Result<Surface, katui_bindings::Error>) -> *mut KatuiImage {
+    owned_or_null(
+        surface
+            .map(|surface| KatuiImage(Arc::new(surface)))
+            .map_err(raise),
+    )
 }
 
 /// An image from `length` bytes of straight-alpha RGBA, four per pixel,
@@ -547,18 +533,15 @@ pub unsafe extern "C" fn katui_image_from_rgba(
     pixels: *const u8,
     length: usize,
 ) -> *mut KatuiImage {
-    owned_or_null(from_rgba(
-        width,
-        height,
-        unsafe { slice(pixels, length) }.to_vec(),
-    ))
+    let pixels = unsafe { slice(pixels, length) }.to_vec();
+    made(picture::from_rgba(width, height, pixels))
 }
 
 /// An image decoded from `length` bytes of PNG, JPEG, GIF or WebP. NULL
 /// when they do not decode.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_image_decode(data: *const u8, length: usize) -> *mut KatuiImage {
-    owned_or_null(decode(unsafe { slice(data, length) }))
+    made(picture::decode(unsafe { slice(data, length) }))
 }
 
 /// An image read from a PNG, JPEG, GIF or WebP file. NULL when it cannot
@@ -566,10 +549,7 @@ pub unsafe extern "C" fn katui_image_decode(data: *const u8, length: usize) -> *
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_image_open(path: *const c_char) -> *mut KatuiImage {
     let path = unsafe { text(path) };
-    let read = std::fs::read(path.as_ref())
-        .map_err(|error| Error::Io(format!("read {path}: {error}")))
-        .and_then(|data| decode(&data));
-    owned_or_null(read)
+    made(picture::open(Path::new(path.as_ref())))
 }
 
 /// Free an image. Elements that show it keep their own reference. NULL
@@ -611,14 +591,8 @@ pub unsafe extern "C" fn katui_image_pixel(
     y: u32,
     color: *mut KatuiColor,
 ) -> bool {
-    let Some(image) = (unsafe { borrow(image) }) else {
-        return false;
-    };
-    if x >= image.0.width() {
-        return false;
-    }
-    let at = (y as usize * image.0.width() as usize + x as usize) * 4;
-    let Some(&[red, green, blue, alpha]) = image.0.pixels().get(at..at + 4) else {
+    let found = unsafe { borrow(image) }.and_then(|image| picture::pixel(&image.0, x, y));
+    let Some([red, green, blue, alpha]) = found else {
         return false;
     };
     if let Some(color) = unsafe { borrow_mut(color) } {
@@ -641,15 +615,6 @@ pub unsafe extern "C" fn katui_image_save(
     let path = unsafe { text(path) };
     let saved = unsafe { borrow(image) }
         .ok_or(Error::Null("image"))
-        .and_then(|image| {
-            image::save_buffer(
-                path.as_ref(),
-                image.0.pixels(),
-                image.0.width(),
-                image.0.height(),
-                image::ExtendedColorType::Rgba8,
-            )
-            .map_err(|error| Error::Io(format!("write {path}: {error}")))
-        });
+        .and_then(|image| picture::save(&image.0, Path::new(path.as_ref())).map_err(raise));
     status(saved)
 }
