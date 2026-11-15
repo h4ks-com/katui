@@ -109,104 +109,59 @@ impl Theme {
     pub fn rows(&self, count: f64) -> f64 {
         f64::from(self.inner.cell_height()) * count
     }
+}
 
-    /// A solid color, or `null` for a gradient.
-    #[napi(getter, ts_return_type = "Rgba | null")]
-    pub fn background(&self) -> Option<Vec<u8>> {
-        paint_array(&self.inner.background)
-    }
+/// Writes a getter and a setter for each paint field, read back as
+/// `Rgba | null`, and for each color field, read back as `Rgba`.
+macro_rules! theme_fields {
+    (
+        paints: [$($(#[doc = $paint_doc:tt])* $paint:ident, $set_paint:ident, $paint_js:tt;)*]
+        colors: [$($color:ident, $set_color:ident, $color_js:tt;)*]
+    ) => {
+        #[napi]
+        impl Theme {
+            $(
+                $(#[doc = $paint_doc])*
+                #[napi(getter, ts_return_type = "Rgba | null")]
+                pub fn $paint(&self) -> Option<Vec<u8>> {
+                    paint_array(&self.inner.$paint)
+                }
 
-    #[napi(setter, js_name = "background", ts_args_type = "value: Color")]
-    pub fn set_background(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.background = paint(value)?;
-        Ok(())
-    }
+                #[napi(setter, js_name = $paint_js, ts_args_type = "value: Color")]
+                pub fn $set_paint(&mut self, value: ColorArg) -> Result<()> {
+                    self.inner.$paint = paint(value)?;
+                    Ok(())
+                }
+            )*
+            $(
+                #[napi(getter, ts_return_type = "Rgba")]
+                pub fn $color(&self) -> Vec<u8> {
+                    rgba_array(self.inner.$color)
+                }
 
-    #[napi(getter, ts_return_type = "Rgba | null")]
-    pub fn raised(&self) -> Option<Vec<u8>> {
-        paint_array(&self.inner.raised)
-    }
+                #[napi(setter, js_name = $color_js, ts_args_type = "value: Color")]
+                pub fn $set_color(&mut self, value: ColorArg) -> Result<()> {
+                    self.inner.$color = color(value)?;
+                    Ok(())
+                }
+            )*
+        }
+    };
+}
 
-    #[napi(setter, js_name = "raised", ts_args_type = "value: Color")]
-    pub fn set_raised(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.raised = paint(value)?;
-        Ok(())
-    }
-
-    #[napi(getter, ts_return_type = "Rgba | null")]
-    pub fn highlight(&self) -> Option<Vec<u8>> {
-        paint_array(&self.inner.highlight)
-    }
-
-    #[napi(setter, js_name = "highlight", ts_args_type = "value: Color")]
-    pub fn set_highlight(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.highlight = paint(value)?;
-        Ok(())
-    }
-
-    #[napi(getter, ts_return_type = "Rgba | null")]
-    pub fn border(&self) -> Option<Vec<u8>> {
-        paint_array(&self.inner.border)
-    }
-
-    #[napi(setter, js_name = "border", ts_args_type = "value: Color")]
-    pub fn set_border(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.border = paint(value)?;
-        Ok(())
-    }
-
-    #[napi(getter, ts_return_type = "Rgba")]
-    pub fn text(&self) -> Vec<u8> {
-        rgba_array(self.inner.text)
-    }
-
-    #[napi(setter, js_name = "text", ts_args_type = "value: Color")]
-    pub fn set_text(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.text = color(value)?;
-        Ok(())
-    }
-
-    #[napi(getter, ts_return_type = "Rgba")]
-    pub fn muted(&self) -> Vec<u8> {
-        rgba_array(self.inner.muted)
-    }
-
-    #[napi(setter, js_name = "muted", ts_args_type = "value: Color")]
-    pub fn set_muted(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.muted = color(value)?;
-        Ok(())
-    }
-
-    #[napi(getter, ts_return_type = "Rgba")]
-    pub fn accent(&self) -> Vec<u8> {
-        rgba_array(self.inner.accent)
-    }
-
-    #[napi(setter, js_name = "accent", ts_args_type = "value: Color")]
-    pub fn set_accent(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.accent = color(value)?;
-        Ok(())
-    }
-
-    #[napi(getter, ts_return_type = "Rgba")]
-    pub fn on_accent(&self) -> Vec<u8> {
-        rgba_array(self.inner.on_accent)
-    }
-
-    #[napi(setter, js_name = "onAccent", ts_args_type = "value: Color")]
-    pub fn set_on_accent(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.on_accent = color(value)?;
-        Ok(())
-    }
-
-    #[napi(getter, ts_return_type = "Rgba")]
-    pub fn danger(&self) -> Vec<u8> {
-        rgba_array(self.inner.danger)
-    }
-
-    #[napi(setter, js_name = "danger", ts_args_type = "value: Color")]
-    pub fn set_danger(&mut self, value: ColorArg) -> Result<()> {
-        self.inner.danger = color(value)?;
-        Ok(())
-    }
+theme_fields! {
+    paints: [
+        #[doc = " A solid color, or `null` for a gradient."]
+        background, set_background, "background";
+        raised, set_raised, "raised";
+        highlight, set_highlight, "highlight";
+        border, set_border, "border";
+    ]
+    colors: [
+        text, set_text, "text";
+        muted, set_muted, "muted";
+        accent, set_accent, "accent";
+        on_accent, set_on_accent, "onAccent";
+        danger, set_danger, "danger";
+    ]
 }
