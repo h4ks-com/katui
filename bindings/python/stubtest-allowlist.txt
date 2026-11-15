@@ -1,0 +1,2 @@
+# pyo3 fills in the native module's __all__; the stub lists every name itself
+katui._katui.__all__

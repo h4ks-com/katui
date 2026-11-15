@@ -2,3 +2,6 @@
 .DS_Store
 .desloppify/
 /demos/obby-chat/target
+/bindings/python/.venv
+__pycache__/
+*.so
