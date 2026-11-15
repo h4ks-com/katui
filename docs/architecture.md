@@ -65,6 +65,7 @@ data.
 |---|---|
 | `katui-c` | The C library: these crates behind `katui.h`, which the Go module wraps |
 | `katui-python` | The Python package: these crates wrapped with PyO3 |
+| `katui-node` | The npm package: these crates wrapped with napi-rs |
 | `katui` | Re-exports everything below under one name, with features |
 | `katui-app` | `run(app)`: the runner for pixel UI apps |
 | `katui-game` | `play(game)`: the fixed-step game runner and the light canvas |

@@ -56,11 +56,11 @@ docs:
 
 # the public api reference, as github pages publishes it
 api-docs:
-    cargo doc --workspace --exclude katui-python --no-deps --all-features
+    cargo doc --workspace --exclude katui-python --exclude katui-node --no-deps --all-features
     echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
 
 # every gate, before every commit
-ci: fmt-check clippy test docs typos py-check c-check go-check
+ci: fmt-check clippy test docs typos py-check c-check go-check node-check
 
 # the python package, built in release into bindings/python/.venv
 [working-directory('bindings/python')]
@@ -90,6 +90,81 @@ py-dist:
     uv sync --quiet --no-install-project
     uv run --no-sync maturin build --release --out ../../target/wheels
     uv run --no-sync maturin sdist --out ../../target/wheels
+
+# the node package, built in release into bindings/node with its generated types
+[working-directory('bindings/node')]
+node-build:
+    npm ci --silent
+    npx napi build --platform --release --esm
+
+# node types fresh, strict tsc, biome's lints and formatting, and the tests
+[working-directory('bindings/node')]
+node-check: node-build
+    git diff --exit-code -- index.js index.d.ts
+    npx tsc -p .
+    npx biome ci .
+    node --test 'tests/*.test.ts'
+
+# apply biome's formatting and fixes to the node code
+[working-directory('bindings/node')]
+node-fmt:
+    npx biome check --write .
+
+# a node example, like `just node-demo widgets`
+[working-directory('bindings/node')]
+node-demo name *args: node-build
+    node examples/{{name}}.ts {{args}}
+
+# the native module for `target` into bindings/node/artifacts, for a release
+[working-directory('bindings/node')]
+node-artifact target *flags:
+    npm ci --silent
+    npx napi build --platform --release --esm --target {{quote(target)}} --output-dir artifacts {{flags}}
+
+# the npm tarballs into target/npm: one per native module in `dist`, then the main package
+node-pack dist:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=$(just version)
+    rm -rf target/npm bindings/node/npm && mkdir -p target/npm/stage
+    cd bindings/node
+    npm ci --silent
+    npx napi create-npm-dirs --npm-dir npm
+    npx napi artifacts --output-dir {{quote(absolute_path(dist))}} --npm-dir npm
+    cp package.json README.md LICENSE-MIT LICENSE-APACHE katui.js katui.d.ts index.js index.d.ts ../../target/npm/stage/
+    for platform in npm/*/; do
+        if ls "$platform"*.node >/dev/null 2>&1; then
+            npm pack --silent --pack-destination ../../target/npm "./$platform"
+            name=$(node -p "require('./${platform}package.json').name")
+            (cd ../../target/npm/stage && npm pkg set "optionalDependencies.$name=$version")
+        fi
+    done
+    npm pack --silent --pack-destination ../../target/npm ../../target/npm/stage
+
+# the packed package for this machine, installed like users install it, passes the tests
+node-test-pack:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=$(just version)
+    platform=$(node -p "process.platform + '-' + process.arch + (process.platform === 'linux' ? '-gnu' : '')")
+    rm -rf target/node-smoke && mkdir -p target/node-smoke
+    cp -R bindings/node/tests bindings/node/examples target/node-smoke/
+    cd target/node-smoke
+    echo '{"name": "katui-smoke", "private": true, "type": "module"}' > package.json
+    npm install --silent --omit=optional "../npm/katui-$version.tgz" "../npm/katui-$platform-$version.tgz"
+    node --test tests/api.test.ts tests/examples.test.ts
+
+# publish every tarball in `dist` to npm with provenance, the native modules first
+node-publish dist:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    main={{quote(dist)}}/katui-$(just version).tgz
+    for tarball in {{quote(dist)}}/katui-*.tgz; do
+        if [ "$tarball" != "$main" ]; then
+            npx --yes npm@11.6.2 publish "$tarball" --provenance --access public
+        fi
+    done
+    npx --yes npm@11.6.2 publish "$main" --provenance --access public
 
 # the version every package ships, from the workspace Cargo.toml
 version:

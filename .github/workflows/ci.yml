@@ -143,6 +143,40 @@ jobs:
           path: target/go-shots
           retention-days: 14
 
+  # the node package against the rust crates in this commit: fresh types,
+  # strict tsc, biome, the sync check against the rust api, the examples and
+  # the docs, on the oldest node lts the package supports and the newest node
+  node:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        node: ["22", "26"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: bindings/node/package-lock.json
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: just node-check
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: node-shots-${{ matrix.os }}-${{ matrix.node }}
+          path: target/node-shots
+          retention-days: 14
+
   # every crate packages and compiles the way crates.io will see it
   crates:
     runs-on: ubuntu-latest

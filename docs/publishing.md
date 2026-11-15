@@ -1,8 +1,9 @@
 # Building, testing and publishing
 
 katui ships as Rust crates on crates.io, as the `katui` Python package
-on PyPI, as a C library attached to each GitHub release, and as a Go
-module. All of them come from the same commit and carry the same version.
+on PyPI, as the `katui` npm package, as a C library attached to each
+GitHub release, and as a Go module. All of them come from the same commit
+and carry the same version.
 
 ## The version
 
@@ -10,7 +11,8 @@ The workspace `Cargo.toml` holds the version. Every crate inherits it, and
 the Python package reads it when maturin builds it. `just version` prints
 it. The internal dependencies in `[workspace.dependencies]` repeat it,
 because crates.io needs a version on each, and `just release-check`
-fails when one of them differs.
+fails when one of them differs. `bindings/node/package.json` repeats it
+too, and the Node sync test fails when it differs.
 
 ## The gates
 
@@ -26,14 +28,17 @@ every push and pull request. Run it before you commit.
 | `just py-check` | ruff, strict mypy, the stub, and the Python tests |
 | `just c-check` | a fresh `katui.h`, the C examples and tests, the C docs and the C sync check |
 | `just go-check` | go vet, gofmt, and the Go tests, docs and sync check |
+| `just node-check` | fresh generated types, strict tsc, biome, and the Node tests |
 
 CI runs `just py-check` on Linux x86_64, Linux arm64 and macOS, with the
-oldest and the newest Python the package supports, `just c-check` and
-`just go-check` on the same three machines, and `just crates-check`,
-which packages every crate and compiles it the way crates.io will.
+oldest and the newest Python the package supports, `just c-check`,
+`just go-check`, and `just node-check` with Node 22, the oldest LTS the
+package supports, and Node 26, all on the same three machines. It also
+runs `just crates-check`, which packages every crate and compiles it the
+way crates.io will.
 
-`just c-check` needs `cbindgen` and a C compiler, and `just go-check`
-needs Go and a C compiler.
+`just c-check` needs `cbindgen` and a C compiler, `just go-check` needs Go
+and a C compiler, and `just node-check` needs Node 22.18 or newer.
 
 ## Keeping Python in step with Rust
 
@@ -83,6 +88,29 @@ them:
 A change to the Rust API is finished when the C binding and the Go
 wrapper follow it too.
 
+## Keeping Node in step with Rust
+
+The Node package wraps the same API, and `just node-check` catches the
+same drift:
+
+- **The sync test** in `bindings/node/tests/sync.test.ts` reads the Rust
+  sources the same way the Python one does. Bind a new public item in
+  `bindings/node/src`, or add it to `OMITTED` there with the reason Node
+  does without it. A JavaScript name that is not the camelCase of the Rust
+  one goes in `RENAMED`.
+- **The generated types.** napi writes `index.js` and `index.d.ts` from the
+  Rust code on every build. Both are committed, and the check fails when the
+  build changes them, so commit them with the Rust change.
+  `bindings/node/index.header.d.ts` holds the shared types napi puts at the
+  top of `index.d.ts`, and `katui.d.ts` types the JavaScript layer in
+  `katui.js`.
+- **tsc** checks the examples and the tests in strict mode.
+- **The docs test** parses every TypeScript block in `docs/node.md` and the
+  package README, and type-checks and runs each one that starts an app or a
+  game.
+- **The example tests** run every example in `bindings/node/examples`
+  without a terminal, and save their screenshots in `target/node-shots`.
+
 ## Building locally
 
 `just py-build` builds the package in release into
@@ -97,10 +125,14 @@ this machine's static library into `bindings/go/include` and
 runs a Go example. Inside the repository, the Go recipes always build the
 library from source first.
 
+`just node-build` builds the Node package in release into `bindings/node`,
+and `just node-demo widgets` runs an example with it.
+
 ## Releasing
 
 1. Set the new version in the workspace `Cargo.toml`, in
-   `[workspace.package]` and on every internal dependency.
+   `[workspace.package]` and on every internal dependency, and in
+   `bindings/node/package.json`.
 2. Run `just ci` and commit.
 3. Tag the commit with the version, like `v0.2.0`, and push the tag.
 
@@ -116,11 +148,18 @@ The release workflow then:
    without that test;
 4. publishes the wheels and the source package to PyPI, and every crate
    to crates.io in dependency order (`just crates-publish`);
-5. builds the C archive for Linux x86_64 and arm64 and macOS Apple
+5. builds the native Node module for the same six platforms (`just
+   node-artifact`), packs one npm package per module and the main `katui`
+   package (`just node-pack`), installs the tarballs on matching glibc and
+   macOS machines and runs the Node tests against them (`just
+   node-test-pack`), and publishes them to npm with provenance (`just
+   node-publish`). The glibc modules link against glibc 2.17, and the musl
+   ones are cross-compiled with zig and ship without that test;
+6. builds the C archive for Linux x86_64 and arm64 and macOS Apple
    Silicon and Intel (`just c-dist`), each holding `include/katui.h` and
    `lib/` with `libkatui.a` and the shared library, and attaches them to
    the GitHub release of the tag;
-6. publishes the Go module (`just go-release` and `just go-publish`).
+7. publishes the Go module (`just go-release` and `just go-publish`).
 
 ## How the Go module ships
 
@@ -160,3 +199,14 @@ repository holds no PyPI token. Before the first release:
    the GitHub release, and the Go release job pushes the
    `bindings/go/vX.Y.Z` tag. A tag protection rule or ruleset that covers
    `bindings/go/v*` has to allow GitHub Actions.
+
+5. npm sets up trusted publishing per package, and only for a package that
+   exists. Publish version 0.0.0 of each of `katui`, `katui-linux-x64-gnu`,
+   `katui-linux-arm64-gnu`, `katui-linux-x64-musl`, `katui-linux-arm64-musl`,
+   `katui-darwin-x64` and `katui-darwin-arm64` once by hand, as a
+   placeholder. Then, on npmjs.com, add a trusted publisher to each of
+   them: owner `matheusfillipe`, repository `katui`, workflow
+   `release.yml`, environment `npm`. The workflow publishes with
+   provenance and holds no npm token.
+6. Create a GitHub environment named `npm` and add yourself as a required
+   reviewer.

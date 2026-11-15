@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "bindings/c",
+    "bindings/node",
     "bindings/python",
     "crates/katui",
     "crates/katui-app",

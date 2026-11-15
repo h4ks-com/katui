@@ -18,11 +18,13 @@ one, then pick whichever matches what you want to make.
 7. [Python](python.md): the same apps, documents and games from Python.
 8. [C](c.md): the same apps, documents and games from C.
 9. [Go](go.md): the same apps, documents and games from Go.
-10. [How katui works](architecture.md): the layers, and what happens
+10. [Node.js](node.md): the same apps, documents and games from
+    JavaScript and TypeScript.
+11. [How katui works](architecture.md): the layers, and what happens
     between your `view` and the terminal.
-11. [Building, testing and publishing](publishing.md): the checks that
-    keep the Rust, Python, C and Go packages in step, and how a release
-    ships.
+12. [Building, testing and publishing](publishing.md): the checks that
+    keep the Rust, Python, C, Go and Node packages in step, and how a
+    release ships.
 
 ## API reference
 

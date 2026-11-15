@@ -1,0 +1,34 @@
+[package]
+name = "katui-node"
+description = "Node.js bindings for katui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+image.workspace = true
+katui-app.workspace = true
+katui-content = { workspace = true, features = ["html"] }
+katui-draw.workspace = true
+katui-game.workspace = true
+katui-proto.workspace = true
+katui-rt.workspace = true
+katui-scene.workspace = true
+katui-ui.workspace = true
+katui-widgets.workspace = true
+napi = { version = "3.16", features = ["napi8"] }
+napi-derive = "3.7"
+
+[build-dependencies]
+napi-build = "2.6"
+
+[lints]
+workspace = true

@@ -5,3 +5,7 @@
 /bindings/python/.venv
 __pycache__/
 *.so
+/bindings/node/node_modules
+/bindings/node/artifacts
+/bindings/node/npm
+/bindings/node/*.node

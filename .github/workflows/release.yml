@@ -26,6 +26,9 @@ jobs:
         with:
           go-version-file: bindings/go/go.mod
           cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
       - uses: taiki-e/install-action@v2
         with:
           tool: just,typos,cbindgen
@@ -217,3 +220,120 @@ jobs:
           name: sdist
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # the native node module for each platform; glibc builds link against
+  # glibc 2.17 and musl builds cross-compile with zig
+  node-binaries:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, flags: --use-napi-cross }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, flags: --use-napi-cross }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, flags: --cross-compile }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, flags: --cross-compile }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: mlugg/setup-zig@v2
+        if: contains(matrix.target, 'musl')
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: just node-artifact "$TARGET" $FLAGS
+        env:
+          TARGET: ${{ matrix.target }}
+          FLAGS: ${{ matrix.flags }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: node-${{ matrix.target }}
+          path: bindings/node/artifacts/*.node
+
+  # the main package and one package per native module, as npm tarballs
+  node-pack:
+    needs: node-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: node-*
+          merge-multiple: true
+          path: node-dist
+      - run: just node-pack node-dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-tarballs
+          path: target/npm/*.tgz
+
+  # the tarballs, installed the way users install them, pass the tests on
+  # the oldest supported node; the musl packages ship without that test
+  node-pack-tests:
+    needs: node-pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm-tarballs
+          path: target/npm
+      - run: just node-test-pack
+
+  npm:
+    needs: node-pack-tests
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/katui
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm-tarballs
+          path: npm-dist
+      - run: just node-publish npm-dist
