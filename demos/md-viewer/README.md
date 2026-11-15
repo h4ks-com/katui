@@ -46,10 +46,12 @@ It reads the markdown GitHub reads:
 - [x] Headings, lists, quotes, ~~strikethrough~~ and `inline code`
 - [x] Code blocks in a monospace font
 - [x] Tables, task lists, footnotes[^1] and alerts like the note above
-- [x] Local images, and HTML such as `<p align="center">`, `<kbd>` and `<details>`
+- [x] Local images, SVG drawings and animated GIF and WebP files
+- [x] Videos in `<video>` tags, played without sound when `ffmpeg` is installed
+- [x] HTML such as `<p align="center">`, `<kbd>` and `<details>`
 - [ ] Syntax colors in code blocks
 - [ ] Remote images and SVG badges
 
-Links to other markdown files open in the viewer, and other links open in the program your system picks for them.
+Links to headings scroll the page there, links to other markdown files open in the viewer, and other links open in the program your system picks for them.
 
 [^1]: Footnotes show at the end of the page.

@@ -3,6 +3,8 @@
 extend-ignore-re = [
   'PNGs',
   'flate2',
+  # the image crate's frame delay accessor
+  'numer_denom_ms',
   # unicode escapes such as the placeholder diacritics read as words
   '\\u\{[0-9a-fA-F]+\}',
 ]

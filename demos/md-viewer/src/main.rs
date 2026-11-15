@@ -3,6 +3,7 @@
 //! or a markdown file.
 
 mod library;
+mod media;
 mod viewer;
 
 use std::path::PathBuf;

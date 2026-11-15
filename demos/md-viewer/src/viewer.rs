@@ -6,9 +6,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use katui::app::{Control, UiApp};
-use katui::content::{HtmlDefaults, HtmlHost, markdown_view};
+use katui::app::{Control, UiApp, Waker};
+use katui::content::{HtmlDefaults, HtmlHost, anchor_id, markdown_view};
 use katui::draw::Rgba;
 use katui::proto::input::{InputEvent, Key, Mods};
 use katui::scene::surface::Surface;
@@ -18,10 +19,13 @@ use katui::widgets::{
 };
 
 use crate::library::{Hit, Library};
+use crate::media::Media;
 
 /// The widest a page gets, in terminal columns, so lines stay readable.
 const PAGE_COLUMNS: f32 = 100.0;
 const SIDEBAR: f32 = 0.24;
+/// How often animations and videos on the page move on.
+const MEDIA_TICK: Duration = Duration::from_millis(40);
 /// The width of an average letter of the body font, in font sizes.
 const AVERAGE_LETTER: f32 = 0.55;
 
@@ -40,6 +44,7 @@ pub(crate) enum Message {
     PageScrolled(Scroll),
     FilesScrolled(Scroll),
     Resized(f32),
+    Tick,
 }
 
 pub(crate) struct Viewer {
@@ -60,7 +65,9 @@ pub(crate) struct Viewer {
     light: bool,
     pub status: Option<String>,
     cell: Cell<CellPixels>,
-    images: RefCell<HashMap<String, Option<Arc<Surface>>>>,
+    images: RefCell<HashMap<String, Option<Media>>>,
+    /// The heading a link asked for, until the page has scrolled to it.
+    reveal: Option<u64>,
 }
 
 impl Viewer {
@@ -85,6 +92,7 @@ impl Viewer {
                 height: 20,
             }),
             images: RefCell::default(),
+            reveal: None,
         };
         if let Some(first) = first.or_else(|| viewer.library.front_page()) {
             viewer.show(first);
@@ -256,7 +264,11 @@ impl Viewer {
     /// anything else opens in the program the system picks for it.
     pub(crate) fn follow(&mut self, href: &str) {
         let path = href.split(['#', '?']).next().unwrap_or_default();
+        let fragment = href
+            .split_once('#')
+            .map(|(_, fragment)| anchor_id(fragment));
         if path.is_empty() {
+            self.reveal = fragment;
             return;
         }
         if has_scheme(path) {
@@ -269,6 +281,7 @@ impl Viewer {
         };
         if let Some(id) = self.library.find(&target) {
             self.navigate(id);
+            self.reveal = fragment;
         } else if self.library.root.join(&target).exists() {
             self.open_outside(&self.library.root.join(&target).to_string_lossy());
         } else {
@@ -383,11 +396,6 @@ fn pixels(index: usize) -> f32 {
     index as f32
 }
 
-fn decode(path: &Path) -> Option<Arc<Surface>> {
-    let rgba = image::open(path).ok()?.to_rgba8();
-    Surface::from_rgba(rgba.width(), rgba.height(), rgba.into_raw()).map(Arc::new)
-}
-
 impl HtmlHost<Message> for Viewer {
     fn link(&self, href: &str) -> Message {
         Message::Link(href.to_owned())
@@ -402,9 +410,31 @@ impl HtmlHost<Message> for Viewer {
             .entry(src.to_owned())
             .or_insert_with(|| {
                 let path = self.library.root.join(self.resolve(src)?);
-                path.is_file().then(|| decode(&path)).flatten()
+                path.is_file().then(|| Media::open(&path)).flatten()
             })
-            .clone()
+            .as_ref()
+            .and_then(Media::current)
+    }
+}
+
+impl Viewer {
+    /// Move every animation and video on the page to its current frame.
+    fn play(&self) -> Control {
+        let now = Instant::now();
+        let changed = self
+            .images
+            .borrow_mut()
+            .values_mut()
+            .flatten()
+            .map(|media| media.advance(now))
+            .filter(|changed| *changed)
+            .count()
+            > 0;
+        if changed {
+            Control::Redraw
+        } else {
+            Control::Wait
+        }
     }
 }
 
@@ -556,11 +586,15 @@ impl Viewer {
             let pane = width * (1.0 - self.sidebar) - gutter * 2.0;
             Length::Px(pane.min(theme.cell_width() * PAGE_COLUMNS))
         });
-        Element::column([content.width(width)])
+        let page = Element::column([content.width(width)])
             .align(Align::Center)
             .scroll(self.page_scroll.offset())
-            .on_scroll(Message::PageScrolled)
-            .scrollbar(theme.muted)
+            .on_scroll(Message::PageScrolled);
+        let page = match self.reveal {
+            Some(anchor) => page.reveal(anchor),
+            None => page,
+        };
+        page.scrollbar(theme.muted)
             .padding_xy(gutter, theme.cell_height())
             .size(Length::Fill, Length::Fill)
     }
@@ -743,11 +777,19 @@ impl UiApp for Viewer {
             Message::Pick(id) => self.pick(id),
             Message::Hit(index) => self.open_hit(index),
             Message::Link(href) => self.follow(&href),
-            Message::PageScrolled(scroll) => self.page_scroll.apply(scroll),
+            Message::PageScrolled(scroll) => {
+                self.page_scroll.apply(scroll);
+                self.reveal = None;
+            }
             Message::FilesScrolled(scroll) => self.files_scroll.apply(scroll),
             Message::Resized(fraction) => self.sidebar = fraction,
+            Message::Tick => return self.play(),
         }
         Control::Redraw
+    }
+
+    fn start(&mut self, waker: Waker<Message>) {
+        waker.every(MEDIA_TICK, || Message::Tick);
     }
 
     fn input(&mut self, event: &InputEvent) -> Control {
@@ -811,6 +853,29 @@ mod tests {
             };
             viewer.input(&InputEvent::Key(key, Mods::NONE));
         }
+    }
+
+    #[test]
+    fn a_link_to_a_heading_scrolls_the_page_there() {
+        let mut viewer = viewer();
+        viewer.follow("#install");
+        let cell = katui::ui::CellPixels {
+            width: 9,
+            height: 19,
+        };
+        let view = katui::widgets::Theme::dark(cell).scope(|_| viewer.view());
+        let engine =
+            katui::draw::TextEngine::new(katui::draw::bundled_fonts()).expect("the fonts parse");
+        let mut ui: katui::ui::Ui<super::Message> =
+            katui::ui::Ui::new(engine, katui::ui::UiOptions::default());
+        ui.render(&view, (9 * 120, 19 * 40), cell);
+        let scrolled = ui.take_clamped_scrolls();
+        assert_eq!(scrolled.len(), 1, "the page reports where it went");
+        for message in scrolled {
+            viewer.update(message);
+        }
+        assert!(viewer.page_scroll.offset() > 0.0);
+        assert!(viewer.reveal.is_none(), "the request ends once it lands");
     }
 
     #[test]
