@@ -1,7 +1,7 @@
 <h1 align="center">katui</h1>
 
 <p align="center">
-  Real pixels in your terminal, from Rust.
+  Real pixels in your terminal, from Rust and Python.
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 
 <p align="center"><img src="assets/demos/shardrift.webp" alt="Shardrift, a katui game: a ship firing through a nebula and splitting crystal rocks" width="800"></p>
 
-katui is a terminal UI library for Rust that draws real pixels. Apps, games
+katui is a terminal UI library for Rust and Python that draws real pixels. Apps, games
 and video show up as images through the [kitty graphics protocol][kitty],
 and terminals without it get [sixel][sixel] images or quarter-block
 characters instead.
@@ -37,6 +37,13 @@ the widgets:
 ```
 cargo new counter && cd counter
 cargo add katui --git https://github.com/matheusfillipe/katui --features app
+```
+
+For Python 3.10 or newer, install the package from PyPI. The
+[Python guide](docs/python.md) starts from there:
+
+```
+pip install katui
 ```
 
 ## A first program
@@ -208,6 +215,10 @@ Clone the repository and run any of these with [just](https://github.com/casey/j
 | `just demo-cube` | A lit cube in software 3D that the arrow keys spin |
 | `just demo-plasma` | An interference plasma |
 
+The same apps and a game written in Python run with `just py-demo`, like
+`just py-demo widgets`. They live in
+[bindings/python/examples](bindings/python/examples).
+
 `just --list` shows the rest, and `just info` prints what katui detected in
 your terminal. The video demo needs `ffmpeg` for the picture and `ffplay`
 for the sound.
@@ -221,13 +232,17 @@ and function.
 ## Status
 
 katui is young. It works in the terminals above and in its own demos, the
-API still changes between commits, and it is not on crates.io yet.
+API still changes between commits, and it is not on crates.io yet. Each
+release tag publishes the Python package to PyPI with the same version.
 
 ## Develop
 
 Contributors follow the design rules in [ARCHITECTURE.md](ARCHITECTURE.md)
 and the workflow in [AGENTS.md](AGENTS.md). The checks run through
-[just](https://github.com/casey/just):
+[just](https://github.com/casey/just), and the Python checks need
+[uv](https://docs.astral.sh/uv/). [Building, testing and
+publishing](docs/publishing.md) explains each check and how a release
+reaches PyPI:
 
 ```
 just check   # lint, after every change

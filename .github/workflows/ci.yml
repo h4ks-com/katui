@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -41,6 +43,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with:
@@ -50,10 +54,43 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: just test
 
+  # the python package against the rust crates in this commit: lints, types,
+  # the stub, the sync check against the rust api, the examples and the docs
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        python: ["3.10", "3.15"]
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: just py-check
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: python-shots-${{ matrix.os }}-${{ matrix.python }}
+          path: target/python-shots
+          retention-days: 14
+
   msrv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@1.90
       - uses: Swatinem/rust-cache@v2
         with:
@@ -64,18 +101,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,just
+      - run: just deny
 
   typos:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: crate-ci/typos@v1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: typos,just
+      - run: just typos
 
   dupes:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: taiki-e/install-action@v2
         with:
           tool: just
@@ -88,6 +137,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-machete,just
@@ -97,6 +148,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with:
@@ -114,6 +167,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

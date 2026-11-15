@@ -8,7 +8,8 @@ it before writing code; it is the contract this guide enforces.
 ## Layout
 
 The crate map lives in [ARCHITECTURE.md](ARCHITECTURE.md). Outside
-`crates/`: `demos/obby-chat/` is an IRC client on the full engine, GPL and
+`crates/`: `bindings/python/` is the `katui` Python package (PyO3, built
+with maturin); `demos/obby-chat/` is an IRC client on the full engine, GPL and
 outside the workspace; `scripts/` holds repo tooling (the commit-message
 gate); `.opencode/` holds repo commands and skills.
 
@@ -25,6 +26,9 @@ gate); `.opencode/` holds repo commands and skills.
   (`cargo install rust-code-analysis-cli` once). Report tier only; the
   gate tier stays clippy's cognitive ceiling of 20
 - `just hooks`: install the prek hooks, once per clone
+- `just py-check`: the Python package's gates (ruff, strict mypy,
+  stubtest, pytest); part of `just ci`, needs uv. `just py-fmt` applies
+  ruff's fixes, `just py-demo <name>` runs a Python example
 - CI (`.github/workflows/ci.yml`) runs `just ci`'s checks plus deny, dupes
   and machete, which `just ci` skips, and a raw `cargo check` on the MSRV.
   Never run a raw tool in CI when a just target exists for it.
@@ -74,6 +78,11 @@ gate); `.opencode/` holds repo commands and skills.
 - `research/` is git-excluded local scratch. Tracked files never reference
   it or any local path; everything a cold reader needs lives in tracked
   docs or a public URL.
+- The Rust API is the source of truth for the Python package. A change to
+  a public Rust item lands with its binding in `bindings/python/src`, the
+  stub `_katui.pyi`, and the Python guide and examples it affects, or with
+  an `OMITTED` entry in `tests/test_sync.py` that says why Python does
+  without it. `just py-check` fails until one of them is done.
 - Do not weaken a gate to make it pass. Fix the code, or change the rule in
   a commit of its own with the argument.
 

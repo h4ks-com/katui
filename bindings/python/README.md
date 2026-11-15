@@ -1,7 +1,7 @@
 <h1 align="center">katui for Python</h1>
 
 <p align="center">
-  katui is a Python library for apps, games and documents that draw real pixels in the terminal.
+  katui is a Python library for apps, games and documents drawn in pixels inside the terminal.
 </p>
 
 <p align="center">
@@ -13,10 +13,11 @@
 
 <p align="center"><img src="https://raw.githubusercontent.com/matheusfillipe/katui/main/assets/demos/widgets.webp" alt="The katui widget tour: a file tree, a theme select, a switch with a spinner, a slider and a table" width="800"></p>
 
-It draws with the kitty graphics protocol, falls back to sixel or to blocks
-of colored cells in other terminals, and sends only what changed between
-frames. The engine is the [katui](https://github.com/matheusfillipe/katui)
-Rust library; this package runs it from Python.
+It sends pictures to the terminal through the kitty graphics protocol, and
+through sixel or blocks of colored cells where that is missing. Only what
+changed between frames is sent. The engine is the
+[katui](https://github.com/matheusfillipe/katui) Rust library, shipped
+inside prebuilt wheels, so you need no Rust to use it.
 
 ```python
 import katui
@@ -39,31 +40,33 @@ katui.run(Counter())
 
 ## Install
 
-katui runs on Linux and macOS with Python 3.10 or newer:
+katui runs on Linux and macOS with Python 3.10 or newer. Install it into a
+virtual environment:
 
 ```sh
-pip install katui
+python3 -m venv .venv && . .venv/bin/activate && pip install katui
 ```
 
 Save the example above as `counter.py` and run it with `python counter.py`.
-A panel shows a line of text and a button; click the button and the count
-goes up. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to quit.
+A panel shows a line of text and a button. Click the button with the mouse
+and the count goes up. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to quit.
 
-Pixels need a terminal with graphics: kitty, Ghostty and iTerm2 3.7 show
-the full picture, and terminals with sixel show it as sixel. Everywhere
-else, katui draws it with colored block characters.
+kitty, Ghostty and iTerm2 3.7 show the app at full resolution, and
+terminals with sixel graphics, like foot, show it as sixel.
+Other terminals, like macOS Terminal and GNOME Terminal, show the same app
+in colored block characters at a lower resolution.
 
-## What you get
+## Features
 
 - **Widgets:** labels, buttons, text fields and areas, lists, tables, trees,
   tabs, switches, sliders, selects, menus, tooltips, dialogs, toasts, scroll
-  views and split panes, drawn with a theme you can switch at runtime.
+  views and split panes, in a dark or light theme or your own.
 - **Layout:** rows, columns and stacks laid out with flexbox, sized in pixels
   or in terminal cells so they follow the font size.
 - **Documents:** `katui.html` and `katui.markdown` turn a page into elements,
   with links that send messages and images you supply.
-- **Games:** `katui.game` runs a fixed-step loop over a light buffer with
-  glows, bloom, sparks and a 3D camera, at up to 60 frames a second.
+- **Games:** `katui.game` calls your game 60 times a second to move and
+  then draw it, with shapes, glowing light, text and particles.
 - **Tests:** `katui.testing.Screen` draws an app into an image and sends it
   clicks and keys without a terminal, and `frame` does the same for games.
 
@@ -88,6 +91,9 @@ class Comet(game.Game):
 
 game.play(Comet())
 ```
+
+The left and right arrow keys steer the comet. <kbd>Q</kbd>,
+<kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> quits.
 
 The [examples](https://github.com/matheusfillipe/katui/tree/main/bindings/python/examples)
 include a to-do list, the full widget tour, a Markdown help screen, an HTML

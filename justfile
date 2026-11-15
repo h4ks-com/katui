@@ -31,7 +31,7 @@ deny:
     cargo deny check
 
 typos:
-    if command -v typos >/dev/null; then typos; else echo "typos not installed, skipping"; fi
+    typos
 
 # complexity per function, into target/metrics (cargo install rust-code-analysis-cli)
 metrics:
@@ -56,11 +56,66 @@ docs:
 
 # the public api reference, as github pages publishes it
 api-docs:
-    cargo doc --workspace --no-deps --all-features
+    cargo doc --workspace --exclude katui-python --no-deps --all-features
     echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
 
 # every gate, before every commit
-ci: fmt-check clippy test docs typos
+ci: fmt-check clippy test docs typos py-check
+
+# the python package, built in release into bindings/python/.venv
+[working-directory('bindings/python')]
+py-build:
+    uv sync --quiet --no-install-project
+    uv run --no-sync maturin develop --quiet --release
+
+# python formatting, lints, types, the stub against the module, and the tests
+[working-directory('bindings/python')]
+py-check: py-build
+    uv run --no-sync ruff format --check .
+    uv run --no-sync ruff check .
+    uv run --no-sync mypy
+    uv run --no-sync python -m mypy.stubtest katui._katui --allowlist stubtest-allowlist.txt
+    uv run --no-sync pytest
+
+# apply ruff's formatting and fixes to the python code
+[working-directory('bindings/python')]
+py-fmt:
+    uv sync --quiet --no-install-project
+    uv run --no-sync ruff format .
+    uv run --no-sync ruff check --fix .
+
+# the wheel for this machine and the source package, into target/wheels
+[working-directory('bindings/python')]
+py-dist:
+    uv sync --quiet --no-install-project
+    uv run --no-sync maturin build --release --out ../../target/wheels
+    uv run --no-sync maturin sdist --out ../../target/wheels
+
+# the version every package ships, from the workspace Cargo.toml
+version:
+    @sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1
+
+# fail unless `tag` names the workspace version, like v0.1.0
+release-check tag:
+    test {{quote(tag)}} = "v$(just version)"
+
+# the python tests against the wheels in `dist`, installed like users install them
+py-test-wheel dist:
+    uv venv --clear --python 3.10 target/wheel-venv
+    VIRTUAL_ENV=target/wheel-venv uv pip install --no-index --find-links {{quote(dist)}} katui
+    VIRTUAL_ENV=target/wheel-venv uv pip install pytest
+    target/wheel-venv/bin/pytest bindings/python/tests
+
+# the source package in `dist` builds a module that imports
+py-test-sdist dist:
+    uv venv --clear --python 3.10 target/sdist-venv
+    VIRTUAL_ENV=target/sdist-venv uv pip install {{quote(dist)}}/*.tar.gz
+    target/sdist-venv/bin/python -c "import katui, katui.widgets, katui.game; print(katui.__version__)"
+
+# a python example, like `just py-demo widgets`
+[working-directory('bindings/python')]
+py-demo name *args: py-build
+    uv run --no-sync python examples/{{name}}.py {{args}}
 
 # print what katui detects in this terminal
 info:

@@ -15,8 +15,11 @@ one, then pick whichever matches what you want to make.
    your view.
 6. [Images in ratatui apps](ratatui.md): keep your ratatui widgets and add
    pixels next to them.
-7. [How katui works](architecture.md): the layers, and what happens
+7. [Python](python.md): the same apps, documents and games from Python.
+8. [How katui works](architecture.md): the layers, and what happens
    between your `view` and the terminal.
+9. [Building, testing and publishing](publishing.md): the checks that keep
+   the Rust and Python packages in step, and how a release ships.
 
 ## API reference
 
