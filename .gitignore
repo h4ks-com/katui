@@ -10,3 +10,4 @@ __pycache__/
 /bindings/node/npm
 /bindings/node/*.node
 .claude/
+scorecard.png
