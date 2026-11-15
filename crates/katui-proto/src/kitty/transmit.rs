@@ -31,6 +31,21 @@ pub struct Transmit<'a> {
     /// Zlib-compress the payload before base64 (`o=z`), the default for
     /// anything frame-sized.
     pub compressed: bool,
+    /// Where the pixels travel: in the escape code, or in a file the
+    /// terminal reads, in which case `payload` is ignored.
+    pub medium: Medium,
+}
+
+/// Where a transmit's pixels travel.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Medium {
+    /// Inside the escape code, base64 encoded (`t=d`).
+    #[default]
+    Direct,
+    /// A file the terminal reads and then deletes (`t=t`). A terminal only
+    /// reads such a file from a temporary directory, with
+    /// `tty-graphics-protocol` in its name, and only on the same machine.
+    TempFile(String),
 }
 
 impl<'a> Transmit<'a> {
@@ -45,6 +60,7 @@ impl<'a> Transmit<'a> {
             payload,
             quiet: Quiet::Silent,
             compressed: false,
+            medium: Medium::Direct,
         }
     }
 
@@ -59,8 +75,12 @@ impl<'a> Transmit<'a> {
     pub fn encode(&self) -> std::io::Result<Vec<Vec<u8>>> {
         let mut head = String::from("a=t");
         let _ = write!(head, ",f={}", self.format.key());
-        head.push_str(",t=d");
-        if self.compressed {
+        let compressed = self.compressed && self.medium == Medium::Direct;
+        head.push_str(match self.medium {
+            Medium::Direct => ",t=d",
+            Medium::TempFile(_) => ",t=t",
+        });
+        if compressed {
             head.push_str(",o=z");
         }
         if self.width > 0 {
@@ -73,7 +93,11 @@ impl<'a> Transmit<'a> {
             let _ = write!(head, ",i={}", self.id.0);
         }
         let _ = write!(head, ",q={}", self.quiet.key());
-        encode_chunks(&head, self.payload, self.compressed)
+        let payload = match &self.medium {
+            Medium::Direct => self.payload,
+            Medium::TempFile(path) => path.as_bytes(),
+        };
+        encode_chunks(&head, payload, compressed)
     }
 }
 
@@ -148,6 +172,22 @@ pub(in crate::kitty) mod tests {
         assert_eq!(
             frames,
             vec![b"\x1b_Ga=t,f=32,t=d,s=1,v=1,i=1,q=2,m=0;AAAA/w==\x1b\\".to_vec()]
+        );
+    }
+
+    #[test]
+    fn a_temp_file_transmit_names_the_file_and_sends_no_pixels() {
+        let mut command = transmit();
+        command.compressed = true;
+        command.medium = crate::kitty::Medium::TempFile("/tmp/tty-graphics-protocol-1".into());
+        let frames = command.encode().expect("encoding cannot fail");
+        assert_eq!(
+            frames,
+            vec![
+                b"\x1b_Ga=t,f=32,t=t,s=1,v=1,i=1,q=2,m=0;L3RtcC90dHktZ3JhcGhpY3MtcHJvdG9jb2wtMQ==\x1b\\"
+                    .to_vec()
+            ],
+            "the terminal reads the file raw, so it is never compressed"
         );
     }
 

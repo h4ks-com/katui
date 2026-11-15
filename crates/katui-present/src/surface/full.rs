@@ -43,7 +43,7 @@ impl KittySurface {
         let previous = self.base + u32::from(!self.parity);
         let mut bytes = Vec::new();
         bytes.write_all(b"\x1b[?2026h")?;
-        write_whole_image(&mut bytes, KittyImage(current), surface, area)?;
+        write_whole_image(&mut bytes, KittyImage(current), surface, area, None)?;
         bytes.write_all(&Delete::Placement(KittyImage(previous), KittyPlacement(1)).encode())?;
         bytes.write_all(b"\x1b[?2026l")?;
         self.parity = !self.parity;

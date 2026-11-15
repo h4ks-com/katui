@@ -216,6 +216,10 @@ pub struct Capabilities {
     /// so under a multiplexer they need Unicode placeholders for every
     /// image. We know only kitty, from its environment markers.
     pub relative_placements: bool,
+    /// The terminal reads pixels from a file on this machine (`t=t`), so
+    /// frames can skip compression, base64 and the terminal connection.
+    /// The runtime asks, since only the same machine can answer yes.
+    pub local_files: bool,
     /// The image ids this program owns. The runtime gives each program its
     /// own space under a multiplexer, where programs share one terminal.
     pub id_space: IdSpace,
@@ -365,6 +369,7 @@ pub fn sniff(env: &Env) -> Capabilities {
         cell: None,
         text_area: None,
         relative_placements: env.launched_from_kitty(),
+        local_files: false,
         id_space: IdSpace::default(),
         trust: ProbeSource::Sniffed,
     };
@@ -621,6 +626,7 @@ mod tests {
                     height: 700
                 }),
                 relative_placements: true,
+                local_files: false,
                 id_space: super::IdSpace::default(),
                 trust: super::ProbeSource::Probed,
             }

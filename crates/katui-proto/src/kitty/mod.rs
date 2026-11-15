@@ -20,7 +20,7 @@ pub use frames::{Animate, AnimationState, Canvas, FrameTransmit, banded_upload};
 pub use passthrough::{split_at_commands, wrap_for_passthrough};
 pub use place::{PixelRect, Place, Relative};
 pub use response::{Response, barrier, parse_responses};
-pub use transmit::Transmit;
+pub use transmit::{Medium, Transmit};
 
 /// The protocol's maximum chunk payload, in base64 characters.
 pub const CHUNK: usize = 4096;

@@ -185,7 +185,8 @@ fn worth_retrying(env: &Env, caps: &Capabilities) -> bool {
 fn probe_once(env: &Env, budget: Duration) -> Capabilities {
     match TtyTransport::open(budget) {
         Ok(mut transport) => {
-            let caps = probe(&mut transport, env);
+            let mut caps = probe(&mut transport, env);
+            caps.local_files = crate::stash::reads_local_files(&mut transport, &caps);
             // answers racing the budget boundary would otherwise leak
             // into the parent shell as typed junk; spend a quiet window
             // draining whatever still arrives, and drop's input flush

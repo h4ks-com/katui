@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::io::{self, Write as _};
 
 use katui_proto::kitty::{
-    Delete, Format, IdSpace, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
+    Delete, IdSpace, ImageId as KittyImage, Place, PlacementId as KittyPlacement,
 };
 use katui_proto::placeholder::placeholder_row;
 use katui_proto::probe::CellPixels;
@@ -17,7 +17,7 @@ use katui_scene::surface::{PixelRect, Surface, diff_tiles};
 
 use crate::anchor::Anchor;
 
-use super::{damage_is_dense, write_whole_image};
+use super::{Stash, damage_is_dense, transmit_pixels, write_whole_image};
 use crate::cells::move_cursor;
 use crate::kitty::crop_rect;
 
@@ -44,6 +44,7 @@ pub struct PatchedKitty {
     tile_generations: HashMap<u32, bool>,
     grid: Grid,
     cell: CellPixels,
+    stash: Option<Box<dyn Stash>>,
     repaint: bool,
 }
 
@@ -85,8 +86,17 @@ impl PatchedKitty {
             tile_generations: HashMap::new(),
             grid: Grid::Plain,
             cell,
+            stash: None,
             repaint: false,
         }
+    }
+
+    /// Send pixels through `stash`, for a terminal on this machine that
+    /// reads them from there.
+    #[must_use]
+    pub fn with_stash(mut self, stash: Box<dyn Stash>) -> Self {
+        self.stash = Some(stash);
+        self
     }
 
     /// Draw placeholder tiles for cells of `cell` pixels from now on, after
@@ -243,11 +253,11 @@ impl PatchedKitty {
         Ok(bytes.len())
     }
 
+    /// Ghostty's range delete frees every image, the base included, so we
+    /// free the shown tiles one by one.
     fn free_tiles(&mut self, bytes: &mut Vec<u8>) -> io::Result<()> {
-        if let Some(last) = self.tile_generations.keys().max().copied() {
-            let range = Delete::FreeRange(self.tile_image(0, false), self.tile_image(last, true));
-            bytes.write_all(&range.encode())?;
-            self.tile_generations.clear();
+        for (index, generation) in std::mem::take(&mut self.tile_generations) {
+            bytes.write_all(&Delete::Free(self.tile_image(index, generation)).encode())?;
         }
         Ok(())
     }
@@ -268,7 +278,7 @@ impl PatchedKitty {
             KittyImage(self.base)
         };
         bytes.write_all(b"\x1b[?2026h")?;
-        write_whole_image(bytes, image, surface, area)?;
+        write_whole_image(bytes, image, surface, area, self.stash.as_deref_mut())?;
         // old tiles sit above the base and would hide the new pixels
         self.free_tiles(bytes)?;
         if let Some(shown) = self.base_shown.replace(image) {
@@ -326,11 +336,12 @@ impl PatchedKitty {
             show_placeholder_tile(reveal, image, origin, cells)?;
         } else {
             let padded = with_apron(rect, surface);
-            upload(
+            transmit_pixels(
                 uploads,
                 image,
                 &tile_pixels(surface, padded),
                 (padded.width, padded.height),
+                self.stash.as_deref_mut(),
             )?;
             self.place_tile(reveal, image, rect, padded, origin, cells)?;
         }
@@ -385,20 +396,6 @@ fn least_common_multiple(first: u32, second: u32) -> u32 {
     first / a.max(1) * second
 }
 
-fn upload(
-    bytes: &mut Vec<u8>,
-    image: KittyImage,
-    pixels: &[u8],
-    (width, height): (u32, u32),
-) -> io::Result<()> {
-    let mut transmit = Transmit::new(image, Format::Rgba, width, height, pixels);
-    transmit.compressed = true;
-    for frame in transmit.encode()? {
-        bytes.write_all(&frame)?;
-    }
-    Ok(())
-}
-
 /// A terminal fits a placeholder image into its cells keeping its aspect,
 /// so we stretch the tile's height to the aspect of its cells and keep its
 /// width, which keeps a game's reduced resolution.
@@ -420,7 +417,7 @@ fn upload_placeholder_tile(
         (rect.width, rect.height),
         (width, height),
     );
-    upload(bytes, image, &pixels, (width, height))
+    transmit_pixels(bytes, image, &pixels, (width, height), None)
 }
 
 /// A virtual placement of the tile's cell size, and the placeholder text
@@ -623,7 +620,11 @@ mod tests {
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
         let placed = text.find("a=p,i=").expect("the new base is placed");
-        let freed = text.find("d=R").expect("the stale tiles are freed");
+        let freed = text.find("d=I").expect("the stale tiles are freed");
+        assert!(
+            !text.contains("d=R"),
+            "Ghostty frees every image on a range delete"
+        );
         assert!(placed < freed, "the new base appears before the tiles go");
     }
 
@@ -717,7 +718,7 @@ mod tests {
             )
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
-        let freed = text.find("d=R").expect("the old grid is freed");
+        let freed = text.find("d=I").expect("the old grid is freed");
         let placed = text.find("a=p,").expect("the new grid is placed");
         assert!(freed < placed);
     }

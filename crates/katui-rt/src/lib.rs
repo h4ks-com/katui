@@ -6,6 +6,7 @@ pub mod clock;
 pub mod info;
 pub mod media;
 pub mod session;
+pub mod stash;
 
 #[cfg(unix)]
 pub mod app;

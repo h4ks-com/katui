@@ -214,7 +214,7 @@ impl AnimatedKitty {
         area: CellRect,
     ) -> io::Result<usize> {
         let mut bytes = Vec::new();
-        write_whole_image(&mut bytes, KittyImage(self.current), surface, area)?;
+        write_whole_image(&mut bytes, KittyImage(self.current), surface, area, None)?;
         let run = Animate {
             id: KittyImage(self.current),
             state: Some(AnimationState::Loading),

@@ -43,9 +43,10 @@ pub fn card(caps: &Capabilities) -> String {
         ProbeSource::Declared => "declared",
     };
     format!(
-        "graphics: {graphics}\nidentity: {identity}\ntruecolor: {}\nanimation: {}\ncell: {cell}\nsource: {source}\n",
+        "graphics: {graphics}\nidentity: {identity}\ntruecolor: {}\nanimation: {}\nlocal files: {}\ncell: {cell}\nsource: {source}\n",
         if caps.truecolor { "yes" } else { "no" },
-        if caps.animation { "yes" } else { "no" }
+        if caps.animation { "yes" } else { "no" },
+        if caps.local_files { "yes" } else { "no" }
     )
 }
 
@@ -87,12 +88,13 @@ mod tests {
             }),
             text_area: None,
             relative_placements: false,
+            local_files: false,
             id_space: katui_proto::kitty::IdSpace::default(),
             trust: ProbeSource::Probed,
         };
         assert_eq!(
             card(&caps),
-            "graphics: kitty\nidentity: kitty 0.29.0\ntruecolor: yes\nanimation: no\ncell: 7x14 px\nsource: probed\n"
+            "graphics: kitty\nidentity: kitty 0.29.0\ntruecolor: yes\nanimation: no\nlocal files: no\ncell: 7x14 px\nsource: probed\n"
         );
     }
 
@@ -104,7 +106,7 @@ mod tests {
         };
         assert_eq!(
             card(&caps),
-            "graphics: blocks\nidentity: unknown\ntruecolor: no\nanimation: no\ncell: unknown\nsource: sniffed\n"
+            "graphics: blocks\nidentity: unknown\ntruecolor: no\nanimation: no\nlocal files: no\ncell: unknown\nsource: sniffed\n"
         );
     }
 }

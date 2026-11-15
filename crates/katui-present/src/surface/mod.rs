@@ -23,7 +23,7 @@ use crate::Sink;
 use std::io;
 
 use katui_proto::kitty::{
-    Format, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
+    Format, ImageId as KittyImage, Medium, Place, PlacementId as KittyPlacement, Transmit,
 };
 use katui_scene::cell::Position;
 use katui_scene::placement::CellRect;
@@ -43,26 +43,45 @@ pub(crate) fn damage_is_dense(surface: &Surface, tile_side: u32, damaged: usize)
     total >= FINE_GRID_TILES && 4 * u64::try_from(damaged).unwrap_or(u64::MAX) >= total
 }
 
-/// One whole surface as a frame image: a compressed transmit under
-/// `image`, the cursor at the area origin, one placement filling `area`.
-/// The caller owns the sync wrapper and any previous-placement delete.
+/// Puts pixels where a terminal on this machine reads them, so a frame
+/// skips compression, base64 and the terminal connection.
+pub trait Stash: std::fmt::Debug + Send {
+    /// Store `pixels` and say where the terminal finds them.
+    fn put(&mut self, pixels: &[u8]) -> io::Result<Medium>;
+}
+
+/// Write `pixels` as one RGBA transmit under `image`: through `stash` when
+/// there is one, compressed in the escape code otherwise.
+pub(crate) fn transmit_pixels<W: Sink>(
+    bytes: &mut W,
+    image: KittyImage,
+    pixels: &[u8],
+    (width, height): (u32, u32),
+    stash: Option<&mut (dyn Stash + 'static)>,
+) -> io::Result<()> {
+    let mut transmit = Transmit::new(image, Format::Rgba, width, height, pixels);
+    transmit.compressed = true;
+    if let Some(stash) = stash {
+        transmit.medium = stash.put(pixels)?;
+    }
+    for frame in transmit.encode()? {
+        bytes.write_all(&frame)?;
+    }
+    Ok(())
+}
+
+/// One whole surface as a frame image: a transmit under `image`, the
+/// cursor at the area origin, one placement filling `area`. The caller
+/// owns the sync wrapper and any previous-placement delete.
 pub(crate) fn write_whole_image<W: Sink>(
     bytes: &mut W,
     image: KittyImage,
     surface: &Surface,
     area: CellRect,
+    stash: Option<&mut (dyn Stash + 'static)>,
 ) -> io::Result<()> {
-    let mut transmit = Transmit::new(
-        image,
-        Format::Rgba,
-        surface.width(),
-        surface.height(),
-        surface.pixels(),
-    );
-    transmit.compressed = true;
-    for frame in transmit.encode()? {
-        bytes.write_all(&frame)?;
-    }
+    let size = (surface.width(), surface.height());
+    transmit_pixels(bytes, image, surface.pixels(), size, stash)?;
     move_cursor(
         bytes,
         Position {

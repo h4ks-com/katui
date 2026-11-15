@@ -113,11 +113,12 @@ impl<G: Game> Arcade<G> {
             pixel_width / pixel_height,
         );
         self.screen.free(out)?;
-        self.screen = PixelScreen::new(
-            &self.caps,
-            cell,
-            PatchedKitty::with_tiles(BASE_IMAGE, cell, down * TILE_HEIGHTS, TILE_BUDGET),
-        );
+        let mut patched =
+            PatchedKitty::with_tiles(BASE_IMAGE, cell, down * TILE_HEIGHTS, TILE_BUDGET);
+        if let Some(stash) = katui_rt::stash::local_stash(&self.caps) {
+            patched = patched.with_stash(stash);
+        }
+        self.screen = PixelScreen::new(&self.caps, cell, patched);
         self.fitted = Some(size);
         self.game.resize(&self.light);
         Ok(())
