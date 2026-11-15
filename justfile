@@ -288,6 +288,7 @@ c-dist target:
     rm -rf "$out" && mkdir -p "$out/include" "$out/lib"
     cp bindings/c/include/katui.h "$out/include/"
     cp target/{{target}}/dist/libkatui.a "target/{{target}}/dist/$shared" "$out/lib/"
+    just strip-bitcode "$out/lib/libkatui.a"
     cp bindings/c/README.md LICENSE-MIT LICENSE-APACHE "$out/"
     tar -czf "target/dist/katui-c-$os-$arch.tar.gz" -C target/dist katui-c
     rm -rf "$out"
@@ -300,6 +301,16 @@ go-lib: c-build
     mkdir -p bindings/go/include "$lib"
     cp bindings/c/include/katui.h bindings/go/include/
     cp target/release/libkatui.a "$lib/"
+    just strip-bitcode "$lib/libkatui.a"
+
+# drop the LLVM bitcode that rust's standard library carries from a static
+# library, since newer go refuses to link an archive with bitcode in it
+strip-bitcode archive:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    objcopy="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-objcopy"
+    "$objcopy" --remove-section=.llvmbc --remove-section=.llvmcmd \
+        --remove-section=__LLVM,__bitcode --remove-section=__LLVM,__cmdline "{{archive}}"
 
 # the go module's gates: vet, gofmt, and the tests, which run the examples, the docs and the sync check
 [working-directory('bindings/go')]
