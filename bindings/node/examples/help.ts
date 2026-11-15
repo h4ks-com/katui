@@ -1,7 +1,7 @@
 // A help screen written in Markdown, its links switching pages.
 
 import { fileURLToPath } from 'node:url'
-import { type Action, App, hint, markdown, page, run } from '@matheusfillipe/katui'
+import { type Action, App, hint, markdown, page, run } from '@mattfillipe/katui'
 
 const PAGES: Record<string, string> = {
   start: `# Help

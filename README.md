@@ -52,7 +52,7 @@ For Node.js 22.18 or newer, install the package from npm. The
 [Node.js guide](docs/node.md) starts from there:
 
 ```
-npm install @matheusfillipe/katui
+npm install @mattfillipe/katui
 ```
 
 For Go, add the module; the [Go guide](docs/go.md) starts there. For C,
@@ -117,6 +117,11 @@ reach your app as messages.
 
 ### Games
 
+<img src="assets/demos/lumenshaft.webp" alt="Lumenshaft, a katui game: glowing blocks falling down a 3D shaft" width="800">
+
+Lumenshaft, one of the [game demos](crates/katui-game/examples), runs on
+this game loop.
+
 `katui::game::play` runs a game loop that moves the world 60 times a second,
 however fast the terminal draws. You move things in `step` and paint them in
 `render` onto a `Light`, a canvas where colors add up like light, with
@@ -147,8 +152,6 @@ fn main() -> Result<(), katui::rt::RtError> {
 ```
 
 Hold the arrow keys to move the ball.
-
-<img src="assets/demos/lumenshaft.webp" alt="Lumenshaft, a katui game: glowing blocks falling down a 3D shaft" width="800">
 
 ### Video
 

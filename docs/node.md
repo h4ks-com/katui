@@ -8,7 +8,7 @@ how to test both without a terminal.
 Install it on Linux or macOS, with Node.js 22.18 or newer:
 
 ```sh
-npm install @matheusfillipe/katui
+npm install @mattfillipe/katui
 ```
 
 ## An app
@@ -17,7 +17,7 @@ An app is a class with a `view` that returns elements. Here is a shopping
 list you type into:
 
 ```ts
-import { App, Control, Edit, type Event, TextField, checkbox, panel, run, textField, title } from '@matheusfillipe/katui'
+import { App, Control, Edit, type Event, TextField, checkbox, panel, run, textField, title } from '@mattfillipe/katui'
 
 class Shopping extends App {
   items: { name: string; bought: boolean }[] = []
@@ -99,7 +99,7 @@ a button whose message is not a `Message`, and `update` receives a
 `Message`:
 
 ```ts
-import { App, button, Control, type Element, panel, run } from '@matheusfillipe/katui'
+import { App, button, Control, type Element, panel, run } from '@mattfillipe/katui'
 
 type Message = 'save' | 'quit'
 
@@ -200,7 +200,7 @@ A game is a class with `step` and `render`. `play` runs it at 60 steps a
 second:
 
 ```ts
-import { Game, type Keys, type Light, play, srgb } from '@matheusfillipe/katui'
+import { Game, type Keys, type Light, play, srgb } from '@mattfillipe/katui'
 
 class Ball extends Game {
   x = 40

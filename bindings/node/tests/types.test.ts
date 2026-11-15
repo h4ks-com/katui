@@ -25,7 +25,7 @@ import {
   tabs,
   textField,
   type Waker,
-} from '@matheusfillipe/katui'
+} from '@mattfillipe/katui'
 import { BINDINGS } from './paths.ts'
 
 type Equal<A, B> =

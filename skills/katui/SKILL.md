@@ -37,7 +37,7 @@ Then load the reference for the language:
 |---|---|
 | Rust (1.90+) | `cargo add katui --git https://github.com/h4ks-com/katui --features app` (or `game`, `html`, `ratatui`) |
 | Python (3.14+) | `pip install katui` |
-| Node.js (22.18+) | `npm install @matheusfillipe/katui` |
+| Node.js (22.18+) | `npm install @mattfillipe/katui` |
 | Go (1.24+, cgo) | `go get github.com/h4ks-com/katui/bindings/go` |
 | C | the release archive with `katui.h` and the libraries, see the C README |
 

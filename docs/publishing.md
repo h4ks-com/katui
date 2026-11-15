@@ -250,10 +250,10 @@ first release:
    `bindings/go/vX.Y.Z` tag. A tag protection rule or ruleset that covers
    `bindings/go/v*` has to allow GitHub Actions.
 5. npm sets up trusted publishing per package, and only for a package that
-   exists. The packages live under the `@matheusfillipe` scope, since npm
+   exists. The packages live under the `@mattfillipe` scope, since npm
    refuses the bare name `katui` as too close to the existing `kat-ui`.
-   Publish version 0.0.0 of each of `@matheusfillipe/katui` and its six
-   platform packages, `@matheusfillipe/katui-linux-x64-gnu`,
+   Publish version 0.0.0 of each of `@mattfillipe/katui` and its six
+   platform packages, `@mattfillipe/katui-linux-x64-gnu`,
    `-linux-arm64-gnu`, `-linux-x64-musl`, `-linux-arm64-musl`,
    `-darwin-x64` and `-darwin-arm64`, once by hand with `--access public`,
    as a placeholder. Then, on npmjs.com, add a trusted publisher to each of

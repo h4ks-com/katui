@@ -42,7 +42,7 @@ test('the blocks that run type-check', () => {
   const config = {
     extends: join(BINDINGS, 'tsconfig.json'),
     compilerOptions: {
-      paths: { '@matheusfillipe/katui': [join(BINDINGS, 'katui.d.ts')] },
+      paths: { '@mattfillipe/katui': [join(BINDINGS, 'katui.d.ts')] },
       typeRoots: [join(BINDINGS, 'node_modules', '@types')],
       noUnusedLocals: false,
     },
@@ -58,7 +58,7 @@ for (const { name, code } of RUNNABLE) {
     const headless = pathToFileURL(join(BINDINGS, 'tests', 'headless.ts')).href
     const path = join(OUT, `${name}.run.ts`)
     mkdirSync(OUT, { recursive: true })
-    writeFileSync(path, code.replaceAll("from '@matheusfillipe/katui'", `from '${headless}'`))
+    writeFileSync(path, code.replaceAll("from '@mattfillipe/katui'", `from '${headless}'`))
     await import(pathToFileURL(path).href)
   })
 }

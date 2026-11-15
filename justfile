@@ -183,15 +183,15 @@ node-test-pack:
     cp -R bindings/node/tests bindings/node/examples target/node-smoke/
     cd target/node-smoke
     echo '{"name": "katui-smoke", "private": true, "type": "module"}' > package.json
-    npm install --silent --omit=optional "../npm/matheusfillipe-katui-$version.tgz" "../npm/matheusfillipe-katui-$platform-$version.tgz"
+    npm install --silent --omit=optional "../npm/mattfillipe-katui-$version.tgz" "../npm/mattfillipe-katui-$platform-$version.tgz"
     node --test tests/api.test.ts tests/examples.test.ts
 
 # publish every tarball in `dist` to npm with provenance, the native modules first
 node-publish dist:
     #!/usr/bin/env bash
     set -euo pipefail
-    main={{quote(dist)}}/matheusfillipe-katui-$(just version).tgz
-    for tarball in {{quote(dist)}}/matheusfillipe-katui-*.tgz; do
+    main={{quote(dist)}}/mattfillipe-katui-$(just version).tgz
+    for tarball in {{quote(dist)}}/mattfillipe-katui-*.tgz; do
         if [ "$tarball" != "$main" ]; then
             npx --yes npm@11.6.2 publish "$tarball" --provenance --access public
         fi

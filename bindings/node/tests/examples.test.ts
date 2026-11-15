@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { Control, Event, frame, type Image, Screen } from '@matheusfillipe/katui'
+import { Control, Event, frame, type Image, Screen } from '@mattfillipe/katui'
 import { Browser, SHOWCASE } from '../examples/browse.ts'
 import { Comet } from '../examples/comet.ts'
 import { Counter } from '../examples/counter.ts'

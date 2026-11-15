@@ -19,7 +19,7 @@ SITE = "https://h4ks-com.github.io/katui/"
 BINDING_CRATES = {"katui-c", "katui-python", "katui-node", "katui-bindings"}
 BINDINGS = [
     ("Python", "bindings/python/README.md", "the `katui` package on PyPI"),
-    ("Node.js", "bindings/node/README.md", "the `@matheusfillipe/katui` package on npm"),
+    ("Node.js", "bindings/node/README.md", "the `@mattfillipe/katui` package on npm"),
     ("Go", "bindings/go/README.md", "the Go module over the C library"),
     ("C", "bindings/c/README.md", "the C library behind `katui.h`"),
 ]
@@ -43,7 +43,7 @@ an `update`) for pixel UI apps, `katui::game::play` with a `Game` (`step` and `r
 for games, `katui::content::html` and `markdown_view` for documents inside a view, \
 `katui::ratatui` to add images to a ratatui app, and `katui::rt::media::VideoStream` for video.
 - Rust features: `app` (runner and widgets), `game`, `html`, `ratatui`. Python: \
-`pip install katui`. Node.js: `npm install @matheusfillipe/katui`. Go: \
+`pip install katui`. Node.js: `npm install @mattfillipe/katui`. Go: \
 `go get github.com/h4ks-com/katui/bindings/go`.
 - Every binding has a headless `Screen` and a game `frame` for tests without a terminal.
 - `KATUI_GRAPHICS=kitty|sixel|blocks` overrides the detected backend. Inside tmux, set \

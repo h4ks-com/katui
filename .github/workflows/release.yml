@@ -325,7 +325,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm
-      url: https://www.npmjs.com/package/@matheusfillipe/katui
+      url: https://www.npmjs.com/package/@mattfillipe/katui
     permissions:
       contents: read
       id-token: write

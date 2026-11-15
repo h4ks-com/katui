@@ -1,7 +1,7 @@
 // A click counter, the smallest katui program.
 
 import { fileURLToPath } from 'node:url'
-import { type Action, App, label, panel, primaryButton, run } from '@matheusfillipe/katui'
+import { type Action, App, label, panel, primaryButton, run } from '@mattfillipe/katui'
 
 export class Counter extends App<Action> {
   count = 0

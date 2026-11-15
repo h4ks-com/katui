@@ -1,14 +1,14 @@
 # katui in Node.js and TypeScript
 
-`npm install @matheusfillipe/katui` (Node.js 22.18+, Linux or macOS). The
+`npm install @mattfillipe/katui` (Node.js 22.18+, Linux or macOS). The
 package ships its own types, and Node runs `.ts` files directly
-(`node app.ts`). Everything imports from `'@matheusfillipe/katui'`. Full
+(`node app.ts`). Everything imports from `'@mattfillipe/katui'`. Full
 guide: https://github.com/h4ks-com/katui/blob/main/docs/node.md
 
 ## An app
 
 ```ts
-import { App, Control, Edit, type Event, TextField, checkbox, panel, run, textField, title } from '@matheusfillipe/katui'
+import { App, Control, Edit, type Event, TextField, checkbox, panel, run, textField, title } from '@mattfillipe/katui'
 
 class Shopping extends App {
   items: { name: string; bought: boolean }[] = []
@@ -54,7 +54,7 @@ The default `update` calls a function message, so
 function; a bare `this.save` loses its `this`. Typed messages:
 
 ```ts
-import { App, button, Control, type Element, panel, run } from '@matheusfillipe/katui'
+import { App, button, Control, type Element, panel, run } from '@mattfillipe/katui'
 
 type Message = 'save' | 'quit'
 
@@ -114,7 +114,7 @@ sends the href. `Image.open(path)` reads PNG, JPEG, GIF or WebP.
 ## Games
 
 ```ts
-import { Game, type Keys, type Light, play, srgb } from '@matheusfillipe/katui'
+import { Game, type Keys, type Light, play, srgb } from '@mattfillipe/katui'
 
 class Ball extends Game {
   x = 40
@@ -138,7 +138,7 @@ optional overrides.
 ## Tests
 
 ```ts
-import { Event, Screen, frame } from '@matheusfillipe/katui'
+import { Event, Screen, frame } from '@mattfillipe/katui'
 
 const screen = new Screen(new Counter(), 480, 240)
 screen.render().save('counter.png')
