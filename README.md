@@ -46,6 +46,14 @@ For Python 3.10 or newer, install the package from PyPI. The
 pip install katui
 ```
 
+For Go, add the module; the [Go guide](docs/go.md) starts there. For C,
+each release has an archive with the header and the libraries, and the
+[C guide](docs/c.md) shows how to link it:
+
+```
+go get github.com/matheusfillipe/katui/bindings/go
+```
+
 ## A first program
 
 Put this in `src/main.rs`. It is a complete katui app: a label and a button
@@ -218,6 +226,10 @@ Clone the repository and run any of these with [just](https://github.com/casey/j
 The same apps and a game written in Python run with `just py-demo`, like
 `just py-demo widgets`. They live in
 [bindings/python/examples](bindings/python/examples).
+
+C and Go examples run with `just c-demo todo` and `just go-demo todo`, from
+[bindings/c/examples](bindings/c/examples) and
+[bindings/go/examples](bindings/go/examples).
 
 `just --list` shows the rest, and `just info` prints what katui detected in
 your terminal. The video demo needs `ffmpeg` for the picture and `ffplay`

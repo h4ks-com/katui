@@ -1,7 +1,8 @@
 # Building, testing and publishing
 
-katui ships as Rust crates on crates.io and as the `katui` Python package
-on PyPI. Both come from the same commit and carry the same version.
+katui ships as Rust crates on crates.io, as the `katui` Python package
+on PyPI, as a C library attached to each GitHub release, and as a Go
+module. All of them come from the same commit and carry the same version.
 
 ## The version
 
@@ -23,11 +24,16 @@ every push and pull request. Run it before you commit.
 | `just test` | the Rust tests, the code in the guides, and the IRC demo |
 | `just docs` | rustdoc with warnings as errors |
 | `just py-check` | ruff, strict mypy, the stub, and the Python tests |
+| `just c-check` | a fresh `katui.h`, the C examples and tests, the C docs and the C sync check |
+| `just go-check` | go vet, gofmt, and the Go tests, docs and sync check |
 
 CI runs `just py-check` on Linux x86_64, Linux arm64 and macOS, with the
-oldest and the newest Python the package supports, and `just
-crates-check`, which packages every crate and compiles it the way
-crates.io will.
+oldest and the newest Python the package supports, `just c-check` and
+`just go-check` on the same three machines, and `just crates-check`,
+which packages every crate and compiles it the way crates.io will.
+
+`just c-check` needs `cbindgen` and a C compiler, and `just go-check`
+needs Go and a C compiler.
 
 ## Keeping Python in step with Rust
 
@@ -51,12 +57,45 @@ leave it behind. These checks in `just py-check` catch that:
 A change to the Rust API is finished when `just ci` passes, with the
 binding, the stub, the Python guide and the examples updated with it.
 
+## Keeping C and Go in step with Rust
+
+The C library in `bindings/c` is a C ABI over the Rust crates, and the Go
+module in `bindings/go` wraps that C ABI with cgo. The same checks guard
+them:
+
+- **The header** `bindings/c/include/katui.h` is generated from
+  `bindings/c/src` by cbindgen and committed. `just c-header` writes it
+  again, and `just c-check` fails while the committed one is stale.
+- **The C sync check**, `bindings/c/tests/sync.py`, reads the Rust sources
+  and the header. Every public widget, game item, type method, theme
+  field, app and game hook, and `Control` and `Edit` variant needs a C
+  function, type or constant. Bind it in `bindings/c/src`, or add it to
+  `OMITTED` with the reason C does without it.
+- **The Go sync test**, `bindings/go/sync_test.go`, does the same against
+  the Go package's exported names, with its own `omitted` and `renamed`
+  maps.
+- **The docs tests** build every C block in `docs/c.md` and the C README,
+  and every Go block in `docs/go.md` and the Go README, and run each one
+  that starts an app or a game, with one frame drawn off-terminal.
+- **The example tests** run the C and Go examples without a terminal and
+  save their screenshots in `target/c-shots` and `target/go-shots`.
+
+A change to the Rust API is finished when the C binding and the Go
+wrapper follow it too.
+
 ## Building locally
 
 `just py-build` builds the package in release into
 `bindings/python/.venv`, and `just py-demo widgets` runs an example with
 it. `just py-dist` builds a wheel for this machine and the source package
 into `target/wheels`.
+
+`just c-build` builds the C library in release into `target/release`, and
+`just c-demo todo` runs a C example. `just go-lib` copies the header and
+this machine's static library into `bindings/go/include` and
+`bindings/go/lib/<os>_<arch>`, which git ignores, and `just go-demo todo`
+runs a Go example. Inside the repository, the Go recipes always build the
+library from source first.
 
 ## Releasing
 
@@ -76,7 +115,25 @@ The release workflow then:
    Python tests against them (`just py-test-wheel`); the musl wheels ship
    without that test;
 4. publishes the wheels and the source package to PyPI, and every crate
-   to crates.io in dependency order (`just crates-publish`).
+   to crates.io in dependency order (`just crates-publish`);
+5. builds the C archive for Linux x86_64 and arm64 and macOS Apple
+   Silicon and Intel (`just c-dist`), each holding `include/katui.h` and
+   `lib/` with `libkatui.a` and the shared library, and attaches them to
+   the GitHub release of the tag;
+6. publishes the Go module (`just go-release` and `just go-publish`).
+
+## How the Go module ships
+
+`go get` downloads the module's directory at a tag and builds it with
+cgo, so the static library has to be inside the module. The main branch
+holds no binaries. For each release, the workflow takes the static
+libraries out of the four C archives into `bindings/go/lib/<os>_<arch>`,
+copies the header into `bindings/go/include`, commits them on a commit off
+the release tag that no branch contains, and pushes the tag
+`bindings/go/vX.Y.Z`. The Go proxy fetches the module at that tag, and the
+cgo flags in `bindings/go/katui.go` link the library for the platform
+being built. Users need Go and a C compiler, and no Rust. The four static
+libraries add about 180 MB to the module.
 
 The Linux arm64 runners are free for public repositories only, so the
 repository has to be public before the first release.
@@ -99,3 +156,7 @@ repository holds no PyPI token. Before the first release:
    scopes, and a GitHub environment named `crates-io` with the token as
    its secret `CARGO_REGISTRY_TOKEN`. Add yourself as a required reviewer
    there too.
+4. Let GitHub Actions write to the repository: the C release job creates
+   the GitHub release, and the Go release job pushes the
+   `bindings/go/vX.Y.Z` tag. A tag protection rule or ruleset that covers
+   `bindings/go/v*` has to allow GitHub Actions.

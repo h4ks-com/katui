@@ -63,6 +63,7 @@ data.
 
 | Crate | What it does |
 |---|---|
+| `katui-c` | The C library: these crates behind `katui.h`, which the Go module wraps |
 | `katui-python` | The Python package: these crates wrapped with PyO3 |
 | `katui` | Re-exports everything below under one name, with features |
 | `katui-app` | `run(app)`: the runner for pixel UI apps |
