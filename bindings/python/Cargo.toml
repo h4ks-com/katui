@@ -24,7 +24,7 @@ katui-proto.workspace = true
 katui-scene.workspace = true
 katui-ui.workspace = true
 katui-widgets.workspace = true
-pyo3 = { version = "0.30", features = ["abi3-py310"] }
+pyo3 = { version = "0.30", features = ["abi3-py314"] }
 
 [lints]
 workspace = true

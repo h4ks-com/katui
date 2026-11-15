@@ -10,6 +10,7 @@ use katui_widgets::{
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyType;
 
 use crate::event::PyEvent;
 
@@ -315,6 +316,14 @@ pub(crate) struct PyFocus {
 
 #[pymethods]
 impl PyFocus {
+    #[classmethod]
+    fn __class_getitem__<'py>(
+        cls: &Bound<'py, PyType>,
+        item: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        crate::convert::generic_alias(cls, item)
+    }
+
     /// Focus over `controls`, the first one focused.
     #[new]
     fn new(controls: Vec<Py<PyAny>>) -> PyResult<Self> {

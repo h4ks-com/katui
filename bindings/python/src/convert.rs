@@ -6,6 +6,7 @@ use katui_draw::{Paint, Rgba};
 use katui_ui::{Align, Length};
 use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyType;
 
 /// `error` as the Python exception of its kind.
 pub(crate) fn raise(error: Error) -> PyErr {
@@ -57,4 +58,16 @@ pub(crate) fn length(value: &Bound<'_, PyAny>) -> PyResult<Length> {
 
 pub(crate) fn align(value: &str) -> PyResult<Align> {
     names::align(value).map_err(raise)
+}
+
+/// `cls[item]` as a `types.GenericAlias`, so annotations such as
+/// `Element[Msg]` evaluate on Pythons that read annotations eagerly.
+pub(crate) fn generic_alias<'py>(
+    cls: &Bound<'py, PyType>,
+    item: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    cls.py()
+        .import("types")?
+        .getattr("GenericAlias")?
+        .call1((cls, item))
 }

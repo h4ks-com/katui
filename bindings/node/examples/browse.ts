@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  type Action,
   App,
   Control,
   column,
@@ -22,7 +23,7 @@ export const SHOWCASE = fileURLToPath(
   new URL('../../../crates/katui-app/examples/pages/showcase.html', import.meta.url),
 )
 
-export class Browser extends App {
+export class Browser extends App<Action> {
   history: string[]
   scroll = new ScrollState()
   images = new Map<string, Image>()

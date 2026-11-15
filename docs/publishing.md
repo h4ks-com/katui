@@ -26,10 +26,10 @@ every push and pull request. Run it before you commit.
 | `just test` | the Rust tests, the code in the guides, and the IRC demo |
 | `just docs` | rustdoc with warnings as errors |
 | `just quality` | complexity and duplication in every language, and a fresh `bindings/rust-api.json` |
-| `just py-check` | ruff, strict mypy, the stub, and the Python tests |
+| `just py-check` | ruff, strict mypy and ty, the stub against the module, and the Python tests |
 | `just c-check` | a fresh `katui.h`, clang-tidy, the C examples and tests, the C docs and the C sync check |
 | `just go-check` | gofmt, go vet, golangci-lint, and the Go tests, docs and sync check |
-| `just node-check` | biome, fresh generated types, strict tsc, and the Node tests |
+| `just node-check` | biome, strict tsc, fresh generated types, and the Node tests |
 
 Every language meets the same limits. lizard caps each function at a
 cyclomatic complexity of 15, 100 lines and 8 parameters (`just
@@ -51,6 +51,21 @@ way crates.io will.
 `just c-check` needs `cbindgen`, `clang-tidy` and a C compiler, `just
 go-check` needs Go and a C compiler, `just node-check` needs Node 22.18 or
 newer, and `just quality` needs uv and Node.
+
+## Typed messages
+
+Python and TypeScript check messages statically, the way Rust does: an app
+names its message type (`App[Message]`, `App<Message>`), every element
+carries the type of what it sends, and a widget whose message is not that
+type fails mypy, ty or tsc. `tests/test_types.py` and `tests/types.test.ts`
+hold lines that must fail to type-check; mypy and ty fail on an unneeded
+`# type: ignore` and tsc on an unneeded `@ts-expect-error`, so a type that
+loosens breaks the build. The Python stub may hold no `Any`, the Node test
+fails when a generated declaration that carries messages has no typed
+counterpart in `katui.d.ts`, and the runnable code in the Python and Node
+guides is type-checked too. `just py-lint` and `just node-lint` run the
+checkers against the committed stub and declarations without a build, so
+the prek hooks run them on every commit.
 
 ## The Rust API manifest
 
@@ -206,7 +221,7 @@ The Linux arm64 runners are free for public repositories only, so the
 repository has to be public before the first release.
 
 The wheels use the stable ABI, so one wheel per platform works on every
-Python from 3.10 on.
+Python from 3.14 on.
 
 ## One-time setup
 

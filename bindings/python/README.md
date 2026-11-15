@@ -24,14 +24,14 @@ import katui
 from katui.widgets import label, panel, primary_button
 
 
-class Counter(katui.App):
-    def __init__(self):
+class Counter(katui.App[katui.Action]):
+    def __init__(self) -> None:
         self.count = 0
 
-    def view(self):
+    def view(self) -> katui.Element[katui.Action]:
         return panel(label(f"Clicked {self.count} times"), primary_button("Add one", self.add))
 
-    def add(self):
+    def add(self) -> None:
         self.count += 1
 
 
@@ -40,7 +40,7 @@ katui.run(Counter())
 
 ## Install
 
-katui runs on Linux and macOS with Python 3.10 or newer. Install it into a
+katui runs on Linux and macOS with Python 3.14 or newer. Install it into a
 virtual environment:
 
 ```sh
@@ -73,18 +73,18 @@ in colored block characters at a lower resolution.
 ## A game
 
 ```python
-import katui.game as game
-from katui.game import srgb
+from katui import game
+from katui.game import Keys, Light, srgb
 
 
 class Comet(game.Game):
-    def __init__(self):
+    def __init__(self) -> None:
         self.x = 40.0
 
-    def step(self, keys, dt):
+    def step(self, keys: Keys, dt: float) -> None:
         self.x += 60 * dt * (keys.is_held("right") - keys.is_held("left"))
 
-    def render(self, light):
+    def render(self, light: Light) -> None:
         light.dim(0.8)
         light.glow((self.x, 30), 6, srgb(255, 140, 60))
 

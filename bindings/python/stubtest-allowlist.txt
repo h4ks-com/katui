@@ -1,2 +1,8 @@
 # pyo3 fills in the native module's __all__; the stub lists every name itself
 katui._katui.__all__
+# a generic class in the stub (class Element[M]) already declares subscripting;
+# the runtime adds __class_getitem__ so Element[Msg] evaluates
+katui._katui.Element.__class_getitem__
+katui._katui.Focus.__class_getitem__
+katui._katui.Screen.__class_getitem__
+katui._katui.Waker.__class_getitem__

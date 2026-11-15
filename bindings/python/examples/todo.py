@@ -21,7 +21,7 @@ FILTERS = ["All", "Active", "Done"]
 VISIBLE = 10
 
 
-class Todo(katui.App):
+class Todo(katui.App[katui.Action]):
     def __init__(self) -> None:
         self.tasks: list[tuple[str, bool]] = [("water the plants", False), ("fix the bike", True)]
         self.draft = TextField()
@@ -40,11 +40,11 @@ class Todo(katui.App):
         self.filter = index
         self.selection.resize(len(self.shown()), VISIBLE)
 
-    def view(self) -> katui.Element:
+    def view(self) -> katui.Element[katui.Action]:
         shown = self.shown()
         done = sum(1 for _, finished in self.tasks if finished)
 
-        def row(position: int, selected: bool) -> katui.Element:
+        def row(position: int, selected: bool) -> katui.Element[katui.Action]:
             index = shown[position]
             text, finished = self.tasks[index]
             return checkbox(text, finished, lambda: self.toggle(index))

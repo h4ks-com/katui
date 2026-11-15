@@ -4,7 +4,7 @@ The `katui` Python package runs the same engine as the Rust crates: apps
 with widgets, HTML and Markdown documents, and games. This guide builds a
 small app and a small game, and shows how to test both without a terminal.
 
-Install it on Linux or macOS, with Python 3.10 or newer:
+Install it on Linux or macOS, with Python 3.14 or newer:
 
 ```sh
 pip install katui
@@ -17,28 +17,30 @@ list you type into:
 
 ```python
 import katui
-from katui import Control, Event
+from katui import Action, Control, Event
 from katui.widgets import Edit, TextField, checkbox, panel, text_field, title
 
 
-class Shopping(katui.App):
-    def __init__(self):
-        self.items = []
+class Shopping(katui.App[Action]):
+    def __init__(self) -> None:
+        self.items: list[tuple[str, bool]] = []
         self.draft = TextField()
 
-    def view(self):
+    def view(self) -> katui.Element[Action]:
         return panel(
             title("Shopping"),
             text_field(self.draft, "Add an item"),
-            [checkbox(name, bought, lambda i=i: self.toggle(i))
-             for i, (name, bought) in enumerate(self.items)],
+            [
+                checkbox(name, bought, lambda i=i: self.toggle(i))
+                for i, (name, bought) in enumerate(self.items)
+            ],
         )
 
-    def toggle(self, index):
+    def toggle(self, index: int) -> None:
         name, bought = self.items[index]
         self.items[index] = (name, not bought)
 
-    def input(self, event: Event):
+    def input(self, event: Event) -> Control | None:
         if self.draft.handle(event) == Edit.SUBMITTED and self.draft.text.strip():
             self.items.append((self.draft.take().strip(), False))
         return Control.REDRAW
@@ -83,6 +85,40 @@ function can do the work itself and return nothing.
 To send messages from another thread, keep the `Waker` that `start` gets.
 `waker.send(message)` delivers one, and `waker.every(seconds, message)`
 delivers one on a steady beat, for a clock or a spinner.
+
+### Typed messages
+
+An app names its message type: `class Editor(katui.App[Message])`. Every
+element carries the type of what it sends, as `Element[M]`, so mypy and ty
+reject a button whose message is not a `Message`, and `update` receives a
+`Message`:
+
+```python
+from enum import Enum
+
+import katui
+from katui.widgets import button, panel
+
+
+class Message(Enum):
+    SAVE = "save"
+    QUIT = "quit"
+
+
+class Editor(katui.App[Message]):
+    def view(self) -> katui.Element[Message]:
+        return panel(button("Save", Message.SAVE), button("Quit", Message.QUIT))
+
+    def update(self, message: Message) -> katui.Control | None:
+        return katui.Control.QUIT if message is Message.QUIT else None
+
+
+katui.run(Editor())
+```
+
+An app that acts in its callbacks is a `katui.App[katui.Action]`: an
+`Action` is a callable `update` calls, or `None` when a value callback
+already did the work.
 
 ## Keys
 
@@ -145,18 +181,18 @@ A game is a class with `step` and `render`. `play` runs it at 60 steps a
 second:
 
 ```python
-import katui.game as game
-from katui.game import srgb
+from katui import game
+from katui.game import Keys, Light, srgb
 
 
 class Ball(game.Game):
-    def __init__(self):
+    def __init__(self) -> None:
         self.x = 40.0
 
-    def step(self, keys, dt):
+    def step(self, keys: Keys, dt: float) -> None:
         self.x += 60 * dt * (keys.is_held("right") - keys.is_held("left"))
 
-    def render(self, light):
+    def render(self, light: Light) -> None:
         light.dim(0.8)
         light.glow((self.x, 30), 6, srgb(255, 140, 60))
 

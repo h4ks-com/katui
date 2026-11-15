@@ -8,6 +8,7 @@ use katui_draw::TextSpan;
 use katui_scene::surface::Surface;
 use katui_ui::Element;
 use pyo3::prelude::*;
+use pyo3::types::PyType;
 use pyo3::types::{PyList, PyTuple};
 
 use crate::convert::{align, color, length, paint, raise};
@@ -72,6 +73,14 @@ pub(crate) fn node(value: &Bound<'_, PyAny>) -> PyResult<Node> {
 
 #[pymethods]
 impl PyElement {
+    #[classmethod]
+    fn __class_getitem__<'py>(
+        cls: &Bound<'py, PyType>,
+        item: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        crate::convert::generic_alias(cls, item)
+    }
+
     #[staticmethod]
     #[pyo3(signature = (*children))]
     fn row(children: &Bound<'_, PyTuple>) -> PyResult<Self> {

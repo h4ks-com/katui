@@ -88,17 +88,18 @@ py-build:
     uv sync --quiet --no-install-project
     uv run --no-sync maturin develop --quiet --release
 
-# ruff's format and lint checks on the python code, without a build
+# ruff, strict mypy and ty on the python code, against the stub, without a build
 [working-directory('bindings/python')]
 py-lint:
     uv sync --quiet --no-install-project
     uv run --no-sync ruff format --check .
     uv run --no-sync ruff check .
+    uv run --no-sync mypy
+    uv run --no-sync ty check
 
-# the python lints, then types, the stub against the module, and the tests
+# the python lints and types, then the stub against the module, and the tests
 [working-directory('bindings/python')]
 py-check: py-lint py-build
-    uv run --no-sync mypy
     uv run --no-sync python -m mypy.stubtest katui._katui --allowlist stubtest-allowlist.txt
     uv run --no-sync pytest
 
@@ -122,17 +123,17 @@ node-build:
     npm ci --silent
     npx napi build --platform --release --esm
 
-# biome's format and lint checks on the node code, without a build
+# biome's format and lint checks and strict tsc on the node code, without a build
 [working-directory('bindings/node')]
 node-lint:
     npm ci --silent
     npx biome ci .
+    npx tsc -p .
 
-# the node lints, then fresh generated types, strict tsc, and the tests
+# the node lints and types, then fresh generated types and the tests
 [working-directory('bindings/node')]
 node-check: node-lint node-build
     git diff --exit-code -- index.js index.d.ts
-    npx tsc -p .
     node --test 'tests/*.test.ts'
 
 # apply biome's formatting and fixes to the node code
@@ -216,14 +217,14 @@ crates-publish:
 
 # the python tests against the wheels in `dist`, installed like users install them
 py-test-wheel dist:
-    uv venv --clear --python 3.10 target/wheel-venv
+    uv venv --clear --python 3.14 target/wheel-venv
     VIRTUAL_ENV=target/wheel-venv uv pip install --no-index --find-links {{quote(dist)}} katui
     VIRTUAL_ENV=target/wheel-venv uv pip install pytest
     target/wheel-venv/bin/pytest bindings/python/tests
 
 # the source package in `dist` builds a module that imports
 py-test-sdist dist:
-    uv venv --clear --python 3.10 target/sdist-venv
+    uv venv --clear --python 3.14 target/sdist-venv
     VIRTUAL_ENV=target/sdist-venv uv pip install {{quote(dist)}}/*.tar.gz
     target/sdist-venv/bin/python -c "import katui, katui.widgets, katui.game; print(katui.__version__)"
 

@@ -17,14 +17,14 @@ Press **Ctrl+C** to quit. Read [the keys](keys) or [the credits](credits).
 }
 
 
-class Help(katui.App):
+class Help(katui.App[katui.Action]):
     def __init__(self) -> None:
         self.current = "start"
 
     def open(self, name: str) -> None:
         self.current = name if name in PAGES else "start"
 
-    def view(self) -> katui.Element:
+    def view(self) -> katui.Element[katui.Action]:
         return page(
             katui.markdown(PAGES[self.current], on_link=self.open),
             hint(f"You are on the {self.current} page"),

@@ -11,7 +11,7 @@ from katui.widgets import ScrollState
 SHOWCASE = Path(__file__).parents[3] / "crates/katui-app/examples/pages/showcase.html"
 
 
-class Browser(katui.App):
+class Browser(katui.App[katui.Action]):
     def __init__(self, start: Path) -> None:
         self.history = [start.resolve()]
         self.scroll = ScrollState()
@@ -36,7 +36,7 @@ class Browser(katui.App):
     def scrolled(self, scroll: Scroll) -> None:
         self.scroll.apply(scroll)
 
-    def view(self) -> katui.Element:
+    def view(self) -> katui.Element[katui.Action]:
         theme = Theme.current()
         try:
             document = katui.html(self.here.read_text(), on_link=self.follow, images=self.image)

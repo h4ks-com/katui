@@ -10,6 +10,7 @@ use katui_ui::CellPixels;
 use katui_widgets::Theme;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
+use pyo3::types::PyType;
 
 use crate::convert::raise;
 use crate::element::{Node, PyElement};
@@ -132,6 +133,14 @@ pub(crate) struct PyWaker {
 
 #[pymethods]
 impl PyWaker {
+    #[classmethod]
+    fn __class_getitem__<'py>(
+        cls: &Bound<'py, PyType>,
+        item: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        crate::convert::generic_alias(cls, item)
+    }
+
     /// Hand `message` to the app's `update`. `False` once the app has quit.
     fn send(&self, py: Python<'_>, message: &Bound<'_, PyAny>) -> bool {
         let message = Msg::Value(obj(message));

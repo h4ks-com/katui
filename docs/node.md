@@ -91,6 +91,35 @@ function can do the work itself and return nothing.
 message on a steady beat, for a clock or a spinner, and `waker.send(message)`
 delivers one right away.
 
+### Typed messages
+
+An app names its message type: `class Editor extends App<Message>`. Every
+element carries the type of what it sends, as `Element<M>`, so tsc rejects
+a button whose message is not a `Message`, and `update` receives a
+`Message`:
+
+```ts
+import { App, button, Control, type Element, panel, run } from '@matheusfillipe/katui'
+
+type Message = 'save' | 'quit'
+
+class Editor extends App<Message> {
+  view(): Element<Message> {
+    return panel(button('Save', 'save'), button('Quit', 'quit'))
+  }
+
+  update(message: Message): Control | undefined {
+    return message === 'quit' ? Control.Quit : undefined
+  }
+}
+
+run(new Editor())
+```
+
+An app that acts in its callbacks is an `App<Action>`: an `Action` is a
+function `update` calls, or nothing when a value callback already did the
+work.
+
 ## Keys
 
 Keys and pastes go to `input`, which receives an `Event` and returns a

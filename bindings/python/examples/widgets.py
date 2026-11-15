@@ -60,7 +60,7 @@ def forest(cell: tuple[int, int]) -> Theme:
     return theme
 
 
-class Tour(katui.App):
+class Tour(katui.App[katui.Action]):
     def __init__(self) -> None:
         self.popup: str | None = None
         self.palette = 0
@@ -82,7 +82,7 @@ class Tour(katui.App):
         theme = [Theme.dark, forest, Theme.light][self.palette](cell)
         return theme.scaled(SCALES[self.size])
 
-    def start(self, waker: katui.Waker) -> None:
+    def start(self, waker: katui.Waker[katui.Action]) -> None:
         waker.every(0.25, self.tick)
 
     def tick(self) -> Control:
@@ -102,7 +102,7 @@ class Tour(katui.App):
     def pick_theme(self, index: int) -> None:
         self.palette, self.popup = index, None
 
-    def controls(self) -> katui.Element:
+    def controls(self) -> katui.Element[katui.Action]:
         theme = Theme.current()
         working = (
             katui.row(spinner(time.monotonic() - self.started), label("Turn off to stop"))
@@ -138,7 +138,7 @@ class Tour(katui.App):
             ),
         ).width("fill")
 
-    def data(self) -> katui.Element:
+    def data(self) -> katui.Element[katui.Action]:
         return panel(
             heading("Tools"),
             table(
@@ -151,7 +151,7 @@ class Tour(katui.App):
             text_area(self.note, "Write a note", self.focus.is_("note")),
         ).width("fill")
 
-    def view(self) -> katui.Element:
+    def view(self) -> katui.Element[katui.Action]:
         theme = Theme.current()
         bar = (
             katui.row(

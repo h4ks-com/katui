@@ -2,6 +2,7 @@
 
 use katui_bindings::screen::Screen;
 use pyo3::prelude::*;
+use pyo3::types::PyType;
 
 use crate::app::PyApp;
 use crate::element::PyImage;
@@ -16,6 +17,14 @@ pub(crate) struct PyScreen {
 
 #[pymethods]
 impl PyScreen {
+    #[classmethod]
+    fn __class_getitem__<'py>(
+        cls: &Bound<'py, PyType>,
+        item: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        crate::convert::generic_alias(cls, item)
+    }
+
     /// `app` on a screen of `width` by `height` pixels in cells of `cell`.
     #[new]
     #[pyo3(signature = (app, width=960, height=540, cell=(10, 20)))]

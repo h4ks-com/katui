@@ -39,7 +39,7 @@ cargo new counter && cd counter
 cargo add katui --git https://github.com/matheusfillipe/katui --features app
 ```
 
-For Python 3.10 or newer, install the package from PyPI. The
+For Python 3.14 or newer, install the package from PyPI. The
 [Python guide](docs/python.md) starts from there:
 
 ```

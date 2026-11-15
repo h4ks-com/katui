@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "katui"
 description = "Pixel apps, games and documents in the terminal, drawn with kitty graphics"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 keywords = ["terminal", "tui", "kitty", "graphics", "games"]
@@ -30,7 +30,7 @@ Source = "https://github.com/matheusfillipe/katui/tree/main/bindings/python"
 Issues = "https://github.com/matheusfillipe/katui/issues"
 
 [dependency-groups]
-dev = ["maturin>=1.9.4,<2", "mypy>=1.13", "pytest>=8", "ruff>=0.8"]
+dev = ["maturin>=1.9.4,<2", "mypy>=1.13", "pytest>=8", "ruff>=0.8", "ty"]
 
 [tool.maturin]
 module-name = "katui._katui"
@@ -42,7 +42,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "C90", "PL", "PERF", "RET", "PIE"]
@@ -56,6 +56,13 @@ max-complexity = 15
 max-args = 8
 max-branches = 15
 max-statements = 50
+
+[tool.ty.environment]
+# the tests import the examples and conftest by name, the way pytest runs them
+extra-paths = ["examples", "tests"]
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
 
 [tool.mypy]
 strict = true

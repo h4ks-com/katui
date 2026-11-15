@@ -2,6 +2,7 @@
 
 import { fileURLToPath } from 'node:url'
 import {
+  type Action,
   App,
   Control,
   checkbox,
@@ -26,7 +27,7 @@ const VISIBLE = 10
 
 type Task = { text: string; done: boolean }
 
-export class Todo extends App {
+export class Todo extends App<Action> {
   tasks: Task[] = [
     { text: 'water the plants', done: false },
     { text: 'fix the bike', done: true },

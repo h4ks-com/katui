@@ -3,6 +3,7 @@
 
 import { fileURLToPath } from 'node:url'
 import {
+  type Action,
   App,
   button,
   Column,
@@ -75,7 +76,7 @@ const PALETTES = [
   (cell: [number, number]) => Theme.light(cell),
 ]
 
-export class Tour extends App {
+export class Tour extends App<Action> {
   popup: string | null = null
   palette = 0
   size = 1

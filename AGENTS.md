@@ -114,6 +114,11 @@ gate); `.opencode/` holds repo commands and skills.
   `just node-check` fails until one of them is done.
 - `unsafe` is allowed in `bindings/c` and `bindings/node` only, where the
   foreign function interfaces need it.
+- Python and TypeScript stay fully typed. Messages are generic
+  (`App[M]`, `Element[M]`, `App<M>`, `Element<M>`), the Python stub and
+  package hold no `Any`, Python uses 3.14 syntax (PEP 695 generics, `type`
+  aliases), and a new message-carrying API lands with a line in
+  `tests/test_types.py` or `tests/types.test.ts` that must fail to type-check.
 - Do not weaken a gate to make it pass. Fix the code, or change the rule in
   a commit of its own with the argument.
 

@@ -1,8 +1,9 @@
 """The bindings' behavior: messages, widgets, themes, documents, errors."""
 
-from typing import Any
+from collections.abc import Callable
 
 import katui
+import katui.game
 import pytest
 from katui import Control, Event, Image, Theme
 from katui.game import V3, Camera, Light, Rng, srgb
@@ -24,16 +25,15 @@ from katui.widgets import (
 )
 
 
-class Recorder(katui.App):
-    def __init__(self, view: Any) -> None:
+class Recorder(katui.App[object]):
+    def __init__(self, view: Callable[[Recorder], katui.Element[object]]) -> None:
         self.build = view
-        self.messages: list[Any] = []
+        self.messages: list[object] = []
 
-    def view(self) -> katui.Element:
-        result: katui.Element = self.build(self)
-        return result
+    def view(self) -> katui.Element[object]:
+        return self.build(self)
 
-    def update(self, message: Any) -> Control | None:
+    def update(self, message: object) -> Control | None:
         self.messages.append(message)
         return None
 
@@ -51,8 +51,11 @@ def test_a_slider_calls_its_function_with_the_value() -> None:
     screen = Screen(app, 400, 100)
     screen.render()
     screen.click(300, 30)
-    assert app.messages[0][0] == "volume"
-    assert app.messages[0][1] > 0.5
+    match app.messages[0]:
+        case ("volume", float(value)):
+            assert value > 0.5
+        case other:
+            raise AssertionError(f"the slider sent {other!r}")
 
 
 def test_tabs_send_the_index_picked() -> None:
@@ -66,8 +69,8 @@ def test_tabs_send_the_index_picked() -> None:
 def test_the_default_update_calls_a_callable_message() -> None:
     calls: list[int] = []
 
-    class Plain(katui.App):
-        def view(self) -> katui.Element:
+    class Plain(katui.App[object]):
+        def view(self) -> katui.Element[object]:
             return panel(button("Go", lambda: calls.append(1)))
 
     screen = Screen(Plain(), 300, 120)
@@ -77,8 +80,8 @@ def test_the_default_update_calls_a_callable_message() -> None:
 
 
 def test_widgets_draw_with_the_apps_theme() -> None:
-    class Paper(katui.App):
-        def view(self) -> katui.Element:
+    class Paper(katui.App[object]):
+        def view(self) -> katui.Element[object]:
             return page(label(str(Theme.current().cell)))
 
         def theme(self, cell: tuple[int, int]) -> Theme:
@@ -102,8 +105,8 @@ def test_a_theme_takes_colors_as_tuples_or_hex() -> None:
 
 
 def test_an_error_in_view_reaches_the_caller() -> None:
-    class Broken(katui.App):
-        def view(self) -> katui.Element:
+    class Broken(katui.App[object]):
+        def view(self) -> katui.Element[object]:
             raise RuntimeError("view broke")
 
     with pytest.raises(RuntimeError, match="view broke"):
@@ -111,11 +114,11 @@ def test_an_error_in_view_reaches_the_caller() -> None:
 
 
 def test_an_error_in_update_reaches_the_caller() -> None:
-    class Broken(katui.App):
-        def view(self) -> katui.Element:
+    class Broken(katui.App[object]):
+        def view(self) -> katui.Element[object]:
             return panel(button("Go", "go"))
 
-        def update(self, message: Any) -> Control | None:
+        def update(self, message: object) -> Control | None:
             raise KeyError(message)
 
     screen = Screen(Broken(), 300, 120)
@@ -125,8 +128,8 @@ def test_an_error_in_update_reaches_the_caller() -> None:
 
 
 def test_a_control_return_quits() -> None:
-    class Quitter(katui.App):
-        def view(self) -> katui.Element:
+    class Quitter(katui.App[object]):
+        def view(self) -> katui.Element[object]:
             return panel(button("Quit", lambda: Control.QUIT))
 
     screen = Screen(Quitter(), 300, 120)
