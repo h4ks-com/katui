@@ -22,6 +22,8 @@ signal-hook.workspace = true
 
 # the snake demo's soak test builds its frames with the image crate
 [dev-dependencies]
+base64.workspace = true
+flate2.workspace = true
 image.workspace = true
 
 [lints]
