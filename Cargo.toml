@@ -5,6 +5,7 @@ members = [
     "bindings/core",
     "bindings/node",
     "bindings/python",
+    "demos/md-viewer",
     "crates/katui",
     "crates/katui-app",
     "crates/katui-content",

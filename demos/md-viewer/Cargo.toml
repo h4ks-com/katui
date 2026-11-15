@@ -1,0 +1,16 @@
+[package]
+name = "md-viewer"
+description = "A katui demo: a markdown reader for the docs of a repository"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+image.workspace = true
+katui = { path = "../../crates/katui", features = ["app", "html"] }
+
+[lints]
+workspace = true
