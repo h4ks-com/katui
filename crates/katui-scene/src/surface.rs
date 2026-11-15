@@ -264,12 +264,18 @@ pub fn diff_rects(
 }
 
 fn rect_differs(prev: &Surface, next: &Surface, rect: PixelRect) -> bool {
+    if prev.width != next.width || prev.height != next.height {
+        return true;
+    }
     let bottom = rect.y.saturating_add(rect.height).min(next.height);
     let right = rect.x.saturating_add(rect.width).min(next.width);
-    (rect.y..bottom).any(|row| {
-        (rect.x..right).any(|column| {
-            prev.get(PixelPos::new(column, row)) != next.get(PixelPos::new(column, row))
-        })
+    let row_bytes = next.width as usize * 4;
+    let span = rect.x as usize * 4..right as usize * 4;
+    (rect.y as usize..bottom as usize).any(|row| {
+        let start = row * row_bytes;
+        let before = prev.pixels.get(start + span.start..start + span.end);
+        let after = next.pixels.get(start + span.start..start + span.end);
+        before != after
     })
 }
 
