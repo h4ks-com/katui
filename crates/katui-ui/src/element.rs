@@ -68,6 +68,7 @@ impl Default for Style {
     }
 }
 
+#[derive(Clone)]
 pub(crate) enum Kind {
     Row,
     Column,
@@ -94,6 +95,7 @@ pub(crate) type PressHandler<M> = Arc<dyn Fn(f32, f32) -> M>;
 pub(crate) type ScrollHandler<M> = Arc<dyn Fn(Scroll) -> M>;
 
 /// One node of the view: a container, text, an image or a spacer.
+#[derive(Clone)]
 pub struct Element<M> {
     pub(crate) kind: Kind,
     pub(crate) style: Style,

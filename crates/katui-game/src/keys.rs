@@ -9,7 +9,7 @@ const REPEAT_LEASE: Duration = Duration::from_millis(120);
 /// Which keys are down. A terminal that reports releases gives the exact
 /// answer; on any other terminal, a multiplexer included, we treat a press
 /// as a lease that auto-repeat keeps renewing.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct HeldKeys {
     down: Vec<(Key, Instant)>,
     now: Option<Instant>,

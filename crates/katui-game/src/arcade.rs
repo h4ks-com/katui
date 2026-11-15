@@ -42,6 +42,10 @@ pub trait Game {
     /// Advance the world by `dt` seconds, a fixed step.
     fn step(&mut self, keys: &HeldKeys, dt: f32);
     fn render(&mut self, light: &mut Light);
+    /// Whether the game is over, so [`play`] ends after this frame.
+    fn finished(&self) -> bool {
+        false
+    }
 }
 
 /// Run `game` on the terminal until the player quits.
@@ -185,7 +189,11 @@ impl<G: Game> App for Arcade<G> {
         let surface = self.light.to_surface();
         self.screen
             .render_frame(out, &surface, size.columns, size.rows)?;
-        Ok(Control::Animate)
+        Ok(if self.game.finished() {
+            Control::Quit
+        } else {
+            Control::Animate
+        })
     }
 }
 
@@ -205,6 +213,7 @@ mod tests {
     struct Recorder {
         presses: u32,
         repeats: u32,
+        over: bool,
     }
 
     impl Game for Recorder {
@@ -218,6 +227,9 @@ mod tests {
         fn step(&mut self, _keys: &HeldKeys, _dt: f32) {}
         fn render(&mut self, light: &mut Light) {
             light.rect(P2::new(0.0, 0.0), 4.0, 4.0, [1.0; 3], Blend::Over);
+        }
+        fn finished(&self) -> bool {
+            self.over
         }
     }
 
@@ -263,6 +275,19 @@ mod tests {
         assert_eq!((arcade.game.presses, arcade.game.repeats), (1, 1));
         let quit = InputEvent::Key(Key::Char('q'), Mods::NONE);
         assert_eq!(arcade.on_input(&quit, now), Control::Quit);
+    }
+
+    #[test]
+    fn a_finished_game_quits_after_its_frame() {
+        let size = CellSize {
+            columns: 20,
+            rows: 6,
+        };
+        let mut arcade = arcade();
+        let mut out = Vec::new();
+        assert_eq!(arcade.draw(&mut out, size).ok(), Some(Control::Animate));
+        arcade.game.over = true;
+        assert_eq!(arcade.draw(&mut out, size).ok(), Some(Control::Quit));
     }
 
     #[test]
