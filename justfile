@@ -20,6 +20,7 @@ fix:
 
 test:
     cargo test --workspace --all-features --all-targets
+    cargo test --workspace --all-features --doc
 
 # licenses, advisories and sources, from deny.toml
 deny:
