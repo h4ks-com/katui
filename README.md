@@ -232,8 +232,8 @@ and function.
 ## Status
 
 katui is young. It works in the terminals above and in its own demos, the
-API still changes between commits, and it is not on crates.io yet. Each
-release tag publishes the Python package to PyPI with the same version.
+API still changes between commits. Each release tag publishes the crates
+to crates.io and the Python package to PyPI, with the same version.
 
 ## Develop
 

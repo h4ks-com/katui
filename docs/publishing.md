@@ -1,14 +1,15 @@
 # Building, testing and publishing
 
-katui ships as Rust crates, used from this repository with
-`cargo add --git`, and as the `katui` Python package on PyPI. Both come
-from the same commit and carry the same version.
+katui ships as Rust crates on crates.io and as the `katui` Python package
+on PyPI. Both come from the same commit and carry the same version.
 
 ## The version
 
-The workspace `Cargo.toml` holds the only version number. Every crate
-inherits it, and the Python package reads it when maturin builds it.
-`just version` prints it.
+The workspace `Cargo.toml` holds the version. Every crate inherits it, and
+the Python package reads it when maturin builds it. `just version` prints
+it. The internal dependencies in `[workspace.dependencies]` repeat it,
+because crates.io needs a version on each, and `just release-check`
+fails when one of them differs.
 
 ## The gates
 
@@ -24,7 +25,9 @@ every push and pull request. Run it before you commit.
 | `just py-check` | ruff, strict mypy, the stub, and the Python tests |
 
 CI runs `just py-check` on Linux x86_64, Linux arm64 and macOS, with the
-oldest and the newest Python the package supports.
+oldest and the newest Python the package supports, and `just
+crates-check`, which packages every crate and compiles it the way
+crates.io will.
 
 ## Keeping Python in step with Rust
 
@@ -57,7 +60,8 @@ into `target/wheels`.
 
 ## Releasing
 
-1. Set the new version in the workspace `Cargo.toml`.
+1. Set the new version in the workspace `Cargo.toml`, in
+   `[workspace.package]` and on every internal dependency.
 2. Run `just ci` and commit.
 3. Tag the commit with the version, like `v0.2.0`, and push the tag.
 
@@ -71,7 +75,8 @@ The release workflow then:
 3. installs the glibc and macOS wheels on matching machines and runs the
    Python tests against them (`just py-test-wheel`); the musl wheels ship
    without that test;
-4. publishes everything to PyPI.
+4. publishes the wheels and the source package to PyPI, and every crate
+   to crates.io in dependency order (`just crates-publish`).
 
 The Linux arm64 runners are free for public repositories only, so the
 repository has to be public before the first release.
@@ -90,3 +95,7 @@ repository holds no PyPI token. Before the first release:
 2. In the repository settings on GitHub, create an environment named
    `pypi`. Add yourself as a required reviewer to approve each release
    before it publishes.
+3. Create a crates.io API token with the publish-new and publish-update
+   scopes, and a GitHub environment named `crates-io` with the token as
+   its secret `CARGO_REGISTRY_TOKEN`. Add yourself as a required reviewer
+   there too.

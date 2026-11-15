@@ -95,9 +95,19 @@ py-dist:
 version:
     @sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1
 
-# fail unless `tag` names the workspace version, like v0.1.0
+# fail unless `tag` names the workspace version, like v0.1.0, and every
+# internal dependency asks for that version
 release-check tag:
     test {{quote(tag)}} = "v$(just version)"
+    test -z "$(grep -E '^katui-[a-z]+ = .*version = ' Cargo.toml | grep -v "version = \"$(just version)\"")"
+
+# package and compile every crate the way crates.io will see it
+crates-check:
+    cargo publish --workspace --dry-run
+
+# publish every crate to crates.io, in dependency order
+crates-publish:
+    cargo publish --workspace
 
 # the python tests against the wheels in `dist`, installed like users install them
 py-test-wheel dist:

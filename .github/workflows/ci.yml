@@ -85,6 +85,22 @@ jobs:
           path: target/python-shots
           retention-days: 14
 
+  # every crate packages and compiles the way crates.io will see it
+  crates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: just crates-check
+
   msrv:
     runs-on: ubuntu-latest
     steps:

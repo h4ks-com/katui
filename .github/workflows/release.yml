@@ -107,7 +107,25 @@ jobs:
           path: dist
       - run: just py-test-wheel dist
 
-  publish:
+  crates:
+    needs: check
+    runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/katui
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just crates-publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  pypi:
     needs: [wheel-tests, sdist]
     runs-on: ubuntu-latest
     environment:
