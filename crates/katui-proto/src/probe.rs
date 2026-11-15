@@ -211,6 +211,11 @@ pub struct Capabilities {
     /// The pixel size of the whole text area, when the `CSI 14 t` answer
     /// arrived; divided by the cell count it gives the cell size.
     pub text_area: Option<CellPixels>,
+    /// The terminal places an image relative to another placement, as
+    /// kitty does. Ghostty and others draw such a placement at the cursor,
+    /// so under a multiplexer they need Unicode placeholders for every
+    /// image. We know only kitty, from its environment markers.
+    pub relative_placements: bool,
     /// The image ids this program owns. The runtime gives each program its
     /// own space under a multiplexer, where programs share one terminal.
     pub id_space: IdSpace,
@@ -359,6 +364,7 @@ pub fn sniff(env: &Env) -> Capabilities {
         identity: None,
         cell: None,
         text_area: None,
+        relative_placements: env.launched_from_kitty(),
         id_space: IdSpace::default(),
         trust: ProbeSource::Sniffed,
     };
@@ -614,6 +620,7 @@ mod tests {
                     width: 560,
                     height: 700
                 }),
+                relative_placements: true,
                 id_space: super::IdSpace::default(),
                 trust: super::ProbeSource::Probed,
             }

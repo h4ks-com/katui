@@ -180,7 +180,7 @@ and look at it when layout matters.
 | kitty, Ghostty, iTerm2 3.7 | full pixels through the kitty graphics protocol |
 | terminals with sixel | sixel images |
 | any other color terminal | quarter blocks, four pixels per cell |
-| tmux | kitty graphics, when the outer terminal speaks it |
+| tmux and rmux | kitty graphics in kitty and Ghostty outside the multiplexer; iTerm2 shows no images there |
 
 katui picks the backend when it starts. Override it with
 `KATUI_GRAPHICS=kitty`, `sixel` or `blocks`, for example

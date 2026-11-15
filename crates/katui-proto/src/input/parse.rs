@@ -406,12 +406,21 @@ pub(in crate::input) mod tests {
             width: 14,
             height: 34,
         };
-        let mut scaled = Pointer::new(Some(cell));
+        let mut scaled = Pointer::new(Some(cell), retina);
         scaled.resize(80, 25);
         assert_eq!(
             scaled.locate(&click(211, 92), retina),
             (422.0, 184.0),
             "reports in points land on the double density surface"
+        );
+        let zoomed = CellPixels {
+            width: 18,
+            height: 44,
+        };
+        assert_eq!(
+            scaled.locate(&click(211, 92), zoomed),
+            (422.0, 184.0),
+            "a font zoom changes the cell and leaves the density alone"
         );
     }
 

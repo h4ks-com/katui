@@ -7,7 +7,7 @@ use std::io;
 
 use katui_draw::{TextEngine, bundled_fonts};
 use katui_present::kitty::{Images, KittyScreen, RgbaImage};
-use katui_present::surface::PixelScreen;
+use katui_present::surface::{PatchedKitty, PixelScreen};
 use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent, Pointer};
 use katui_proto::probe::Capabilities;
 use katui_rt::RtError;
@@ -66,8 +66,17 @@ enum Screen {
 }
 
 impl Screen {
+    /// Inside a multiplexer we flatten each frame and send it as tiles
+    /// shown through placeholder text, which Ghostty draws too: it has no
+    /// placements relative to the anchor our layers would need.
     fn for_terminal(caps: &Capabilities, cell: CellPixels) -> Self {
-        if caps.kitty {
+        if caps.kitty && caps.multiplexed() && !caps.relative_placements {
+            Self::Picture(PixelScreen::new(
+                caps,
+                cell,
+                PatchedKitty::new(FIRST_IMAGE, cell),
+            ))
+        } else if caps.kitty {
             Self::Kitty(KittyScreen::new(caps))
         } else {
             Self::Picture(PixelScreen::picture(caps, cell))
@@ -109,7 +118,7 @@ impl<A: UiApp> Runner<A> {
             cell,
             ui: Ui::new(engine, options),
             screen: Screen::for_terminal(caps, cell),
-            pointer: Pointer::new(caps.cell),
+            pointer: Pointer::new(caps.cell, cell),
             hover: Hover::default(),
         })
     }
@@ -195,6 +204,9 @@ impl<A: UiApp> App for Runner<A> {
             AppEvent::Message(message) => self.app.update(message),
             AppEvent::Resized(_) => {
                 self.cell = katui_rt::tty::cell_size(&self.caps);
+                if let Screen::Picture(screen) = &mut self.screen {
+                    screen.set_cell(self.cell);
+                }
                 self.screen.repaint();
                 Control::Redraw
             }

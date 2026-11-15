@@ -228,19 +228,25 @@ const PIXEL_MOUSE_MODE: u32 = 1016;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Pointer {
     pixels: bool,
-    reported_cell: Option<CellPixels>,
+    /// The cell the terminal reported at the start, with the surface cell
+    /// we drew it as then. Their ratio is the screen density, which a
+    /// font zoom leaves alone, so it still holds after the cell changes.
+    density: Option<(CellPixels, CellPixels)>,
     columns: u16,
     rows: u16,
 }
 
 impl Pointer {
-    /// A pointer for a terminal that reported its cell as `reported_cell`.
-    /// Pixel reports come in that unit, which can be a fraction of the
-    /// surface pixel on a high density screen.
+    /// A pointer for a terminal that reported its cell as `reported_cell`
+    /// while we drew cells of `cell` pixels. Pixel reports come in the
+    /// reported unit, which can be a fraction of the surface pixel on a
+    /// high density screen.
     #[must_use]
-    pub fn new(reported_cell: Option<CellPixels>) -> Self {
+    pub fn new(reported_cell: Option<CellPixels>, cell: CellPixels) -> Self {
         Self {
-            reported_cell,
+            density: reported_cell
+                .filter(|reported| reported.width > 0 && reported.height > 0)
+                .map(|reported| (reported, cell)),
             ..Self::default()
         }
     }
@@ -271,13 +277,10 @@ impl Pointer {
         let coordinate = |value: u32| f32::from(u16::try_from(value).unwrap_or(u16::MAX));
         let (x, y) = (coordinate(mouse.x), coordinate(mouse.y));
         if self.pixels {
-            let reported = self
-                .reported_cell
-                .filter(|reported| reported.width > 0 && reported.height > 0)
-                .unwrap_or(cell);
+            let (reported, drawn) = self.density.unwrap_or((cell, cell));
             (
-                x * f32::from(cell.width) / f32::from(reported.width),
-                y * f32::from(cell.height) / f32::from(reported.height),
+                x * f32::from(drawn.width) / f32::from(reported.width),
+                y * f32::from(drawn.height) / f32::from(reported.height),
             )
         } else {
             (

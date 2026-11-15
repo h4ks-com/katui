@@ -9,13 +9,15 @@ use std::io::{self, Write as _};
 use katui_proto::kitty::{
     Delete, Format, IdSpace, ImageId as KittyImage, Place, PlacementId as KittyPlacement, Transmit,
 };
+use katui_proto::placeholder::placeholder_row;
 use katui_proto::probe::CellPixels;
 use katui_scene::cell::Position;
 use katui_scene::placement::CellRect;
 use katui_scene::surface::{PixelRect, Surface, diff_tiles};
 
-use super::{damage_is_dense, write_whole_image};
 use crate::anchor::Anchor;
+
+use super::{damage_is_dense, write_whole_image};
 use crate::cells::move_cursor;
 use crate::kitty::crop_rect;
 
@@ -40,8 +42,18 @@ pub struct PatchedKitty {
     prev: Option<Surface>,
     base_shown: Option<KittyImage>,
     tile_generations: HashMap<u32, bool>,
-    anchor: Option<Anchor>,
+    grid: Grid,
+    cell: CellPixels,
     repaint: bool,
+}
+
+/// Where tiles go under a multiplexer: nowhere special outside one, on a
+/// placeholder anchor in kitty, or each under its own placeholder text.
+#[derive(Debug)]
+enum Grid {
+    Plain,
+    Anchored(Anchor),
+    Placeholders,
 }
 
 impl PatchedKitty {
@@ -63,7 +75,7 @@ impl PatchedKitty {
     /// wins. Fine-grained surfaces want small tiles and a high budget;
     /// the tile's cell span always follows the surface-to-area scale.
     #[must_use]
-    pub fn with_tiles(base: u32, _cell: CellPixels, tile_side: u32, budget: usize) -> Self {
+    pub fn with_tiles(base: u32, cell: CellPixels, tile_side: u32, budget: usize) -> Self {
         Self {
             base,
             tile_side: tile_side.max(1),
@@ -71,9 +83,16 @@ impl PatchedKitty {
             prev: None,
             base_shown: None,
             tile_generations: HashMap::new(),
-            anchor: None,
+            grid: Grid::Plain,
+            cell,
             repaint: false,
         }
+    }
+
+    /// Draw placeholder tiles for cells of `cell` pixels from now on, after
+    /// a font zoom changed them.
+    pub fn set_cell(&mut self, cell: CellPixels) {
+        self.cell = cell;
     }
 
     /// Send every pixel again on the next frame, for when the terminal
@@ -94,13 +113,20 @@ impl PatchedKitty {
         out.write_all(&bytes)
     }
 
-    /// Send every frame as small tiles placed relative to a placeholder
-    /// anchor, for a multiplexer: it drops uploads bigger than it buffers,
-    /// and it hides the anchor, and so every tile, with its pane.
+    /// Send every frame as small tiles for a multiplexer, which drops
+    /// uploads bigger than it buffers and hides placeholder text with its
+    /// pane. With `relative_placements` every tile sits on one placeholder
+    /// anchor and stretches to its cells; without, each tile shows through
+    /// placeholder text of its own, which keeps its aspect and so needs
+    /// the true cell size.
     #[must_use]
-    pub fn for_multiplexer(mut self, space: IdSpace) -> Self {
+    pub fn for_multiplexer(mut self, space: IdSpace, relative_placements: bool) -> Self {
         self.base = space.image(self.base).0;
-        self.anchor = Some(Anchor::new(space));
+        self.grid = if relative_placements {
+            Grid::Anchored(Anchor::new(space))
+        } else {
+            Grid::Placeholders
+        };
         self
     }
 
@@ -115,7 +141,10 @@ impl PatchedKitty {
             prev.width() != surface.width() || prev.height() != surface.height()
         });
         let repaint = std::mem::take(&mut self.repaint);
-        if self.anchor.is_some() {
+        if !matches!(self.grid, Grid::Plain) {
+            if resized && matches!(self.grid, Grid::Placeholders) {
+                self.fit_tiles_to_cells(surface, area);
+            }
             return self.render_tiles(out, surface, area, resized, repaint);
         }
         let fresh_start = resized || repaint;
@@ -141,6 +170,24 @@ impl PatchedKitty {
         Ok(written)
     }
 
+    /// Make the tile side a whole number of cells again when a resize or a
+    /// font zoom changed the cell. A placeholder tile covers whole cells,
+    /// so a tile that cut a cell in two would leave cells uncovered.
+    fn fit_tiles_to_cells(&mut self, surface: &Surface, area: CellRect) {
+        let width = surface.width().checked_div(u32::from(area.columns));
+        let height = surface.height().checked_div(u32::from(area.rows));
+        if let (Some(width), Some(height)) = (width, height)
+            && width > 0
+            && height > 0
+            && width * u32::from(area.columns) == surface.width()
+            && height * u32::from(area.rows) == surface.height()
+            && (!self.tile_side.is_multiple_of(width) || !self.tile_side.is_multiple_of(height))
+        {
+            let whole = least_common_multiple(width, height);
+            self.tile_side = whole * SMALLEST_TILE.div_ceil(whole);
+        }
+    }
+
     /// Every damaged rectangle as one synchronized update.
     fn patch_all(
         &mut self,
@@ -150,13 +197,18 @@ impl PatchedKitty {
         area: CellRect,
     ) -> io::Result<()> {
         bytes.write_all(b"\x1b[?2026h")?;
+        let mut shows = Vec::new();
         for rect in damage {
-            self.patch(bytes, surface, *rect, area)?;
+            self.patch(bytes, &mut shows, surface, *rect, area)?;
         }
+        bytes.append(&mut shows);
         bytes.write_all(b"\x1b[?2026l")
     }
 
-    /// A repaint keeps the old tiles up until each one is replaced.
+    /// A repaint keeps the old tiles up until each one is replaced. Every
+    /// upload goes out before any tile shows, because a multiplexer gives
+    /// us no synchronized update: the new frame then appears at once
+    /// instead of in strips while the uploads trickle through.
     fn render_tiles<W: Sink>(
         &mut self,
         out: &mut W,
@@ -177,13 +229,15 @@ impl PatchedKitty {
             self.free_tiles(&mut bytes)?;
         }
         if !damage.is_empty()
-            && let Some(anchor) = self.anchor.as_mut()
+            && let Grid::Anchored(anchor) = &mut self.grid
         {
             anchor.write(&mut bytes)?;
         }
+        let mut shows = Vec::new();
         for rect in &damage {
-            self.patch(&mut bytes, surface, *rect, area)?;
+            self.patch(&mut bytes, &mut shows, surface, *rect, area)?;
         }
+        bytes.append(&mut shows);
         self.prev = Some(surface.clone());
         out.write_all(&bytes)?;
         Ok(bytes.len())
@@ -232,12 +286,15 @@ impl PatchedKitty {
         KittyImage(self.base + 2 + index * 2 + u32::from(second_generation))
     }
 
-    /// One damaged tile as its own small image, placed over the base at
-    /// the tile's cell rectangle. Each tile alternates between two ids
-    /// so its previous pixels stay visible until the new ones are placed.
+    /// One damaged tile as its own small image at the tile's cell
+    /// rectangle: its upload into `uploads`, and into `reveal` what puts
+    /// it on screen and frees the image it replaces. Each tile alternates
+    /// between two ids so its previous pixels stay visible until the new
+    /// ones are placed.
     fn patch(
         &mut self,
-        bytes: &mut Vec<u8>,
+        uploads: &mut Vec<u8>,
+        reveal: &mut Vec<u8>,
         surface: &Surface,
         rect: PixelRect,
         area: CellRect,
@@ -259,18 +316,44 @@ impl PatchedKitty {
         let shown = self.tile_generations.get(&index).copied();
         let generation = shown.is_some_and(|generation| !generation);
         let image = self.tile_image(index, generation);
-
-        let padded = with_apron(rect, surface);
-        let pixels = tile_pixels(surface, padded);
-        let mut transmit = Transmit::new(image, Format::Rgba, padded.width, padded.height, &pixels);
-        transmit.compressed = true;
-        for frame in transmit.encode()? {
-            bytes.write_all(&frame)?;
-        }
         let origin = Position {
             x: origin_x,
             y: origin_y,
         };
+        let cells = (columns, rows);
+        if matches!(self.grid, Grid::Placeholders) {
+            upload_placeholder_tile(uploads, image, surface, rect, cells, self.cell)?;
+            show_placeholder_tile(reveal, image, origin, cells)?;
+        } else {
+            let padded = with_apron(rect, surface);
+            upload(
+                uploads,
+                image,
+                &tile_pixels(surface, padded),
+                (padded.width, padded.height),
+            )?;
+            self.place_tile(reveal, image, rect, padded, origin, cells)?;
+        }
+        if let Some(previous) = shown {
+            reveal.write_all(&Delete::Free(self.tile_image(index, previous)).encode())?;
+        }
+        self.tile_generations.insert(index, generation);
+        Ok(())
+    }
+
+    /// A tile placed over the base at its cell rectangle, cropped out of
+    /// the `padded` copy with an apron around it.
+    fn place_tile(
+        &self,
+        bytes: &mut Vec<u8>,
+        image: KittyImage,
+        rect: PixelRect,
+        padded: PixelRect,
+        origin: Position,
+        cells: (u16, u16),
+    ) -> io::Result<()> {
+        let (columns, rows) = cells;
+        let index = self.tile_index(rect.x, rect.y);
         let mut place = Place::new(image);
         place.columns = u32::from(columns);
         place.rows = u32::from(rows);
@@ -281,18 +364,108 @@ impl PatchedKitty {
             width: rect.width,
             height: rect.height,
         }));
-        if let Some(anchor) = &self.anchor {
+        if let Grid::Anchored(anchor) = &self.grid {
             place.parent = Some(anchor.offset_to(origin));
         } else {
             move_cursor(bytes, origin)?;
         }
-        bytes.write_all(&place.encode())?;
-        if let Some(previous) = shown {
-            bytes.write_all(&Delete::Free(self.tile_image(index, previous)).encode())?;
-        }
-        self.tile_generations.insert(index, generation);
-        Ok(())
+        bytes.write_all(&place.encode())
     }
+}
+
+/// The smallest tile side in pixels we refit to, so a whole frame stays a
+/// few hundred tiles.
+const SMALLEST_TILE: u32 = 64;
+
+fn least_common_multiple(first: u32, second: u32) -> u32 {
+    let (mut a, mut b) = (first, second);
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    first / a.max(1) * second
+}
+
+fn upload(
+    bytes: &mut Vec<u8>,
+    image: KittyImage,
+    pixels: &[u8],
+    (width, height): (u32, u32),
+) -> io::Result<()> {
+    let mut transmit = Transmit::new(image, Format::Rgba, width, height, pixels);
+    transmit.compressed = true;
+    for frame in transmit.encode()? {
+        bytes.write_all(&frame)?;
+    }
+    Ok(())
+}
+
+/// A terminal fits a placeholder image into its cells keeping its aspect,
+/// so we stretch the tile's height to the aspect of its cells and keep its
+/// width, which keeps a game's reduced resolution.
+fn upload_placeholder_tile(
+    bytes: &mut Vec<u8>,
+    image: KittyImage,
+    surface: &Surface,
+    rect: PixelRect,
+    (columns, rows): (u16, u16),
+    cell: CellPixels,
+) -> io::Result<()> {
+    let cells_wide = (u32::from(columns) * u32::from(cell.width)).max(1);
+    let cells_high = u32::from(rows) * u32::from(cell.height);
+    let width = rect.width.max(1);
+    let height = (u64::from(width) * u64::from(cells_high) / u64::from(cells_wide)).max(1);
+    let height = u32::try_from(height).unwrap_or(rect.height);
+    let pixels = resample(
+        &tile_pixels(surface, rect),
+        (rect.width, rect.height),
+        (width, height),
+    );
+    upload(bytes, image, &pixels, (width, height))
+}
+
+/// A virtual placement of the tile's cell size, and the placeholder text
+/// that shows it written over its cells.
+fn show_placeholder_tile(
+    bytes: &mut Vec<u8>,
+    image: KittyImage,
+    origin: Position,
+    (columns, rows): (u16, u16),
+) -> io::Result<()> {
+    let mut place = Place::new(image);
+    place.columns = u32::from(columns);
+    place.rows = u32::from(rows);
+    place.virtual_placement = true;
+    bytes.write_all(&place.encode())?;
+    for row in 0..rows {
+        if let Some(text) = placeholder_row(image, u32::from(row), u32::from(columns)) {
+            move_cursor(
+                bytes,
+                Position {
+                    x: origin.x,
+                    y: origin.y.saturating_add(row),
+                },
+            )?;
+            bytes.write_all(text.as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
+/// `pixels` of `from` size scaled to `to` by nearest neighbour, or as they
+/// are when the sizes match.
+fn resample(pixels: &[u8], from: (u32, u32), to: (u32, u32)) -> Vec<u8> {
+    if from == to || from.0 == 0 || from.1 == 0 {
+        return pixels.to_vec();
+    }
+    let mut scaled = Vec::with_capacity((to.0 * to.1 * 4) as usize);
+    for y in 0..to.1 {
+        let source_row = (y * from.1 / to.1) * from.0;
+        for x in 0..to.0 {
+            let start = ((source_row + x * from.0 / to.0) * 4) as usize;
+            scaled.extend_from_slice(pixels.get(start..start + 4).unwrap_or(&[0; 4]));
+        }
+    }
+    scaled
 }
 
 /// `rect` grown by one pixel on every side the surface has room for. A
@@ -458,14 +631,11 @@ mod tests {
         katui_proto::kitty::IdSpace::of_process(4242)
     }
 
-    fn anchored() -> String {
-        let anchor = space().image(0x00ff_fff0);
-        format!(",P={},", anchor.0)
-    }
+    const VIRTUAL: &str = ",U=1";
 
     #[test]
-    fn a_multiplexer_grid_places_tiles_on_the_anchor_and_never_a_whole_image() {
-        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space());
+    fn a_multiplexer_grid_shows_every_tile_through_placeholders_and_never_a_whole_image() {
+        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space(), false);
         let surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
@@ -474,20 +644,38 @@ mod tests {
         let text = String::from_utf8_lossy(&wire);
         assert!(!text.contains("s=64"), "no whole image travels");
         assert_eq!(
-            text.matches(&anchored()).count(),
+            text.matches(VIRTUAL).count(),
             64,
-            "every tile sits on the anchor"
+            "every tile has a virtual placement"
         );
         assert_eq!(
             text.matches('\u{10eeee}').count(),
-            1,
-            "one placeholder cell anchors the grid"
+            16 * 16,
+            "placeholder text covers every cell once"
         );
+        assert!(!text.contains(",P="), "no tile needs a parent placement");
     }
 
     #[test]
-    fn a_repainted_grid_resends_every_tile_and_keeps_the_anchor() {
-        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space());
+    fn a_multiplexer_frame_uploads_every_tile_before_showing_any() {
+        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space(), false);
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(
+                &mut wire,
+                &plain_surface(64, 64),
+                crate::surface::test_support::area(),
+            )
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&wire);
+        let last_upload = text.rfind("a=t,").expect("tiles travel");
+        let first_show = text.find(VIRTUAL).expect("tiles show");
+        assert!(last_upload < first_show, "the frame appears at once");
+    }
+
+    #[test]
+    fn a_repainted_grid_resends_every_tile() {
+        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space(), false);
         let surface = plain_surface(64, 64);
         let mut wire = Vec::new();
         presenter
@@ -499,12 +687,8 @@ mod tests {
             .render_frame(&mut wire, &surface, crate::surface::test_support::area())
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&wire);
-        assert_eq!(text.matches(&anchored()).count(), 64, "every tile returns");
-        assert_eq!(
-            text.matches("a=t,").count(),
-            64,
-            "only the tiles travel, because sending the anchor again would drop every tile on it"
-        );
+        assert_eq!(text.matches(VIRTUAL).count(), 64, "every tile returns");
+        assert_eq!(text.matches("a=t,").count(), 64, "only the tiles travel");
         assert!(!text.contains("d=R"), "old tiles stay until replaced");
         wire.clear();
         presenter
@@ -515,7 +699,7 @@ mod tests {
 
     #[test]
     fn a_multiplexer_grid_frees_the_old_tiles_on_a_resize() {
-        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space());
+        let mut presenter = PatchedKitty::new(90, cell()).for_multiplexer(space(), false);
         let mut wire = Vec::new();
         presenter
             .render_frame(

@@ -48,12 +48,23 @@ blocks. You can override it with `KATUI_GRAPHICS`.
 
 tmux sits between your app and the terminal, and it does not know about
 images. katui wraps its image commands so tmux passes them through, and
-anchors every image to Unicode placeholder characters. tmux treats those
-as ordinary text, so when you switch windows, split panes or scroll, tmux
-moves and hides the image along with the rest of the pane.
+shows every image through Unicode placeholder characters. tmux treats
+those as ordinary text, so when you switch windows, split panes or scroll,
+tmux moves and hides the image along with the rest of the pane.
+
+In kitty, which places an image relative to another one, katui anchors its
+layers to a single placeholder cell. Other terminals, Ghostty among them,
+get each frame flattened and cut into tiles, each with placeholder text of
+its own. A terminal fits a placeholder image into its cells keeping its
+aspect, so katui draws those tiles at the true cell size, which it learns
+from tmux. rmux does not pass the cell size on, so there tiles can leave
+thin gaps.
 
 tmux also drops output it cannot forward fast enough, so katui paces itself
-there: it waits for the terminal to confirm a batch before sending the next.
+there: it waits for the terminal to confirm a batch before sending the next,
+and sends every tile of a frame before it shows any, so the frame appears
+at once. tmux carries a few hundred kilobytes of graphics a second, so a
+game that changes the whole screen runs at a few frames a second there.
 
 ## The crates
 

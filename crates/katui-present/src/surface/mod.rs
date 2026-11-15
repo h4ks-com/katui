@@ -170,7 +170,7 @@ mod budget_tests {
                 .expect("writing to a Vec cannot fail")
         });
         let mut tiled = PatchedKitty::with_tiles(900, cell, 32, 64)
-            .for_multiplexer(katui_proto::kitty::IdSpace::of_process(4242));
+            .for_multiplexer(katui_proto::kitty::IdSpace::of_process(4242), false);
         let tiled_worst = worst_frame(|out, surface| {
             tiled
                 .render_frame(out, surface, area())

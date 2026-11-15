@@ -197,14 +197,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
     let options = UiOptions::for_terminal(FIRST_LAYER_IMAGE, caps.multiplexed());
+    let cell = katui_rt::tty::cell_size(&caps);
     let mut app = ChatApp {
         caps: caps.clone(),
         chat: Chat::new(default_nick()),
         ui: Ui::new(TextEngine::new(fonts())?, options),
         screen: KittyScreen::new(&caps),
-        cell: katui_rt::tty::cell_size(&caps),
+        cell,
         backdrop_image: 0,
-        pointer: Pointer::new(caps.cell),
+        pointer: Pointer::new(caps.cell, cell),
     };
     if std::env::args().any(|argument| argument == "--connect") {
         app.chat.connect_on_start();

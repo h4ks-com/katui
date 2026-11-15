@@ -86,6 +86,7 @@ mod tests {
                 height: 14,
             }),
             text_area: None,
+            relative_placements: false,
             id_space: katui_proto::kitty::IdSpace::default(),
             trust: ProbeSource::Probed,
         };

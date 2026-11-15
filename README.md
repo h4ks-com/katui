@@ -181,7 +181,7 @@ Your existing widgets keep working, with real images placed next to them.
 | kitty, Ghostty, iTerm2 3.7 | Full pixels through the kitty graphics protocol |
 | Terminals with sixel | Sixel images |
 | Any other color terminal | Quarter blocks, four pixels per cell |
-| tmux | Kitty graphics, when the terminal outside tmux speaks it |
+| tmux and rmux | Kitty graphics in kitty and Ghostty outside the multiplexer |
 
 katui checks what the terminal supports when it starts. To choose yourself,
 set `KATUI_GRAPHICS` when you run your app:
@@ -191,7 +191,8 @@ KATUI_GRAPHICS=blocks cargo run
 ```
 
 Inside tmux, katui ties every image to placeholder characters, so tmux
-moves, hides and clears images along with the text of the pane. tmux needs
+moves, hides and clears images along with the text of the pane. iTerm2 has
+no placeholder characters, so it shows no images inside tmux. tmux needs
 to pass graphics through to the outer terminal and to know it has true
 color. The other lines let keys, focus changes and the mouse reach your app
 without delay:

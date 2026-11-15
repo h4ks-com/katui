@@ -39,7 +39,7 @@ impl PixelScreen {
     #[must_use]
     pub fn new(caps: &Capabilities, cell: CellPixels, patched: PatchedKitty) -> Self {
         let patched = if caps.multiplexed() {
-            patched.for_multiplexer(caps.id_space)
+            patched.for_multiplexer(caps.id_space, caps.relative_placements)
         } else {
             patched
         };
@@ -93,6 +93,13 @@ impl PixelScreen {
             }
         } else {
             Self::new(caps, cell, fallback)
+        }
+    }
+
+    /// Draw for cells of `cell` pixels from now on, after a font zoom.
+    pub fn set_cell(&mut self, cell: CellPixels) {
+        if let Some(PixelStrategy::Patched(patched)) = &mut self.graphics {
+            patched.set_cell(cell);
         }
     }
 
@@ -173,6 +180,7 @@ mod tests {
             identity: None,
             cell: None,
             text_area: None,
+            relative_placements: false,
             id_space: katui_proto::kitty::IdSpace::default(),
             trust: ProbeSource::Sniffed,
         }
