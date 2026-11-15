@@ -52,8 +52,14 @@ func document(source string, markdown bool, doc Document) *Element {
 	handle := cgo.NewHandle(found)
 	defer handle.Delete()
 	defer runtime.KeepAlive(found)
-	return element(C.katui_go_document(s, C.bool(markdown), C.uintptr_t(handle), C.bool(doc.Images != nil),
-		C.uint64_t(linkKey), C.float(doc.FontSize), doc.Color.c(), doc.Link.c(), doc.Tint.c()))
+	settings := C.KatuiDocument{
+		link_key:  C.uint64_t(linkKey),
+		font_size: C.float(doc.FontSize),
+		color:     doc.Color.c(),
+		link:      doc.Link.c(),
+		tint:      doc.Tint.c(),
+	}
+	return element(C.katui_go_document(s, C.bool(markdown), settings, C.uintptr_t(handle), C.bool(doc.Images != nil)))
 }
 
 // HTML is an HTML document as an element.

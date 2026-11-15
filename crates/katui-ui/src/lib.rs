@@ -14,4 +14,4 @@ pub use element::{Align, Element, Length, Scroll};
 pub use katui_draw::TextSpan;
 pub use katui_proto::probe::CellPixels;
 pub use resolve::Hit;
-pub use ui::{LayerImage, RenderOutput, Ui, UiOptions};
+pub use ui::{Hover, LayerImage, RenderOutput, Ui, UiOptions};

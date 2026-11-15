@@ -15,6 +15,32 @@ impl Rgba {
     pub const fn solid(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
     }
+
+    /// The color written `#rgb`, `#rrggbb` or `#rrggbbaa`; the `#` is
+    /// optional.
+    #[must_use]
+    pub fn from_hex(text: &str) -> Option<Self> {
+        let hex = text.strip_prefix('#').unwrap_or(text);
+        let digit = |index: usize| {
+            hex.get(index..=index)
+                .and_then(|digit| u8::from_str_radix(digit, 16).ok())
+        };
+        let pair = |index: usize| {
+            hex.get(index..index + 2)
+                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+        };
+        match hex.len() {
+            3 => Some(Self::solid(digit(0)? * 17, digit(1)? * 17, digit(2)? * 17)),
+            6 => Some(Self::solid(pair(0)?, pair(2)?, pair(4)?)),
+            8 => Some(Self {
+                r: pair(0)?,
+                g: pair(2)?,
+                b: pair(4)?,
+                a: pair(6)?,
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// A pixel coordinate: `x` counts pixels from the left, `y` from the
@@ -236,6 +262,16 @@ fn tile_differs(prev: &Surface, next: &Surface, x: u32, y: u32, tile: u32) -> bo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hex_colors_take_three_six_or_eight_digits() {
+        use super::Rgba;
+        assert_eq!(Rgba::from_hex("#f80"), Some(Rgba::solid(255, 136, 0)));
+        assert_eq!(Rgba::from_hex("102030"), Some(Rgba::solid(16, 32, 48)));
+        assert_eq!(Rgba::from_hex("#10203040").map(|color| color.a), Some(64));
+        assert_eq!(Rgba::from_hex("#12"), None);
+        assert_eq!(Rgba::from_hex("#ggg"), None);
+    }
+
     use super::{PixelPos, PixelRect, Rgba, Surface, diff_tiles};
 
     const RED: Rgba = Rgba::solid(255, 0, 0);

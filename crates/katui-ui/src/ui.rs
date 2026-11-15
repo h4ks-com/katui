@@ -256,6 +256,23 @@ impl<M: Clone + 'static> Ui<M> {
         self.captured = None;
     }
 
+    /// The message a left press at (`x`, `y`) sends: the press handler's
+    /// under the pointer, or else the click's.
+    pub fn click(&mut self, x: f32, y: f32) -> Option<M> {
+        self.press(x, y)
+            .or_else(|| self.hit_test(x, y).and_then(|hit| hit.on_click))
+    }
+
+    /// The message one turn of the wheel at (`x`, `y`) sends, down or up.
+    pub fn wheel(&self, x: f32, y: f32, down: bool) -> Option<M> {
+        let hit = self.hit_test(x, y)?;
+        if down {
+            hit.on_wheel_down
+        } else {
+            hit.on_wheel_up
+        }
+    }
+
     /// The scroll positions the last renders clamped, as their handlers'
     /// messages, for the application to store.
     pub fn take_clamped_scrolls(&mut self) -> Vec<M> {
@@ -519,5 +536,44 @@ mod tests {
         assert!(shaped > 0);
         ui.render(&root, (400, 240), cell);
         assert_eq!(ui.text.shape_count(), shaped);
+    }
+}
+
+/// Which element the pointer is over, so moving onto another one sends
+/// the leave message of the last and the hover message of the next.
+#[derive(Debug)]
+pub struct Hover<M> {
+    over: Option<(usize, Option<M>)>,
+}
+
+impl<M> Default for Hover<M> {
+    fn default() -> Self {
+        Self { over: None }
+    }
+}
+
+impl<M: Clone + 'static> Hover<M> {
+    /// The messages a move to (`x`, `y`) sends: the leave message of the
+    /// element the pointer left, then the hover message of the one it
+    /// entered. Nothing while it stays on the same element.
+    pub fn moved(&mut self, ui: &Ui<M>, x: f32, y: f32) -> Vec<M> {
+        let hit = ui.hit_test(x, y);
+        let target = hit.as_ref().and_then(|hit| hit.hover_target);
+        if self.over.as_ref().map(|(index, _)| *index) == target {
+            return Vec::new();
+        }
+        let mut sent: Vec<M> = self
+            .over
+            .take()
+            .and_then(|(_, leave)| leave)
+            .into_iter()
+            .collect();
+        if let Some(hit) = hit {
+            if let Some(index) = hit.hover_target {
+                self.over = Some((index, hit.on_leave));
+            }
+            sent.extend(hit.on_hover);
+        }
+        sent
     }
 }

@@ -140,6 +140,43 @@ pub enum MouseAction {
     WheelDown,
 }
 
+impl Button {
+    /// `"left"`, `"middle"` or `"right"`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Middle => "middle",
+            Self::Right => "right",
+        }
+    }
+}
+
+impl MouseAction {
+    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"` or
+    /// `"wheel_down"`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Press(_) => "press",
+            Self::Release(_) => "release",
+            Self::Drag(_) => "drag",
+            Self::Move => "move",
+            Self::WheelUp => "wheel_up",
+            Self::WheelDown => "wheel_down",
+        }
+    }
+
+    /// The button pressed, released or held, for those actions.
+    #[must_use]
+    pub const fn button(self) -> Option<Button> {
+        match self {
+            Self::Press(button) | Self::Release(button) | Self::Drag(button) => Some(button),
+            Self::Move | Self::WheelUp | Self::WheelDown => None,
+        }
+    }
+}
+
 /// One mouse event. The position is zero-based, in pixels when the
 /// terminal honored pixel mouse reporting and in cells otherwise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -422,24 +459,8 @@ fn parse_csi(bytes: &[u8], tail: &[u8]) -> Parsed {
     let parameters = std::str::from_utf8(tail.get(..final_at).unwrap_or_default()).unwrap_or("");
     let final_byte = tail.get(final_at).copied().unwrap_or_default();
     let length = final_at + 3;
-    if final_byte == b'~' && parameters == "200" {
-        return parse_paste(bytes, length);
-    }
-    if let Some(mouse) = parameters.strip_prefix('<') {
-        return parse_mouse(mouse, final_byte, length);
-    }
-    if final_byte == b'y' && parameters.starts_with('?') {
-        return parse_mode_report(parameters, length);
-    }
-    if final_byte == b'c' && parameters.starts_with('?') {
-        return Parsed::Event(InputEvent::DeviceAttributes, length);
-    }
-    if final_byte == b'Z' {
-        let back = Mods {
-            shift: true,
-            ..Mods::NONE
-        };
-        return key(Key::Tab, back, length);
+    if let Some(special) = parse_special_csi(bytes, parameters, final_byte, length) {
+        return special;
     }
     let parsed = match final_byte {
         b'I' => Parsed::Event(InputEvent::Focus(true), length),
@@ -455,6 +476,35 @@ fn parse_csi(bytes: &[u8], tail: &[u8]) -> Parsed {
         as_release(parsed)
     } else {
         parsed
+    }
+}
+
+/// The CSI sequences that are not plain keys: bracketed paste, mouse
+/// reports, mode reports, device attributes and Shift+Tab.
+fn parse_special_csi(
+    bytes: &[u8],
+    parameters: &str,
+    final_byte: u8,
+    length: usize,
+) -> Option<Parsed> {
+    if final_byte == b'~' && parameters == "200" {
+        return Some(parse_paste(bytes, length));
+    }
+    if let Some(mouse) = parameters.strip_prefix('<') {
+        return Some(parse_mouse(mouse, final_byte, length));
+    }
+    let private = parameters.starts_with('?');
+    match final_byte {
+        b'y' if private => Some(parse_mode_report(parameters, length)),
+        b'c' if private => Some(Parsed::Event(InputEvent::DeviceAttributes, length)),
+        b'Z' => {
+            let back = Mods {
+                shift: true,
+                ..Mods::NONE
+            };
+            Some(key(Key::Tab, back, length))
+        }
+        _ => None,
     }
 }
 

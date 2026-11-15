@@ -89,16 +89,10 @@ static const KatuiImage *image(void *user, const char *src) {
   return katuiGoImage((uintptr_t)user, (char *)src);
 }
 
-KatuiElement *katui_go_document(const char *source, bool markdown, uintptr_t handle, bool images,
-                                uint64_t link_key, float font_size, KatuiColor color, KatuiColor link,
-                                KatuiColor tint) {
-  KatuiDocument document = {.link_key = link_key,
-                            .image = images ? image : NULL,
-                            .user = (void *)handle,
-                            .font_size = font_size,
-                            .color = color,
-                            .link = link,
-                            .tint = tint};
+KatuiElement *katui_go_document(const char *source, bool markdown, KatuiDocument document,
+                                uintptr_t handle, bool images) {
+  document.image = images ? image : NULL;
+  document.user = (void *)handle;
   return markdown ? katui_markdown(source, &document) : katui_html(source, &document);
 }
 

@@ -33,25 +33,7 @@ pub(crate) fn color(value: ColorArg) -> Result<Rgba> {
 }
 
 fn hex(text: &str) -> Result<Rgba> {
-    let digits = text.strip_prefix('#').unwrap_or(text);
-    let channel = |at: usize| {
-        digits
-            .get(at..at + 2)
-            .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-    };
-    let parsed = match digits.len() {
-        6 => channel(0)
-            .zip(channel(2))
-            .zip(channel(4))
-            .map(|((r, g), b)| Rgba::solid(r, g, b)),
-        8 => channel(0)
-            .zip(channel(2))
-            .zip(channel(4))
-            .zip(channel(6))
-            .map(|(((r, g), b), a)| Rgba { r, g, b, a }),
-        _ => None,
-    };
-    parsed.ok_or_else(|| invalid(format!("write the color {text:?} as \"#rrggbb\"")))
+    Rgba::from_hex(text).ok_or_else(|| invalid(format!("write the color {text:?} as \"#rrggbb\"")))
 }
 
 pub(crate) fn paint(value: ColorArg) -> Result<Paint> {

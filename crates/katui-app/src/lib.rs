@@ -13,7 +13,7 @@ use katui_proto::probe::Capabilities;
 use katui_rt::RtError;
 use katui_rt::app::{App, AppEvent, run_app};
 use katui_scene::CellSize;
-use katui_ui::{CellPixels, Element, Ui, UiOptions};
+use katui_ui::{CellPixels, Element, Hover, Ui, UiOptions};
 use katui_widgets::Theme;
 
 pub use katui_rt::app::Control;
@@ -96,7 +96,7 @@ struct Runner<A: UiApp> {
     ui: Ui<A::Message>,
     screen: Screen,
     pointer: Pointer,
-    hovered: Option<(usize, Option<A::Message>)>,
+    hover: Hover<A::Message>,
 }
 
 impl<A: UiApp> Runner<A> {
@@ -110,7 +110,7 @@ impl<A: UiApp> Runner<A> {
             ui: Ui::new(engine, options),
             screen: Screen::for_terminal(caps, cell),
             pointer: Pointer::new(caps.cell),
-            hovered: None,
+            hover: Hover::default(),
         })
     }
 
@@ -118,10 +118,7 @@ impl<A: UiApp> Runner<A> {
         let (x, y) = self.pointer.locate(&mouse, self.cell);
         match mouse.action {
             MouseAction::Press(Button::Left) => {
-                let message = self
-                    .ui
-                    .press(x, y)
-                    .or_else(|| self.ui.hit_test(x, y).and_then(|hit| hit.on_click));
+                let message = self.ui.click(x, y);
                 self.send(message)
             }
             MouseAction::Drag(Button::Left) => {
@@ -132,12 +129,8 @@ impl<A: UiApp> Runner<A> {
                 self.ui.release();
                 Control::Wait
             }
-            MouseAction::WheelUp => {
-                let message = self.ui.hit_test(x, y).and_then(|hit| hit.on_wheel_up);
-                self.send(message)
-            }
-            MouseAction::WheelDown => {
-                let message = self.ui.hit_test(x, y).and_then(|hit| hit.on_wheel_down);
+            MouseAction::WheelUp | MouseAction::WheelDown => {
+                let message = self.ui.wheel(x, y, mouse.action == MouseAction::WheelDown);
                 self.send(message)
             }
             MouseAction::Move => self.hover(x, y),
@@ -148,20 +141,12 @@ impl<A: UiApp> Runner<A> {
     /// Send the leave message of the element the pointer left, then the
     /// hover message of the one it entered.
     fn hover(&mut self, x: f32, y: f32) -> Control {
-        let hit = self.ui.hit_test(x, y);
-        let target = hit.as_ref().and_then(|hit| hit.hover_target);
-        if self.hovered.as_ref().map(|(index, _)| *index) == target {
-            return Control::Wait;
-        }
-        let left = self.hovered.take().and_then(|(_, leave)| leave);
-        let mut control = self.send(left);
-        if let Some(hit) = hit {
-            if let Some(index) = hit.hover_target {
-                self.hovered = Some((index, hit.on_leave));
-            }
-            control = more_urgent(control, self.send(hit.on_hover));
-        }
-        control
+        let messages = self.hover.moved(&self.ui, x, y);
+        messages
+            .into_iter()
+            .fold(Control::Wait, |control, message| {
+                more_urgent(control, self.app.update(message))
+            })
     }
 
     fn send(&mut self, message: Option<A::Message>) -> Control {

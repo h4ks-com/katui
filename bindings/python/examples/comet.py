@@ -1,6 +1,6 @@
 """A comet you steer with the arrow keys, trailing sparks. Space bursts."""
 
-import katui.game as game
+from katui import game
 from katui.game import V3, Keys, Light, Rng, Spark, Sparks, scaled, srgb
 
 SPEED = 90.0

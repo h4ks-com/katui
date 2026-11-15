@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction};
+use katui_proto::input::{Button, InputEvent, Key, Mods};
 use katui_ui::Scroll;
 use katui_widgets::{
     Edit, Focus, ListState, ScrollState, TextArea, TextField, Toasts, TreeNode, TreeState,
@@ -24,14 +24,6 @@ pub(crate) fn key(name: &str) -> PyResult<Key> {
 
 const fn mods(ctrl: bool, alt: bool, shift: bool) -> Mods {
     Mods { shift, alt, ctrl }
-}
-
-fn button_name(button: Button) -> &'static str {
-    match button {
-        Button::Left => "left",
-        Button::Middle => "middle",
-        Button::Right => "right",
-    }
 }
 
 #[pymethods]
@@ -122,14 +114,7 @@ impl PyEvent {
     #[getter]
     fn action(&self) -> Option<&'static str> {
         match &self.inner {
-            InputEvent::Mouse(mouse) => Some(match mouse.action {
-                MouseAction::Press(_) => "press",
-                MouseAction::Release(_) => "release",
-                MouseAction::Drag(_) => "drag",
-                MouseAction::Move => "move",
-                MouseAction::WheelUp => "wheel_up",
-                MouseAction::WheelDown => "wheel_down",
-            }),
+            InputEvent::Mouse(mouse) => Some(mouse.action.name()),
             _ => None,
         }
     }
@@ -138,12 +123,7 @@ impl PyEvent {
     #[getter]
     fn button(&self) -> Option<&'static str> {
         match &self.inner {
-            InputEvent::Mouse(mouse) => match mouse.action {
-                MouseAction::Press(button)
-                | MouseAction::Release(button)
-                | MouseAction::Drag(button) => Some(button_name(button)),
-                _ => None,
-            },
+            InputEvent::Mouse(mouse) => mouse.action.button().map(Button::name),
             _ => None,
         }
     }

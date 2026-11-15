@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction};
+use katui_proto::input::{Button, InputEvent, Key, Mods};
 use katui_ui::Scroll;
 use katui_widgets::{
     Edit as UiEdit, Focus as UiFocus, ListState as UiListState, ScrollState as UiScrollState,
@@ -19,14 +19,6 @@ use crate::message::{Obj, hold, unknown};
 /// The key named `name`: one character, `"enter"`, `"up"`, `"f1"` and so on.
 pub(crate) fn key(name: &str) -> Result<Key> {
     Key::from_name(name).ok_or_else(|| invalid(format!("name a key, not {name:?}")))
-}
-
-fn button_name(button: Button) -> &'static str {
-    match button {
-        Button::Left => "left",
-        Button::Middle => "middle",
-        Button::Right => "right",
-    }
 }
 
 /// The modifiers held with a key press.
@@ -152,14 +144,7 @@ impl Event {
     )]
     pub fn action(&self) -> Option<&'static str> {
         match &self.inner {
-            InputEvent::Mouse(mouse) => Some(match mouse.action {
-                MouseAction::Press(_) => "press",
-                MouseAction::Release(_) => "release",
-                MouseAction::Drag(_) => "drag",
-                MouseAction::Move => "move",
-                MouseAction::WheelUp => "wheel_up",
-                MouseAction::WheelDown => "wheel_down",
-            }),
+            InputEvent::Mouse(mouse) => Some(mouse.action.name()),
             _ => None,
         }
     }
@@ -168,12 +153,7 @@ impl Event {
     #[napi(getter, ts_return_type = "'left' | 'middle' | 'right' | null")]
     pub fn button(&self) -> Option<&'static str> {
         match &self.inner {
-            InputEvent::Mouse(mouse) => match mouse.action {
-                MouseAction::Press(button)
-                | MouseAction::Release(button)
-                | MouseAction::Drag(button) => Some(button_name(button)),
-                _ => None,
-            },
+            InputEvent::Mouse(mouse) => mouse.action.button().map(Button::name),
             _ => None,
         }
     }

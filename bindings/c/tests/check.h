@@ -3,21 +3,24 @@
 #ifndef KATUI_CHECK_H
 #define KATUI_CHECK_H
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "katui.h"
 
-#define CHECK(condition)                                                    \
-  do {                                                                      \
-    if (!(condition)) {                                                     \
-      const char *error = katui_last_error();                               \
-      fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__,      \
-              #condition);                                                  \
-      fprintf(stderr, "  last katui error: %s\n", error ? error : "none");  \
-      exit(1);                                                              \
-    }                                                                       \
-  } while (0)
+/* Stop the test with the failed condition and katui's last error. */
+static inline void check_that(bool holds, const char *condition, const char *file, int line) {
+  if (holds) {
+    return;
+  }
+  const char *error = katui_last_error();
+  fprintf(stderr, "%s:%d: check failed: %s\n", file, line, condition);
+  fprintf(stderr, "  last katui error: %s\n", error ? error : "none");
+  exit(1);
+}
+
+#define CHECK(condition) check_that((condition), #condition, __FILE__, __LINE__)
 
 /* The pixels whose red channel is above 40. */
 static inline size_t lit(const KatuiImage *image) {

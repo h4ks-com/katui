@@ -48,6 +48,14 @@ pub fn support_query() -> Vec<u8> {
     rgp_apc("s")
 }
 
+/// The support answer's keys that switch a feature on with the value `1`.
+const FEATURE_KEYS: [(&str, Features); 4] = [
+    ("payload", Features::PAYLOAD),
+    ("chunk", Features::CHUNK),
+    ("camera", Features::CAMERA),
+    ("update", Features::UPDATE),
+];
+
 /// Parse a support answer of the shape
 /// `ratty;g;s;v=1;fmt=obj|glb|stl;path=1;payload=1;chunk=1;...`.
 /// Returns `None` for anything else.
@@ -61,13 +69,12 @@ pub fn parse_support(input: &[u8]) -> Option<Support> {
     let mut features = Features::NONE;
     for pair in frame.split(';') {
         let (key, value) = pair.split_once('=')?;
-        match key {
-            "v" => support.version = value.parse().ok()?,
-            "payload" if value == "1" => features = features.union(Features::PAYLOAD),
-            "chunk" if value == "1" => features = features.union(Features::CHUNK),
-            "camera" if value == "1" => features = features.union(Features::CAMERA),
-            "update" if value == "1" => features = features.union(Features::UPDATE),
-            _ => {}
+        if key == "v" {
+            support.version = value.parse().ok()?;
+        } else if value == "1"
+            && let Some((_, feature)) = FEATURE_KEYS.iter().find(|(name, _)| *name == key)
+        {
+            features = features.union(*feature);
         }
     }
     support.features = features;

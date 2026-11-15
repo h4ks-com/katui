@@ -5,7 +5,7 @@ use std::ffi::c_char;
 use katui_app::Control;
 use katui_draw::{TextEngine, bundled_fonts};
 use katui_proto::input::{InputEvent, Key, Mods};
-use katui_ui::{CellPixels, Ui, UiOptions};
+use katui_ui::{CellPixels, Hover, Ui, UiOptions};
 
 use crate::app::{Bridge, Failure, KatuiApp};
 use crate::element::KatuiImage;
@@ -24,7 +24,7 @@ pub struct KatuiScreen {
     cell: CellPixels,
     rendered: bool,
     quit: bool,
-    hovered: Option<(usize, Option<Msg>)>,
+    hover: Hover<Msg>,
 }
 
 impl KatuiScreen {
@@ -73,39 +73,20 @@ impl KatuiScreen {
 
     fn press(&mut self, x: f32, y: f32) -> Result<(), Error> {
         self.ensure_rendered()?;
-        let message = self
-            .ui
-            .press(x, y)
-            .or_else(|| self.ui.hit_test(x, y).and_then(|hit| hit.on_click));
+        let message = self.ui.click(x, y);
         self.deliver(message)
     }
 
     fn wheel(&mut self, x: f32, y: f32, down: bool) -> Result<(), Error> {
         self.ensure_rendered()?;
-        let message = self.ui.hit_test(x, y).and_then(|hit| {
-            if down {
-                hit.on_wheel_down
-            } else {
-                hit.on_wheel_up
-            }
-        });
+        let message = self.ui.wheel(x, y, down);
         self.deliver(message)
     }
 
     fn hover(&mut self, x: f32, y: f32) -> Result<(), Error> {
         self.ensure_rendered()?;
-        let hit = self.ui.hit_test(x, y);
-        let target = hit.as_ref().and_then(|hit| hit.hover_target);
-        if self.hovered.as_ref().map(|(index, _)| *index) == target {
-            return Ok(());
-        }
-        let left = self.hovered.take().and_then(|(_, leave)| leave);
-        self.deliver(left)?;
-        if let Some(hit) = hit {
-            if let Some(index) = hit.hover_target {
-                self.hovered = Some((index, hit.on_leave));
-            }
-            self.deliver(hit.on_hover)?;
+        for message in self.hover.moved(&self.ui, x, y) {
+            self.deliver(Some(message))?;
         }
         Ok(())
     }
@@ -150,7 +131,7 @@ pub unsafe extern "C" fn katui_screen_new(
             cell: cell(cell_width, cell_height),
             rendered: false,
             quit: false,
-            hovered: None,
+            hover: Hover::default(),
         })
     });
     owned_or_null(made)

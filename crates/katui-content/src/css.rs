@@ -124,7 +124,7 @@ pub(crate) fn sides(value: &str, font_size: f32, root_size: f32) -> Option<[f32;
 pub(crate) fn color(value: &str) -> Option<Rgba> {
     let value = value.trim();
     if let Some(hex) = value.strip_prefix('#') {
-        return hex_color(hex);
+        return Rgba::from_hex(hex);
     }
     if let Some(inner) = value
         .strip_prefix("rgba(")
@@ -134,28 +134,6 @@ pub(crate) fn color(value: &str) -> Option<Rgba> {
         return functional_color(inner);
     }
     named_color(value)
-}
-
-fn hex_color(hex: &str) -> Option<Rgba> {
-    let digit = |index: usize| {
-        hex.get(index..=index)
-            .and_then(|digit| u8::from_str_radix(digit, 16).ok())
-    };
-    let pair = |index: usize| {
-        hex.get(index..index + 2)
-            .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-    };
-    match hex.len() {
-        3 => Some(Rgba::solid(digit(0)? * 17, digit(1)? * 17, digit(2)? * 17)),
-        6 => Some(Rgba::solid(pair(0)?, pair(2)?, pair(4)?)),
-        8 => Some(Rgba {
-            r: pair(0)?,
-            g: pair(2)?,
-            b: pair(4)?,
-            a: pair(6)?,
-        }),
-        _ => None,
-    }
 }
 
 fn functional_color(inner: &str) -> Option<Rgba> {

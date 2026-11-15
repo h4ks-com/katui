@@ -289,6 +289,28 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     if transport.write(&batch(env)).is_err() {
         return caps;
     }
+    let replies = listen(transport);
+    if replies.answered() {
+        caps.trust = ProbeSource::Probed;
+    }
+    // a multiplexer that never relays our query is keeping graphics from
+    // the terminal behind it, whatever the inherited environment claims
+    caps.kitty = replies.kitty_ok || (caps.kitty && !replies.is_multiplexed());
+    caps.animation = replies.animation_answer == Some(true);
+    caps.sixel |= replies.sixel;
+    if let Some(identity) = replies.identity {
+        caps.identity = Some(identity);
+    }
+    caps.cell = replies.cell.or(caps.cell);
+    caps.text_area = replies.text_area.or(caps.text_area);
+    if let Some(forced) = env.forced_graphics() {
+        forced.apply(&mut caps);
+    }
+    caps
+}
+
+/// Read answers until the exchange is finished or the terminal goes quiet.
+fn listen(transport: &mut dyn Transport) -> Replies {
     let mut stream = Vec::new();
     let mut replies = parse_replies(&stream);
     let mut silent_reads = 0;
@@ -307,29 +329,7 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
             None => break,
         }
     }
-    let answered = replies.barrier
-        || replies.kitty_ok
-        || replies.sixel
-        || replies.identity.is_some()
-        || replies.cell.is_some()
-        || replies.text_area.is_some();
-    if answered {
-        caps.trust = ProbeSource::Probed;
-    }
-    // a multiplexer that never relays our query is keeping graphics from
-    // the terminal behind it, whatever the inherited environment claims
-    caps.kitty = replies.kitty_ok || (caps.kitty && !replies.is_multiplexed());
-    caps.animation = replies.animation_answer == Some(true);
-    caps.sixel |= replies.sixel;
-    if let Some(identity) = replies.identity {
-        caps.identity = Some(identity);
-    }
-    caps.cell = replies.cell.or(caps.cell);
-    caps.text_area = replies.text_area.or(caps.text_area);
-    if let Some(forced) = env.forced_graphics() {
-        forced.apply(&mut caps);
-    }
-    caps
+    replies
 }
 
 /// Whether the exchange is unfinished. A multiplexer answers DA1 itself,
@@ -361,6 +361,16 @@ pub fn sniff(env: &Env) -> Capabilities {
 }
 
 impl Replies {
+    /// Whether the terminal answered anything at all.
+    fn answered(&self) -> bool {
+        self.barrier
+            || self.kitty_ok
+            || self.sixel
+            || self.identity.is_some()
+            || self.cell.is_some()
+            || self.text_area.is_some()
+    }
+
     fn is_multiplexed(&self) -> bool {
         self.identity.as_ref().is_some_and(Identity::is_multiplexer)
     }
@@ -374,9 +384,21 @@ impl Replies {
 /// bytes. An unterminated sequence ends the scan: the rest belongs to a
 /// reply that has not fully arrived.
 fn parse_replies(stream: &[u8]) -> Replies {
-    // any answer to the marker query proves the protocol, an error reply
-    // included, so the scanner never judges APC frames itself
     let mut replies = Replies::default();
+    note_kitty_answers(stream, &mut replies);
+    let mut cursor = 0;
+    while let Some(rest) = stream.get(cursor..) {
+        match note_sequence(rest, &mut replies) {
+            Some(step) => cursor += step,
+            None => break,
+        }
+    }
+    replies
+}
+
+/// Any answer to the marker query proves the protocol, an error reply
+/// included, so the sequence scanner never judges APC frames itself.
+fn note_kitty_answers(stream: &[u8], replies: &mut Replies) {
     for answer in kitty::parse_responses(stream) {
         let (image, accepted) = match answer {
             kitty::Response::Ok { image, .. } => (image, true),
@@ -388,45 +410,42 @@ fn parse_replies(stream: &[u8]) -> Replies {
             _ => {}
         }
     }
-    let mut cursor = 0;
-    while let Some(rest) = stream.get(cursor..) {
-        if rest.starts_with(b"\x1b_G") {
-            let Some(body_len) = body_len(rest, 3) else {
-                break;
-            };
-            cursor += 3 + body_len + 2;
-        } else if rest.starts_with(b"\x1bP") {
-            let Some(body_len) = body_len(rest, 2) else {
-                break;
-            };
-            if let Some(body) = rest.get(2..2 + body_len)
-                && let Some(identity) = parse_identity(body)
-            {
-                replies.identity = Some(identity);
-            }
-            cursor += 2 + body_len + 2;
-        } else if rest.starts_with(b"\x1b[") {
-            let Some(step) = csi_step(rest) else {
-                break;
-            };
-            let (params, final_byte) = csi_split(rest.get(..step).unwrap_or_default());
-            match final_byte {
-                b'c' => {
-                    replies.barrier = true;
-                    replies.sixel |= params.strip_prefix('?').is_some_and(has_sixel);
-                }
-                b't' => {
-                    replies.cell = parse_size(&params, "6").or(replies.cell);
-                    replies.text_area = parse_size(&params, "4").or(replies.text_area);
-                }
-                _ => {}
-            }
-            cursor += step;
-        } else {
-            cursor += 1;
-        }
+}
+
+/// Note the sequence at the start of `rest` and return its length, or
+/// `None` while it is still incomplete.
+fn note_sequence(rest: &[u8], replies: &mut Replies) -> Option<usize> {
+    if rest.starts_with(b"\x1b_G") {
+        return Some(3 + body_len(rest, 3)? + 2);
     }
-    replies
+    if rest.starts_with(b"\x1bP") {
+        let body_len = body_len(rest, 2)?;
+        if let Some(identity) = rest.get(2..2 + body_len).and_then(parse_identity) {
+            replies.identity = Some(identity);
+        }
+        return Some(2 + body_len + 2);
+    }
+    if rest.starts_with(b"\x1b[") {
+        let step = csi_step(rest)?;
+        let (params, final_byte) = csi_split(rest.get(..step).unwrap_or_default());
+        note_csi(&params, final_byte, replies);
+        return Some(step);
+    }
+    Some(1)
+}
+
+fn note_csi(params: &str, final_byte: u8, replies: &mut Replies) {
+    match final_byte {
+        b'c' => {
+            replies.barrier = true;
+            replies.sixel |= params.strip_prefix('?').is_some_and(has_sixel);
+        }
+        b't' => {
+            replies.cell = parse_size(params, "6").or(replies.cell);
+            replies.text_area = parse_size(params, "4").or(replies.text_area);
+        }
+        _ => {}
+    }
 }
 
 /// Length of the body before the `ESC \` terminator, searching from

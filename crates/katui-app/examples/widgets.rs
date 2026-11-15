@@ -208,6 +208,44 @@ impl Tour {
             .background(theme.raised.clone())
     }
 
+    /// Apply a message that only changes how the screen is arranged.
+    fn arrange(&mut self, message: &Message) {
+        match message {
+            Message::Scrolled(scroll) => self.page.apply(*scroll),
+            Message::Open(id) => self.files.toggle(*id),
+            Message::Pick(id) => self.files.select(*id),
+            Message::Resize(fraction) => self.sidebar = *fraction,
+            Message::ShowTip => self.tip = true,
+            Message::HideTip => self.tip = false,
+            _ => {}
+        }
+    }
+
+    /// Redraw while working or when a toast expired.
+    fn tick(&mut self) -> Control {
+        let expired = self.toasts.expire(Instant::now());
+        if self.busy || expired {
+            Control::Redraw
+        } else {
+            Control::Wait
+        }
+    }
+
+    /// Run entry `index` of the File menu.
+    fn file(&mut self, index: usize) {
+        self.popup = Popup::None;
+        match index {
+            0 => {
+                let lines = self.note.text().lines().count();
+                self.toast(format!("The note has {lines} lines"));
+            }
+            1 => {
+                self.note.take();
+            }
+            _ => self.popup = Popup::Quit,
+        }
+    }
+
     fn toggle(&mut self, popup: Popup) {
         self.popup = if self.popup == popup {
             Popup::None
@@ -298,26 +336,10 @@ impl UiApp for Tour {
 
     fn update(&mut self, message: Message) -> Control {
         match message {
-            Message::Tick => {
-                let expired = self.toasts.expire(Instant::now());
-                return if self.busy || expired {
-                    Control::Redraw
-                } else {
-                    Control::Wait
-                };
-            }
+            Message::Tick => return self.tick(),
             Message::ToggleFileMenu => self.toggle(Popup::FileMenu),
             Message::ToggleThemes => self.toggle(Popup::Themes),
-            Message::File(0) => {
-                self.popup = Popup::None;
-                let lines = self.note.text().lines().count();
-                self.toast(format!("The note has {lines} lines"));
-            }
-            Message::File(1) => {
-                self.popup = Popup::None;
-                self.note.take();
-            }
-            Message::File(_) => self.popup = Popup::Quit,
+            Message::File(index) => self.file(index),
             Message::Theme(index) => {
                 self.theme = index;
                 self.popup = Popup::None;
@@ -329,12 +351,12 @@ impl UiApp for Tour {
                 self.table.select(index);
                 self.focus.set(Focused::Table);
             }
-            Message::Scrolled(scroll) => self.page.apply(scroll),
-            Message::Open(id) => self.files.toggle(id),
-            Message::Pick(id) => self.files.select(id),
-            Message::Resize(fraction) => self.sidebar = fraction,
-            Message::ShowTip => self.tip = true,
-            Message::HideTip => self.tip = false,
+            Message::Scrolled(_)
+            | Message::Open(_)
+            | Message::Pick(_)
+            | Message::Resize(_)
+            | Message::ShowTip
+            | Message::HideTip => self.arrange(&message),
             Message::Dismiss => self.popup = Popup::None,
             Message::ConfirmQuit => return Control::Quit,
         }

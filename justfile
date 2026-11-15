@@ -38,9 +38,29 @@ metrics:
     mkdir -p target/metrics
     rust-code-analysis-cli -m -p crates -l rust -O json -o target/metrics -j 8
 
-# copy-paste duplication, from .jscpd.json
+# copy-paste duplication in every language, from .jscpd.json
 dupes:
-    npx --yes jscpd@4 crates/
+    npx --yes jscpd@4 crates/ bindings/ demos/obby-chat/src/
+
+# cyclomatic complexity, length and parameter count of every function, in every language
+complexity:
+    uvx --from lizard==1.26.0 lizard crates bindings demos/obby-chat/src \
+        -l rust -l python -l go -l typescript -l c \
+        -x '*/target/*' -x '*/node_modules/*' -x '*/.venv/*' \
+        -x '*/index.js' -x '*/index.d.ts' -x '*/katui.h' \
+        -C 15 -L 100 -a 8 -w
+
+# write bindings/rust-api.json, the public rust api every binding covers
+api:
+    python3 scripts/rust-api.py > target/rust-api.json
+    mv target/rust-api.json bindings/rust-api.json
+
+# fail when bindings/rust-api.json no longer matches the rust sources
+api-check:
+    python3 scripts/rust-api.py | diff -u bindings/rust-api.json -
+
+# the code-quality gates every language shares: complexity, duplication and the api manifest
+quality: complexity dupes api-check
 
 # unused dependencies
 machete:
@@ -60,7 +80,7 @@ api-docs:
     echo '<meta http-equiv="refresh" content="0; url=katui/index.html">' > target/doc/index.html
 
 # every gate, before every commit
-ci: fmt-check clippy test docs typos py-check c-check go-check node-check
+ci: fmt-check clippy test docs typos quality py-check c-check go-check node-check
 
 # the python package, built in release into bindings/python/.venv
 [working-directory('bindings/python')]
@@ -232,6 +252,8 @@ c-check: c-build
     target/c-tests/test_shared
     python3 bindings/c/tests/docs.py target/release/libkatui.a {{c_libs}}
     python3 bindings/c/tests/sync.py
+    clang_tidy=$(command -v clang-tidy || echo "$(brew --prefix llvm)/bin/clang-tidy")
+    "$clang_tidy" --quiet bindings/c/examples/*.c bindings/c/tests/test_*.c -- -std=c11 -Ibindings/c/include
 
 # a C example, like `just c-demo todo`
 c-demo name: c-build
@@ -271,6 +293,7 @@ go-lib: c-build
 [working-directory('bindings/go')]
 go-check: go-lib
     go vet ./...
+    go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run ./...
     test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
     go test ./...
 

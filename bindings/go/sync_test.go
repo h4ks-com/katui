@@ -7,12 +7,12 @@ package katui
 // the binding or the reason is written.
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -144,71 +144,38 @@ func types(expr ast.Expr) string {
 	return ""
 }
 
-func read(t *testing.T, path string) string {
+// rustAPI is bindings/rust-api.json: the public Rust API every binding covers.
+type rustAPI struct {
+	Version  string              `json:"version"`
+	Exports  map[string][]string `json:"exports"`
+	Methods  map[string][]string `json:"methods"`
+	Fields   map[string][]string `json:"fields"`
+	Hooks    map[string][]string `json:"hooks"`
+	Variants map[string][]string `json:"variants"`
+}
+
+func readAPI(t *testing.T) rustAPI {
 	t.Helper()
-	text, err := os.ReadFile(filepath.Join("..", "..", "crates", path))
+	text, err := os.ReadFile(filepath.Join("..", "rust-api.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(text)
-}
-
-// exports is the names a crate's lib.rs re-exports with `pub use`.
-func exports(source string) []string {
-	var names []string
-	for _, block := range regexp.MustCompile(`(?m)^pub use [\w:]+::(\{[^}]*\}|\w+);`).FindAllStringSubmatch(source, -1) {
-		names = append(names, regexp.MustCompile(`\w+`).FindAllString(block[1], -1)...)
+	var found rustAPI
+	if err := json.Unmarshal(text, &found); err != nil {
+		t.Fatal(err)
 	}
-	return names
-}
-
-// publicFns is the `pub fn` names in the inherent impl blocks of typeName.
-func publicFns(source, typeName string) []string {
-	var names []string
-	impl := regexp.MustCompile(`(?m)^impl(?:<[^{]*?>)?\s+` + typeName + `(?:<[^>]*>)?\s*\{`)
-	for _, start := range impl.FindAllStringIndex(source, -1) {
-		depth, end := 0, start[1]-1
-		for end = start[1] - 1; end < len(source); end++ {
-			depth += map[byte]int{'{': 1, '}': -1}[source[end]]
-			if depth == 0 {
-				break
-			}
-		}
-		for _, match := range regexp.MustCompile(`(?m)^    pub (?:const )?fn (\w+)`).FindAllStringSubmatch(source[start[1]:end], -1) {
-			names = append(names, match[1])
-		}
-	}
-	return names
+	return found
 }
 
 func TestEveryRustExportHasAGoName(t *testing.T) {
 	found := parseAPI(t)
-	for _, lib := range []string{"katui-widgets", "katui-game", "katui-content"} {
-		for _, name := range exports(read(t, lib+"/src/lib.rs")) {
+	for crate, names := range readAPI(t).Exports {
+		for _, name := range names {
 			if _, skip := omitted[name]; !skip && !found.names[goName(name)] {
-				t.Errorf("%s exports %s, and Go has no %s", lib, name, goName(name))
+				t.Errorf("%s exports %s, and Go has no %s", crate, name, goName(name))
 			}
 		}
 	}
-}
-
-var methodSources = [][2]string{
-	{"katui-ui/src/element.rs", "Element"},
-	{"katui-widgets/src/theme.rs", "Theme"},
-	{"katui-widgets/src/field.rs", "TextField"},
-	{"katui-widgets/src/area.rs", "TextArea"},
-	{"katui-widgets/src/list.rs", "ListState"},
-	{"katui-widgets/src/scroll.rs", "ScrollState"},
-	{"katui-widgets/src/tree.rs", "TreeNode"},
-	{"katui-widgets/src/tree.rs", "TreeState"},
-	{"katui-widgets/src/focus.rs", "Focus"},
-	{"katui-widgets/src/feedback.rs", "Toasts"},
-	{"katui-game/src/light.rs", "Light"},
-	{"katui-game/src/keys.rs", "HeldKeys"},
-	{"katui-game/src/space.rs", "V3"},
-	{"katui-game/src/space.rs", "Camera"},
-	{"katui-game/src/space.rs", "Rng"},
-	{"katui-game/src/space.rs", "Sparks"},
 }
 
 // hasMethod reports whether Go has rust's method as a method of its type,
@@ -223,12 +190,7 @@ func (a api) hasMethod(rust, method string) bool {
 
 func TestEveryRustMethodHasAGoOne(t *testing.T) {
 	found := parseAPI(t)
-	for _, pair := range methodSources {
-		source, rust := pair[0], pair[1]
-		names := publicFns(read(t, source), rust)
-		if len(names) == 0 {
-			t.Fatalf("no public methods of %s found; fix the parser or the path", rust)
-		}
+	for rust, names := range readAPI(t).Methods {
 		for _, method := range names {
 			if _, skip := omitted[rust+"."+method]; !skip && !found.hasMethod(rust, method) {
 				t.Errorf("Go has no counterpart of %s::%s", rust, method)
@@ -239,18 +201,14 @@ func TestEveryRustMethodHasAGoOne(t *testing.T) {
 
 func TestEveryThemeFieldIsAGoMethod(t *testing.T) {
 	found := parseAPI(t)
-	theme := regexp.MustCompile(`(?s)pub struct Theme \{(.*?)\n\}`).FindStringSubmatch(read(t, "katui-widgets/src/theme.rs"))
-	if theme == nil {
-		t.Fatal("no Theme struct found")
-	}
-	for _, field := range regexp.MustCompile(`(?m)^    pub (\w+):`).FindAllStringSubmatch(theme[1], -1) {
-		wanted := []string{camel(field[1])}
-		if field[1] != "cell" {
-			wanted = append(wanted, "Set"+camel(field[1]))
+	for _, field := range readAPI(t).Fields["Theme"] {
+		wanted := []string{camel(field)}
+		if field != "cell" {
+			wanted = append(wanted, "Set"+camel(field))
 		}
 		for _, name := range wanted {
 			if !found.methods["Theme"][name] {
-				t.Errorf("Theme has no %s for the field %s", name, field[1])
+				t.Errorf("Theme has no %s for the field %s", name, field)
 			}
 		}
 	}
@@ -258,14 +216,10 @@ func TestEveryThemeFieldIsAGoMethod(t *testing.T) {
 
 func TestEveryHookOfARustTraitIsAGoInterfaceMethod(t *testing.T) {
 	found := parseAPI(t)
-	for _, pair := range [][2]string{{"katui-app/src/lib.rs", "UiApp"}, {"katui-game/src/arcade.rs", "Game"}} {
-		block := regexp.MustCompile(`(?ms)^pub trait ` + pair[1] + `\b.*?^\}`).FindString(read(t, pair[0]))
-		if block == "" {
-			t.Fatalf("trait %s not found", pair[1])
-		}
-		for _, hook := range regexp.MustCompile(`(?m)^    fn (\w+)`).FindAllStringSubmatch(block, -1) {
-			if !found.interfaces[camel(hook[1])] {
-				t.Errorf("no Go interface has %s for %s::%s", camel(hook[1]), pair[1], hook[1])
+	for trait, hooks := range readAPI(t).Hooks {
+		for _, hook := range hooks {
+			if !found.interfaces[camel(hook)] {
+				t.Errorf("no Go interface has %s for %s::%s", camel(hook), trait, hook)
 			}
 		}
 	}
@@ -273,26 +227,17 @@ func TestEveryHookOfARustTraitIsAGoInterfaceMethod(t *testing.T) {
 
 func TestEveryRustVariantHasAGoConstant(t *testing.T) {
 	found := parseAPI(t)
-	for _, pair := range [][2]string{{"katui-rt/src/app.rs", "Control"}, {"katui-widgets/src/field.rs", "Edit"}} {
-		block := regexp.MustCompile(`(?s)pub enum ` + pair[1] + ` \{(.*?)\n\}`).FindStringSubmatch(read(t, pair[0]))
-		if block == nil {
-			t.Fatalf("enum %s not found", pair[1])
-		}
-		for _, variant := range regexp.MustCompile(`(?m)^    (\w+),`).FindAllStringSubmatch(block[1], -1) {
-			if !found.names[variant[1]] {
-				t.Errorf("Go has no constant for %s::%s", pair[1], variant[1])
+	for enum, variants := range readAPI(t).Variants {
+		for _, variant := range variants {
+			if !found.names[variant] {
+				t.Errorf("Go has no constant for %s::%s", enum, variant)
 			}
 		}
 	}
 }
 
 func TestTheVersionIsTheWorkspaceVersion(t *testing.T) {
-	workspace, err := os.ReadFile(filepath.Join("..", "..", "Cargo.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	version := regexp.MustCompile(`(?m)^version = "([^"]+)"`).FindStringSubmatch(string(workspace))
-	if version == nil || version[1] != Version() {
-		t.Fatalf("the engine is %s, the workspace %v", Version(), version)
+	if want := readAPI(t).Version; want != Version() {
+		t.Fatalf("the engine is %s, the workspace %s", Version(), want)
 	}
 }

@@ -1,0 +1,291 @@
+{
+  "version": "0.1.0",
+  "exports": {
+    "katui-widgets": [
+      "TextArea",
+      "text_area",
+      "nudge",
+      "radio",
+      "slider",
+      "switch",
+      "Toasts",
+      "key_hints",
+      "spinner",
+      "toasts",
+      "Edit",
+      "TextField",
+      "Focus",
+      "Scroll",
+      "ListState",
+      "dialog",
+      "menu",
+      "select",
+      "tooltip",
+      "ScrollState",
+      "scroll_view",
+      "Orientation",
+      "split",
+      "Column",
+      "table",
+      "Theme",
+      "TreeNode",
+      "TreeState",
+      "tree",
+      "button",
+      "checkbox",
+      "heading",
+      "hint",
+      "label",
+      "list",
+      "page",
+      "panel",
+      "primary_button",
+      "progress",
+      "tabs",
+      "text_field",
+      "title"
+    ],
+    "katui-game": [
+      "BASE_IMAGE",
+      "Game",
+      "MULTIPLEXED_SHRINK",
+      "play",
+      "Key",
+      "HeldKeys",
+      "Blend",
+      "Light",
+      "P2",
+      "Rgb",
+      "lerp3",
+      "scaled",
+      "srgb",
+      "Camera",
+      "Rng",
+      "Spark",
+      "Sparks",
+      "V3",
+      "v3"
+    ],
+    "katui-content": [
+      "HtmlDefaults",
+      "HtmlHost",
+      "html",
+      "markdown_view"
+    ]
+  },
+  "methods": {
+    "Element": [
+      "row",
+      "column",
+      "stack",
+      "text",
+      "rich",
+      "image",
+      "spacer",
+      "layer",
+      "scroll",
+      "on_click",
+      "on_span_click",
+      "on_hover",
+      "on_leave",
+      "on_scroll",
+      "on_press",
+      "on_grip_press",
+      "grip",
+      "popup",
+      "opaque",
+      "scrollbar",
+      "id",
+      "padding",
+      "padding_xy",
+      "gap",
+      "width",
+      "height",
+      "size",
+      "grow",
+      "align",
+      "justify",
+      "background",
+      "radius",
+      "border",
+      "color",
+      "font_size",
+      "weight"
+    ],
+    "Theme": [
+      "dark",
+      "light",
+      "scaled",
+      "current",
+      "scope",
+      "cell_width",
+      "cell_height",
+      "body",
+      "small",
+      "heading",
+      "title",
+      "radius",
+      "outline",
+      "columns",
+      "rows"
+    ],
+    "TextField": [
+      "with_text",
+      "text",
+      "split",
+      "set_text",
+      "take",
+      "handle"
+    ],
+    "TextArea": [
+      "new",
+      "text",
+      "set_text",
+      "take",
+      "rows",
+      "handle",
+      "cursor_line"
+    ],
+    "ListState": [
+      "new",
+      "resize",
+      "selected",
+      "in_view",
+      "select",
+      "handle"
+    ],
+    "ScrollState": [
+      "offset",
+      "max",
+      "apply",
+      "scroll_by",
+      "handle"
+    ],
+    "TreeNode": [
+      "leaf",
+      "branch"
+    ],
+    "TreeState": [
+      "selected",
+      "select",
+      "is_open",
+      "toggle",
+      "handle"
+    ],
+    "Focus": [
+      "new",
+      "current",
+      "is",
+      "set",
+      "next",
+      "previous",
+      "handle"
+    ],
+    "Toasts": [
+      "push",
+      "push_for",
+      "expire",
+      "next_expiry",
+      "is_empty",
+      "texts"
+    ],
+    "Light": [
+      "new",
+      "width",
+      "height",
+      "pixel_aspect",
+      "copy_from",
+      "paint",
+      "dim",
+      "rect",
+      "polygon",
+      "line",
+      "glow",
+      "ring",
+      "text",
+      "blended_text",
+      "centered_text",
+      "text_width",
+      "text_height",
+      "bloom",
+      "to_surface"
+    ],
+    "HeldKeys": [
+      "tick",
+      "press",
+      "release",
+      "clear",
+      "is_held",
+      "any_held"
+    ],
+    "V3": [
+      "dot",
+      "cross",
+      "normalized",
+      "rotated_x",
+      "rotated_y",
+      "rotated_z"
+    ],
+    "Camera": [
+      "project"
+    ],
+    "Rng": [
+      "new",
+      "next_u32",
+      "range",
+      "direction"
+    ],
+    "Sparks": [
+      "add",
+      "step",
+      "draw",
+      "len",
+      "is_empty"
+    ]
+  },
+  "fields": {
+    "Theme": [
+      "cell",
+      "background",
+      "raised",
+      "highlight",
+      "border",
+      "text",
+      "muted",
+      "accent",
+      "on_accent",
+      "danger"
+    ]
+  },
+  "hooks": {
+    "UiApp": [
+      "start",
+      "view",
+      "update",
+      "input",
+      "theme"
+    ],
+    "Game": [
+      "press",
+      "repeat",
+      "resize",
+      "step",
+      "render",
+      "finished"
+    ]
+  },
+  "variants": {
+    "Control": [
+      "Wait",
+      "Redraw",
+      "Animate",
+      "Quit"
+    ],
+    "Edit": [
+      "Changed",
+      "Moved",
+      "Submitted",
+      "Ignored"
+    ]
+  }
+}

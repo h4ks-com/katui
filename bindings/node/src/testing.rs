@@ -5,7 +5,7 @@ use std::rc::Rc;
 use katui_app::Control as UiControl;
 use katui_draw::{TextEngine, bundled_fonts};
 use katui_proto::input::{InputEvent, Key, Mods};
-use katui_ui::{CellPixels, Ui, UiOptions};
+use katui_ui::{CellPixels, Hover, Ui, UiOptions};
 use napi::bindgen_prelude::Object;
 use napi::{Env, Result};
 
@@ -25,7 +25,7 @@ pub struct Screen {
     cell: CellPixels,
     rendered: bool,
     quit: bool,
-    hovered: Option<(usize, Option<Msg>)>,
+    hover: Hover<Msg>,
 }
 
 impl Screen {
@@ -86,7 +86,7 @@ impl Screen {
             cell: self::cell(cell),
             rendered: false,
             quit: false,
-            hovered: None,
+            hover: Hover::default(),
         })
     }
 
@@ -122,10 +122,7 @@ impl Screen {
     pub fn press(&mut self, x: f64, y: f64) -> Result<()> {
         self.ensure_rendered()?;
         let (x, y) = (x as f32, y as f32);
-        let message = self
-            .ui
-            .press(x, y)
-            .or_else(|| self.ui.hit_test(x, y).and_then(|hit| hit.on_click));
+        let message = self.ui.click(x, y);
         self.deliver(message)
     }
 
@@ -134,13 +131,7 @@ impl Screen {
     pub fn wheel(&mut self, x: f64, y: f64, down: Option<bool>) -> Result<()> {
         self.ensure_rendered()?;
         let down = down.unwrap_or(true);
-        let message = self.ui.hit_test(x as f32, y as f32).and_then(|hit| {
-            if down {
-                hit.on_wheel_down
-            } else {
-                hit.on_wheel_up
-            }
-        });
+        let message = self.ui.wheel(x as f32, y as f32, down);
         self.deliver(message)
     }
 
@@ -149,18 +140,8 @@ impl Screen {
     #[napi]
     pub fn hover(&mut self, x: f64, y: f64) -> Result<()> {
         self.ensure_rendered()?;
-        let hit = self.ui.hit_test(x as f32, y as f32);
-        let target = hit.as_ref().and_then(|hit| hit.hover_target);
-        if self.hovered.as_ref().map(|(index, _)| *index) == target {
-            return Ok(());
-        }
-        let left = self.hovered.take().and_then(|(_, leave)| leave);
-        self.deliver(left)?;
-        if let Some(hit) = hit {
-            if let Some(index) = hit.hover_target {
-                self.hovered = Some((index, hit.on_leave));
-            }
-            self.deliver(hit.on_hover)?;
+        for message in self.hover.moved(&self.ui, x as f32, y as f32) {
+            self.deliver(Some(message))?;
         }
         Ok(())
     }

@@ -305,14 +305,21 @@ impl Style {
     }
 
     fn apply(&mut self, declaration: &Declaration) {
+        let property = declaration.property.as_str();
         let value = declaration.value.as_str();
-        let length = |value: &str| css::length(value, self.size, self.root_size);
-        match declaration.property.as_str() {
+        if !self.apply_text(property, value) {
+            self.apply_box(property, value);
+        }
+    }
+
+    /// Apply a property of the text itself; `false` when `property` is
+    /// not one.
+    fn apply_text(&mut self, property: &str, value: &str) -> bool {
+        match property {
             "color" => self.color = css::color(value).unwrap_or(self.color),
-            "background" | "background-color" => {
-                self.background = css::color(value).or(self.background);
+            "font-size" => {
+                self.size = css::length(value, self.size, self.root_size).unwrap_or(self.size);
             }
-            "font-size" => self.size = length(value).unwrap_or(self.size),
             "font-weight" => {
                 self.bold = matches!(value, "bold" | "bolder" | "600" | "700" | "800" | "900");
             }
@@ -322,21 +329,30 @@ impl Style {
                 self.strike = value.contains("line-through");
             }
             "text-align" => self.text_align = align(value).unwrap_or(self.text_align),
-            "padding" => {
-                self.padding = css::sides(value, self.size, self.root_size).unwrap_or(self.padding);
+            "white-space" => self.preformatted = value.starts_with("pre"),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Apply a property of the box around the content.
+    fn apply_box(&mut self, property: &str, value: &str) {
+        let (size, root) = (self.size, self.root_size);
+        let length = |value: &str| css::length(value, size, root);
+        match property {
+            "background" | "background-color" => {
+                self.background = css::color(value).or(self.background);
             }
-            "margin" => {
-                self.margin = css::sides(value, self.size, self.root_size).unwrap_or(self.margin);
-            }
+            "padding" => self.padding = css::sides(value, size, root).unwrap_or(self.padding),
+            "margin" => self.margin = css::sides(value, size, root).unwrap_or(self.margin),
             "border-radius" => self.radius = length(value).unwrap_or(self.radius),
             "gap" | "row-gap" | "column-gap" => self.gap = length(value).unwrap_or(self.gap),
-            "width" => self.width = width(value, self.size, self.root_size),
+            "width" => self.width = width(value, size, root),
             "height" => self.height = length(value),
             "justify-content" => self.justify = align(value).unwrap_or(self.justify),
             "align-items" => self.align = align(value).unwrap_or(self.align),
             "flex-direction" => self.row = !value.starts_with("column"),
-            "white-space" => self.preformatted = value.starts_with("pre"),
-            "border" => self.border = border(value, self.size, self.root_size).or(self.border),
+            "border" => self.border = border(value, size, root).or(self.border),
             "display" => self.apply_display(value),
             _ => {}
         }

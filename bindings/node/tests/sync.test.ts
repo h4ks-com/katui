@@ -1,17 +1,25 @@
 // Rust is the source of truth for the API. Every public widget, game item,
-// type method and app hook in the Rust crates has a JavaScript counterpart,
-// or an entry in OMITTED saying why JavaScript does without it. Adding
-// something public in Rust fails this test until the binding or the reason
-// is written.
+// type method, app hook and variant listed in bindings/rust-api.json has a
+// JavaScript counterpart, or an entry in OMITTED saying why JavaScript does
+// without it.
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import * as katui from '@matheusfillipe/katui'
-import { BINDINGS, REPO } from './paths.ts'
+import { BINDINGS } from './paths.ts'
 
-const CRATES = join(REPO, 'crates')
+interface RustApi {
+  version: string
+  exports: Record<string, string[]>
+  methods: Record<string, string[]>
+  fields: Record<string, string[]>
+  hooks: Record<string, string[]>
+  variants: Record<string, string[]>
+}
+
+const API: RustApi = JSON.parse(readFileSync(join(BINDINGS, '..', 'rust-api.json'), 'utf8'))
 
 const RENAMED: Record<string, string> = {
   list: 'listView',
@@ -49,79 +57,34 @@ function camel(name: string): string {
   return name.replace(/_([a-z0-9])/g, (_, letter: string) => letter.toUpperCase())
 }
 
-function source(path: string): string {
-  return readFileSync(join(CRATES, path), 'utf8')
-}
-
-/** The names a crate's lib.rs re-exports with `pub use`. */
-function exports(lib: string): string[] {
-  const names: string[] = []
-  for (const match of source(lib).matchAll(/^pub use [\w:]+::(\{[^}]*\}|\w+);/gm)) {
-    names.push(...(match[1]?.match(/\w+/g) ?? []))
-  }
-  return names
-}
-
-/** The `pub fn` names in the inherent impl blocks of `type`. */
-function publicFns(path: string, type: string): string[] {
-  const text = source(path)
-  const names: string[] = []
-  const start = new RegExp(`^impl(?:<[^{]*?>)?\\s+${type}(?:<[^>]*>)?\\s*\\{`, 'gm')
-  for (const found of text.matchAll(start)) {
-    let depth = 0
-    let at = found.index + found[0].length - 1
-    for (; at < text.length; at++) {
-      depth += text[at] === '{' ? 1 : text[at] === '}' ? -1 : 0
-      if (depth === 0) break
-    }
-    const body = text.slice(found.index + found[0].length, at)
-    for (const method of body.matchAll(/^ {4}pub (?:const )?fn (\w+)/gm)) {
-      if (method[1]) names.push(method[1])
-    }
-  }
-  return names
-}
-
-function traitFns(path: string, trait: string): string[] {
-  const block = source(path).match(new RegExp(`^pub trait ${trait}\\b[\\s\\S]*?^\\}`, 'm'))
-  assert.ok(block, `trait ${trait} not found in ${path}`)
-  return [...block[0].matchAll(/^ {4}fn (\w+)/gm)].flatMap((found) => (found[1] ? [found[1]] : []))
-}
-
 function missing(names: string[], target: object): string[] {
   return names.filter((name) => !(name in OMITTED) && !(camel(RENAMED[name] ?? name) in target))
 }
 
-for (const lib of [
-  'katui-widgets/src/lib.rs',
-  'katui-game/src/lib.rs',
-  'katui-content/src/lib.rs',
-]) {
-  test(`every export of ${lib} has a JavaScript name`, () => {
-    const names = exports(lib)
-    assert.ok(names.length > 0, `no exports found in ${lib}; fix the parser or the path`)
+for (const [crate, names] of Object.entries(API.exports)) {
+  test(`every export of ${crate} has a JavaScript name`, () => {
     assert.deepEqual(missing(names, katui), [])
   })
 }
 
-const METHODS: [string, string, object][] = [
-  ['katui-ui/src/element.rs', 'Element', katui.Element],
-  ['katui-widgets/src/theme.rs', 'Theme', katui.Theme],
-  ['katui-widgets/src/field.rs', 'TextField', katui.TextField],
-  ['katui-widgets/src/area.rs', 'TextArea', katui.TextArea],
-  ['katui-widgets/src/list.rs', 'ListState', katui.ListState],
-  ['katui-widgets/src/scroll.rs', 'ScrollState', katui.ScrollState],
-  ['katui-widgets/src/tree.rs', 'TreeNode', katui.TreeNode],
-  ['katui-widgets/src/tree.rs', 'TreeState', katui.TreeState],
-  ['katui-widgets/src/focus.rs', 'Focus', katui.Focus],
-  ['katui-widgets/src/feedback.rs', 'Toasts', katui.Toasts],
-  ['katui-game/src/light.rs', 'Light', katui.Light],
-  ['katui-game/src/keys.rs', 'HeldKeys', katui.Keys],
-  ['katui-game/src/space.rs', 'V3', katui.V3],
-  ['katui-game/src/space.rs', 'Camera', katui.Camera],
-  ['katui-game/src/space.rs', 'Rng', katui.Rng],
-  ['katui-game/src/space.rs', 'Sparks', katui.Sparks],
-]
+const CLASSES: Record<string, object> = {
+  Element: katui.Element,
+  Theme: katui.Theme,
+  TextField: katui.TextField,
+  TextArea: katui.TextArea,
+  ListState: katui.ListState,
+  ScrollState: katui.ScrollState,
+  TreeNode: katui.TreeNode,
+  TreeState: katui.TreeState,
+  Focus: katui.Focus,
+  Toasts: katui.Toasts,
+  Light: katui.Light,
+  HeldKeys: katui.Keys,
+  V3: katui.V3,
+  Camera: katui.Camera,
+  Rng: katui.Rng,
+  Sparks: katui.Sparks,
+}
 
 /** A class's static and instance members, the ones `in` can see. */
 function members(type: object): object {
@@ -129,42 +92,33 @@ function members(type: object): object {
   return new Proxy(type, { has: (target, name) => name in target || name in prototype })
 }
 
-for (const [path, rust, type] of METHODS) {
+for (const [rust, names] of Object.entries(API.methods)) {
   test(`every method of ${rust} has a JavaScript one`, () => {
-    const names = publicFns(path, rust)
-    assert.ok(names.length > 0, `no public methods of ${rust} found; fix the parser or the path`)
+    const type = CLASSES[rust]
+    assert.ok(type, `map ${rust} to its JavaScript class in CLASSES`)
     assert.deepEqual(missing(names, members(type)), [])
   })
 }
 
 test('every theme field is a JavaScript property', () => {
-  const struct = source('katui-widgets/src/theme.rs').match(/pub struct Theme \{([\s\S]*?)\n\}/)
-  assert.ok(struct?.[1])
-  const fields = [...struct[1].matchAll(/^ {4}pub (\w+):/gm)].flatMap((found) =>
-    found[1] ? [found[1]] : [],
-  )
-  assert.deepEqual(missing(fields, katui.Theme.dark()), [])
+  assert.deepEqual(missing(API.fields.Theme ?? [], katui.Theme.dark()), [])
 })
 
-for (const [path, trait, type] of [
-  ['katui-app/src/lib.rs', 'UiApp', katui.App],
-  ['katui-game/src/arcade.rs', 'Game', katui.Game],
-] as const) {
+const HOOKS: Record<string, { prototype: object }> = { UiApp: katui.App, Game: katui.Game }
+
+for (const [trait, hooks] of Object.entries(API.hooks)) {
   test(`every hook of ${trait} is a JavaScript method`, () => {
-    assert.deepEqual(missing(traitFns(path, trait), type.prototype), [])
+    const type = HOOKS[trait]
+    assert.ok(type, `map ${trait} to its JavaScript class in HOOKS`)
+    assert.deepEqual(missing(hooks, type.prototype), [])
   })
 }
 
-for (const [path, name, values] of [
-  ['katui-rt/src/app.rs', 'Control', katui.Control],
-  ['katui-widgets/src/field.rs', 'Edit', katui.Edit],
-] as const) {
+const VARIANTS: Record<string, object> = { Control: katui.Control, Edit: katui.Edit }
+
+for (const [name, variants] of Object.entries(API.variants)) {
   test(`every variant of ${name} has a JavaScript value`, () => {
-    const block = source(path).match(new RegExp(`pub enum ${name} \\{([\\s\\S]*?)\\n\\}`))
-    assert.ok(block?.[1])
-    const variants = [...block[1].matchAll(/^ {4}(\w+),/gm)].flatMap((found) =>
-      found[1] ? [found[1]] : [],
-    )
+    const values = VARIANTS[name] ?? {}
     assert.deepEqual(
       variants.filter((variant) => !(variant in values)),
       [],
@@ -173,8 +127,7 @@ for (const [path, name, values] of [
 }
 
 test('the package version is the workspace version', () => {
-  const workspace = readFileSync(join(REPO, 'Cargo.toml'), 'utf8').match(/^version = "([^"]+)"/m)
   const manifest = JSON.parse(readFileSync(join(BINDINGS, 'package.json'), 'utf8'))
-  assert.equal(katui.VERSION, workspace?.[1])
-  assert.equal(manifest.version, workspace?.[1])
+  assert.equal(katui.VERSION, API.version)
+  assert.equal(manifest.version, API.version)
 })

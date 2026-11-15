@@ -1,0 +1,22 @@
+# the tests include the example .c files to drive their apps, and Annex K
+# fprintf_s and checked fprintf returns are not portable C practice
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-suspicious-include,
+  cert-*,
+  -cert-err33-c,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  misc-*,
+  -misc-include-cleaner,
+  readability-function-cognitive-complexity,
+  readability-function-size,
+  readability-else-after-return,
+  readability-redundant-*,
+WarningsAsErrors: '*'
+CheckOptions:
+  readability-function-cognitive-complexity.Threshold: 20
+  readability-function-size.LineThreshold: 100
+  readability-function-size.ParameterThreshold: 8

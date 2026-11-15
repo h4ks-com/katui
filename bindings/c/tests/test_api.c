@@ -184,9 +184,9 @@ static void a_link_click_sends_its_href(void) {
   KatuiApp app = {.user = &reader, .view = reader_view, .update = reader_update};
   KatuiScreen *screen = katui_screen_new(&app, 400, 100, 10, 20);
   CHECK(screen != NULL);
-  for (float y = 2; y < 60 && reader.clicks == 0; y += 4) {
-    for (float x = 4; x < 200 && reader.clicks == 0; x += 8) {
-      CHECK(katui_screen_click(screen, x, y) == KATUI_STATUS_OK);
+  for (int y = 2; y < 60 && reader.clicks == 0; y += 4) {
+    for (int x = 4; x < 200 && reader.clicks == 0; x += 8) {
+      CHECK(katui_screen_click(screen, (float)x, (float)y) == KATUI_STATUS_OK);
     }
   }
   CHECK(reader.clicks == 1);

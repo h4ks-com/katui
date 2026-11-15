@@ -208,15 +208,11 @@ pub unsafe extern "C" fn katui_event_button(event: *const KatuiEvent) -> KatuiBu
     let Some(InputEvent::Mouse(mouse)) = (unsafe { self::event(event) }) else {
         return KATUI_BUTTON_NONE;
     };
-    match mouse.action {
-        MouseAction::Press(button) | MouseAction::Release(button) | MouseAction::Drag(button) => {
-            match button {
-                Button::Left => KATUI_BUTTON_LEFT,
-                Button::Middle => KATUI_BUTTON_MIDDLE,
-                Button::Right => KATUI_BUTTON_RIGHT,
-            }
-        }
-        _ => KATUI_BUTTON_NONE,
+    match mouse.action.button() {
+        Some(Button::Left) => KATUI_BUTTON_LEFT,
+        Some(Button::Middle) => KATUI_BUTTON_MIDDLE,
+        Some(Button::Right) => KATUI_BUTTON_RIGHT,
+        None => KATUI_BUTTON_NONE,
     }
 }
 

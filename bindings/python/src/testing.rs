@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use katui_app::Control;
 use katui_draw::{TextEngine, bundled_fonts};
-use katui_ui::{CellPixels, Ui, UiOptions};
+use katui_ui::{CellPixels, Hover, Ui, UiOptions};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
@@ -24,7 +24,7 @@ pub(crate) struct PyScreen {
     cell: CellPixels,
     rendered: bool,
     quit: bool,
-    hovered: Option<(usize, Option<Msg>)>,
+    hover: Hover<Msg>,
 }
 
 impl PyScreen {
@@ -72,7 +72,7 @@ impl PyScreen {
             cell: self::cell(cell),
             rendered: false,
             quit: false,
-            hovered: None,
+            hover: Hover::default(),
         })
     }
 
@@ -104,10 +104,7 @@ impl PyScreen {
     /// Press at `x`, `y` and keep holding, for a drag.
     fn press(&mut self, x: f32, y: f32) -> PyResult<()> {
         self.ensure_rendered()?;
-        let message = self
-            .ui
-            .press(x, y)
-            .or_else(|| self.ui.hit_test(x, y).and_then(|hit| hit.on_click));
+        let message = self.ui.click(x, y);
         self.deliver(message)
     }
 
@@ -115,13 +112,7 @@ impl PyScreen {
     #[pyo3(signature = (x, y, down=true))]
     fn wheel(&mut self, x: f32, y: f32, down: bool) -> PyResult<()> {
         self.ensure_rendered()?;
-        let message = self.ui.hit_test(x, y).and_then(|hit| {
-            if down {
-                hit.on_wheel_down
-            } else {
-                hit.on_wheel_up
-            }
-        });
+        let message = self.ui.wheel(x, y, down);
         self.deliver(message)
     }
 
@@ -129,18 +120,8 @@ impl PyScreen {
     /// message, the one it entered its hover message.
     fn hover(&mut self, x: f32, y: f32) -> PyResult<()> {
         self.ensure_rendered()?;
-        let hit = self.ui.hit_test(x, y);
-        let target = hit.as_ref().and_then(|hit| hit.hover_target);
-        if self.hovered.as_ref().map(|(index, _)| *index) == target {
-            return Ok(());
-        }
-        let left = self.hovered.take().and_then(|(_, leave)| leave);
-        self.deliver(left)?;
-        if let Some(hit) = hit {
-            if let Some(index) = hit.hover_target {
-                self.hovered = Some((index, hit.on_leave));
-            }
-            self.deliver(hit.on_hover)?;
+        for message in self.hover.moved(&self.ui, x, y) {
+            self.deliver(Some(message))?;
         }
         Ok(())
     }

@@ -1,8 +1,27 @@
 {
   "minTokens": 70,
   "threshold": 2,
-  "format": ["rust"],
-  "ignore": ["**/target/**", "**/research/**", "**/*.snap", "**/node_modules/**"],
-  "reporters": ["console"],
+  "format": [
+    "rust",
+    "python",
+    "go",
+    "typescript",
+    "javascript",
+    "c"
+  ],
+  "ignore": [
+    "**/target/**",
+    "**/research/**",
+    "**/*.snap",
+    "**/node_modules/**",
+    "**/.venv/**",
+    "**/index.js",
+    "**/index.d.ts",
+    "**/katui.h",
+    "**/_katui.pyi"
+  ],
+  "reporters": [
+    "console"
+  ],
   "gitignore": true
 }

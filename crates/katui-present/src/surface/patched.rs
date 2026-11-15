@@ -133,16 +133,27 @@ impl PatchedKitty {
             self.prev = Some(surface.clone());
             return Ok(0);
         } else {
-            bytes.write_all(b"\x1b[?2026h")?;
-            for rect in &damage {
-                self.patch(&mut bytes, surface, *rect, area)?;
-            }
-            bytes.write_all(b"\x1b[?2026l")?;
+            self.patch_all(&mut bytes, surface, &damage, area)?;
         }
         self.prev = Some(surface.clone());
         let written = bytes.len();
         out.write_all(&bytes)?;
         Ok(written)
+    }
+
+    /// Every damaged rectangle as one synchronized update.
+    fn patch_all(
+        &mut self,
+        bytes: &mut Vec<u8>,
+        surface: &Surface,
+        damage: &[PixelRect],
+        area: CellRect,
+    ) -> io::Result<()> {
+        bytes.write_all(b"\x1b[?2026h")?;
+        for rect in damage {
+            self.patch(bytes, surface, *rect, area)?;
+        }
+        bytes.write_all(b"\x1b[?2026l")
     }
 
     /// A repaint keeps the old tiles up until each one is replaced.
