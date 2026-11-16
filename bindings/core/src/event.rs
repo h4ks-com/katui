@@ -136,6 +136,25 @@ mod tests {
     }
 
     #[test]
+    fn side_buttons_and_the_horizontal_wheel_read_back_by_name() {
+        let mouse = |action| {
+            InputEvent::Mouse(katui_proto::input::MouseEvent {
+                action,
+                x: 0,
+                y: 0,
+                mods: Mods::NONE,
+            })
+        };
+        let back = mouse(MouseAction::Press(Button::Back));
+        assert_eq!(button(&back).map(Button::name), Some("back"));
+        let forward = mouse(MouseAction::Release(Button::Forward));
+        assert_eq!(button(&forward).map(Button::name), Some("forward"));
+        let left = mouse(MouseAction::WheelLeft);
+        assert_eq!(action(&left).map(MouseAction::name), Some("wheel_left"));
+        assert_eq!(button(&left), None);
+    }
+
+    #[test]
     fn typed_text_is_one_press_per_character() {
         let names: Vec<_> = typed("hi").filter_map(|event| key_name(&event)).collect();
         assert_eq!(names, ["h", "i"]);

@@ -34,6 +34,8 @@ pub const KATUI_MOUSE_DRAG: KatuiMouseAction = 3;
 pub const KATUI_MOUSE_MOVE: KatuiMouseAction = 4;
 pub const KATUI_MOUSE_WHEEL_UP: KatuiMouseAction = 5;
 pub const KATUI_MOUSE_WHEEL_DOWN: KatuiMouseAction = 6;
+pub const KATUI_MOUSE_WHEEL_LEFT: KatuiMouseAction = 7;
+pub const KATUI_MOUSE_WHEEL_RIGHT: KatuiMouseAction = 8;
 
 /// Which mouse button.
 pub type KatuiButton = u32;
@@ -41,6 +43,8 @@ pub const KATUI_BUTTON_NONE: KatuiButton = 0;
 pub const KATUI_BUTTON_LEFT: KatuiButton = 1;
 pub const KATUI_BUTTON_MIDDLE: KatuiButton = 2;
 pub const KATUI_BUTTON_RIGHT: KatuiButton = 3;
+pub const KATUI_BUTTON_BACK: KatuiButton = 4;
+pub const KATUI_BUTTON_FORWARD: KatuiButton = 5;
 
 pub(crate) fn input(event: Option<&KatuiEvent>) -> Option<&InputEvent> {
     event.map(|event| &event.0)
@@ -177,6 +181,8 @@ pub extern "C" fn katui_event_action(event: Option<&KatuiEvent>) -> KatuiMouseAc
         Some(MouseAction::Move) => KATUI_MOUSE_MOVE,
         Some(MouseAction::WheelUp) => KATUI_MOUSE_WHEEL_UP,
         Some(MouseAction::WheelDown) => KATUI_MOUSE_WHEEL_DOWN,
+        Some(MouseAction::WheelLeft) => KATUI_MOUSE_WHEEL_LEFT,
+        Some(MouseAction::WheelRight) => KATUI_MOUSE_WHEEL_RIGHT,
         None => KATUI_MOUSE_NONE,
     }
 }
@@ -188,6 +194,8 @@ pub extern "C" fn katui_event_button(event: Option<&KatuiEvent>) -> KatuiButton 
         Some(Button::Left) => KATUI_BUTTON_LEFT,
         Some(Button::Middle) => KATUI_BUTTON_MIDDLE,
         Some(Button::Right) => KATUI_BUTTON_RIGHT,
+        Some(Button::Back) => KATUI_BUTTON_BACK,
+        Some(Button::Forward) => KATUI_BUTTON_FORWARD,
         None => KATUI_BUTTON_NONE,
     }
 }

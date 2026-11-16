@@ -254,6 +254,10 @@ pub enum Button {
     Left,
     Middle,
     Right,
+    /// The browser back button, the fourth one.
+    Back,
+    /// The browser forward button, the fifth one.
+    Forward,
 }
 
 /// What the mouse did.
@@ -271,23 +275,29 @@ pub enum MouseAction {
     WheelUp,
     /// The wheel turned down.
     WheelDown,
+    /// The wheel tilted, or the touchpad scrolled, left.
+    WheelLeft,
+    /// The wheel tilted, or the touchpad scrolled, right.
+    WheelRight,
 }
 
 impl Button {
-    /// `"left"`, `"middle"` or `"right"`.
+    /// `"left"`, `"middle"`, `"right"`, `"back"` or `"forward"`.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Left => "left",
             Self::Middle => "middle",
             Self::Right => "right",
+            Self::Back => "back",
+            Self::Forward => "forward",
         }
     }
 }
 
 impl MouseAction {
-    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"` or
-    /// `"wheel_down"`.
+    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"`,
+    /// `"wheel_down"`, `"wheel_left"` or `"wheel_right"`.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -297,6 +307,8 @@ impl MouseAction {
             Self::Move => "move",
             Self::WheelUp => "wheel_up",
             Self::WheelDown => "wheel_down",
+            Self::WheelLeft => "wheel_left",
+            Self::WheelRight => "wheel_right",
         }
     }
 
@@ -305,7 +317,9 @@ impl MouseAction {
     pub const fn button(self) -> Option<Button> {
         match self {
             Self::Press(button) | Self::Release(button) | Self::Drag(button) => Some(button),
-            Self::Move | Self::WheelUp | Self::WheelDown => None,
+            Self::Move | Self::WheelUp | Self::WheelDown | Self::WheelLeft | Self::WheelRight => {
+                None
+            }
         }
     }
 }

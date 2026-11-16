@@ -101,18 +101,22 @@ impl Event {
         event::position(&self.inner)
     }
 
-    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"` or
-    /// `"wheel_down"`, for a mouse event.
+    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"`,
+    /// `"wheel_down"`, `"wheel_left"` or `"wheel_right"`, for a mouse event.
     #[napi(
         getter,
-        ts_return_type = "'press' | 'release' | 'drag' | 'move' | 'wheel_up' | 'wheel_down' | null"
+        ts_return_type = "'press' | 'release' | 'drag' | 'move' | 'wheel_up' | 'wheel_down' | 'wheel_left' | 'wheel_right' | null"
     )]
     pub fn action(&self) -> Option<&'static str> {
         event::action(&self.inner).map(MouseAction::name)
     }
 
-    /// `"left"`, `"middle"` or `"right"`, for a press, release or drag.
-    #[napi(getter, ts_return_type = "'left' | 'middle' | 'right' | null")]
+    /// `"left"`, `"middle"`, `"right"`, `"back"` or `"forward"`, for a press,
+    /// release or drag.
+    #[napi(
+        getter,
+        ts_return_type = "'left' | 'middle' | 'right' | 'back' | 'forward' | null"
+    )]
     pub fn button(&self) -> Option<&'static str> {
         event::button(&self.inner).map(Button::name)
     }

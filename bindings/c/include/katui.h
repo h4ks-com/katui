@@ -631,6 +631,10 @@ typedef struct KatuiColumn {
 
 #define KATUI_MOUSE_WHEEL_DOWN 6
 
+#define KATUI_MOUSE_WHEEL_LEFT 7
+
+#define KATUI_MOUSE_WHEEL_RIGHT 8
+
 #define KATUI_BUTTON_NONE 0
 
 #define KATUI_BUTTON_LEFT 1
@@ -638,6 +642,10 @@ typedef struct KatuiColumn {
 #define KATUI_BUTTON_MIDDLE 2
 
 #define KATUI_BUTTON_RIGHT 3
+
+#define KATUI_BUTTON_BACK 4
+
+#define KATUI_BUTTON_FORWARD 5
 
 #define KATUI_EDIT_CHANGED 0
 

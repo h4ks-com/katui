@@ -122,13 +122,15 @@ func (e *Event) Position() (column, row int, ok bool) {
 type MouseAction uint32
 
 const (
-	MouseNone      MouseAction = C.KATUI_MOUSE_NONE
-	MousePress     MouseAction = C.KATUI_MOUSE_PRESS
-	MouseRelease   MouseAction = C.KATUI_MOUSE_RELEASE
-	MouseDrag      MouseAction = C.KATUI_MOUSE_DRAG
-	MouseMove      MouseAction = C.KATUI_MOUSE_MOVE
-	MouseWheelUp   MouseAction = C.KATUI_MOUSE_WHEEL_UP
-	MouseWheelDown MouseAction = C.KATUI_MOUSE_WHEEL_DOWN
+	MouseNone       MouseAction = C.KATUI_MOUSE_NONE
+	MousePress      MouseAction = C.KATUI_MOUSE_PRESS
+	MouseRelease    MouseAction = C.KATUI_MOUSE_RELEASE
+	MouseDrag       MouseAction = C.KATUI_MOUSE_DRAG
+	MouseMove       MouseAction = C.KATUI_MOUSE_MOVE
+	MouseWheelUp    MouseAction = C.KATUI_MOUSE_WHEEL_UP
+	MouseWheelDown  MouseAction = C.KATUI_MOUSE_WHEEL_DOWN
+	MouseWheelLeft  MouseAction = C.KATUI_MOUSE_WHEEL_LEFT
+	MouseWheelRight MouseAction = C.KATUI_MOUSE_WHEEL_RIGHT
 )
 
 func (e *Event) Action() MouseAction {
@@ -140,10 +142,12 @@ func (e *Event) Action() MouseAction {
 type MouseButton uint32
 
 const (
-	NoButton     MouseButton = C.KATUI_BUTTON_NONE
-	LeftButton   MouseButton = C.KATUI_BUTTON_LEFT
-	MiddleButton MouseButton = C.KATUI_BUTTON_MIDDLE
-	RightButton  MouseButton = C.KATUI_BUTTON_RIGHT
+	NoButton      MouseButton = C.KATUI_BUTTON_NONE
+	LeftButton    MouseButton = C.KATUI_BUTTON_LEFT
+	MiddleButton  MouseButton = C.KATUI_BUTTON_MIDDLE
+	RightButton   MouseButton = C.KATUI_BUTTON_RIGHT
+	BackButton    MouseButton = C.KATUI_BUTTON_BACK
+	ForwardButton MouseButton = C.KATUI_BUTTON_FORWARD
 )
 
 // Button is the button of a press, release or drag.

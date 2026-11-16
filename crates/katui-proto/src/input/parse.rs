@@ -443,18 +443,18 @@ fn parse_mouse(fields: &str, final_byte: u8, length: usize) -> Parsed {
 }
 
 fn mouse_action(code: u32, released: bool) -> Option<MouseAction> {
-    if code & 64 != 0 {
-        return match code & 3 {
-            0 => Some(MouseAction::WheelUp),
-            1 => Some(MouseAction::WheelDown),
-            _ => None,
-        };
-    }
-    let button = match code & 3 {
-        0 => Some(Button::Left),
-        1 => Some(Button::Middle),
-        2 => Some(Button::Right),
-        _ => None,
+    let button = match (code & 0xc0, code & 3) {
+        (0x40, 0) => return Some(MouseAction::WheelUp),
+        (0x40, 1) => return Some(MouseAction::WheelDown),
+        (0x40, 2) => return Some(MouseAction::WheelLeft),
+        (0x40, 3) => return Some(MouseAction::WheelRight),
+        (0, 0) => Some(Button::Left),
+        (0, 1) => Some(Button::Middle),
+        (0, 2) => Some(Button::Right),
+        (0x80, 0) => Some(Button::Back),
+        (0x80, 1) => Some(Button::Forward),
+        (0, _) => None,
+        _ => return None,
     };
     match (code & 32 != 0, released, button) {
         (true, _, Some(held)) => Some(MouseAction::Drag(held)),
@@ -670,6 +670,32 @@ pub(in crate::input) mod tests {
                 at(MouseAction::Drag(Button::Left), 6, 7),
                 at(MouseAction::WheelUp, 0, 0),
                 at(MouseAction::WheelDown, 0, 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn sgr_mouse_reports_the_horizontal_wheel_and_the_side_buttons() {
+        let at = |action| {
+            InputEvent::Mouse(MouseEvent {
+                action,
+                x: 2,
+                y: 3,
+                mods: Mods::NONE,
+            })
+        };
+        assert_eq!(
+            parse(
+                b"\x1b[<66;3;4M\x1b[<67;3;4M\x1b[<128;3;4M\x1b[<128;3;4m\x1b[<129;3;4M\
+                  \x1b[<161;3;4M\x1b[<192;3;4M"
+            ),
+            vec![
+                at(MouseAction::WheelLeft),
+                at(MouseAction::WheelRight),
+                at(MouseAction::Press(Button::Back)),
+                at(MouseAction::Release(Button::Back)),
+                at(MouseAction::Press(Button::Forward)),
+                at(MouseAction::Drag(Button::Forward)),
             ]
         );
     }

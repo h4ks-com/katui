@@ -87,14 +87,15 @@ impl PyEvent {
         event::position(&self.inner)
     }
 
-    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"` or
-    /// `"wheel_down"`, for a mouse event.
+    /// `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"`,
+    /// `"wheel_down"`, `"wheel_left"` or `"wheel_right"`, for a mouse event.
     #[getter]
     fn action(&self) -> Option<&'static str> {
         event::action(&self.inner).map(MouseAction::name)
     }
 
-    /// `"left"`, `"middle"` or `"right"`, for a press, release or drag.
+    /// `"left"`, `"middle"`, `"right"`, `"back"` or `"forward"`, for a press,
+    /// release or drag.
     #[getter]
     fn button(&self) -> Option<&'static str> {
         event::button(&self.inner).map(Button::name)

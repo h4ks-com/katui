@@ -244,9 +244,21 @@ class Event:
     @property
     def action(
         self,
-    ) -> Literal["press", "release", "drag", "move", "wheel_up", "wheel_down"] | None: ...
+    ) -> (
+        Literal[
+            "press",
+            "release",
+            "drag",
+            "move",
+            "wheel_up",
+            "wheel_down",
+            "wheel_left",
+            "wheel_right",
+        ]
+        | None
+    ): ...
     @property
-    def button(self) -> Literal["left", "middle", "right"] | None: ...
+    def button(self) -> Literal["left", "middle", "right", "back", "forward"] | None: ...
 
 @final
 class Scroll:

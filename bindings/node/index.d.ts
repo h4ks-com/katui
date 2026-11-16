@@ -145,12 +145,15 @@ export declare class Event {
   /** The cell under the pointer, `[column, row]`, for a mouse event. */
   get position(): [number, number] | null
   /**
-   * `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"` or
-   * `"wheel_down"`, for a mouse event.
+   * `"press"`, `"release"`, `"drag"`, `"move"`, `"wheel_up"`,
+   * `"wheel_down"`, `"wheel_left"` or `"wheel_right"`, for a mouse event.
    */
-  get action(): 'press' | 'release' | 'drag' | 'move' | 'wheel_up' | 'wheel_down' | null
-  /** `"left"`, `"middle"` or `"right"`, for a press, release or drag. */
-  get button(): 'left' | 'middle' | 'right' | null
+  get action(): 'press' | 'release' | 'drag' | 'move' | 'wheel_up' | 'wheel_down' | 'wheel_left' | 'wheel_right' | null
+  /**
+   * `"left"`, `"middle"`, `"right"`, `"back"` or `"forward"`, for a press,
+   * release or drag.
+   */
+  get button(): 'left' | 'middle' | 'right' | 'back' | 'forward' | null
   toString(): string
 }
 
