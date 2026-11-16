@@ -227,6 +227,17 @@ pub fn cell_size(caps: &Capabilities) -> CellPixels {
     pick_cell(measured_cell(), caps.cell, caps.text_area.zip(size().ok()))
 }
 
+/// Device pixels per point. No terminal reports it, so we guess from the
+/// cell the probe reported: one 30 pixels tall or more is a double
+/// density screen.
+#[must_use]
+pub fn screen_scale(caps: &Capabilities) -> f32 {
+    match caps.cell {
+        Some(cell) if cell.height >= 30 => 2.0,
+        _ => 1.0,
+    }
+}
+
 fn pick_cell(
     measured: Option<CellPixels>,
     probed: Option<CellPixels>,
@@ -343,6 +354,19 @@ mod area_tests {
             rows: 0,
         };
         assert_eq!(super::cell_from_area(area, empty), None);
+    }
+
+    #[test]
+    fn a_tall_reported_cell_means_a_double_density_screen() {
+        let reported = |height| katui_proto::probe::Capabilities {
+            cell: Some(CellPixels { width: 7, height }),
+            ..katui_proto::probe::Capabilities::default()
+        };
+        assert!((super::screen_scale(&reported(35)) - 2.0).abs() < f32::EPSILON);
+        assert!((super::screen_scale(&reported(30)) - 2.0).abs() < f32::EPSILON);
+        assert!((super::screen_scale(&reported(17)) - 1.0).abs() < f32::EPSILON);
+        let unknown = katui_proto::probe::Capabilities::default();
+        assert!((super::screen_scale(&unknown) - 1.0).abs() < f32::EPSILON);
     }
 }
 
