@@ -532,6 +532,29 @@ mod tests {
     }
 
     #[test]
+    fn arrows_for_key_hints_come_from_the_bundled_fallback() {
+        let mut engine = engine();
+        let paint = Paint::Solid(WHITE);
+        let left = draw(
+            &engine.layout("\u{2190}", &TextStyle::new(40.0), None),
+            4,
+            &paint,
+        );
+        let right = draw(
+            &engine.layout("\u{2192}", &TextStyle::new(40.0), None),
+            4,
+            &paint,
+        );
+        assert!(ink(&left) > 0);
+        assert_ne!(
+            left.pixels(),
+            right.pixels(),
+            "a missing glyph draws the same box for both arrows"
+        );
+        save_png("text_arrows", &left);
+    }
+
+    #[test]
     fn text_respects_clips_and_draws_linear_paints_in_the_first_stop() {
         let mut engine = engine();
         let layout = engine.layout("MMMMMMMM", &TextStyle::new(40.0), None);

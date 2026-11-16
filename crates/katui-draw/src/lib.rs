@@ -10,16 +10,23 @@ mod text;
 pub use canvas::Canvas;
 
 /// The fonts this crate ships: Atkinson Hyperlegible Next for text,
-/// Atkinson Hyperlegible Mono for code and a Noto Color Emoji subset, all
-/// under the SIL Open Font License.
+/// Atkinson Hyperlegible Mono for code, a Noto Color Emoji subset and the
+/// arrows of Noto Sans Symbols for key hints, all under the SIL Open Font
+/// License.
 #[must_use]
 pub fn bundled_fonts() -> Vec<Vec<u8>> {
-    vec![TEXT_FONT.to_vec(), MONO_FONT.to_vec(), EMOJI_FONT.to_vec()]
+    vec![
+        TEXT_FONT.to_vec(),
+        MONO_FONT.to_vec(),
+        EMOJI_FONT.to_vec(),
+        ARROWS_FONT.to_vec(),
+    ]
 }
 
 const TEXT_FONT: &[u8] = include_bytes!("../assets/AtkinsonHyperlegibleNext[wght].ttf");
 const MONO_FONT: &[u8] = include_bytes!("../assets/AtkinsonHyperlegibleMono[wght].ttf");
 const EMOJI_FONT: &[u8] = include_bytes!("../assets/NotoColorEmoji-subset.ttf");
+const ARROWS_FONT: &[u8] = include_bytes!("../assets/NotoSansSymbols-arrows.ttf");
 pub use katui_scene::surface::Rgba;
 pub use text::{TextEngine, TextLayout, TextSpan, TextStyle};
 
