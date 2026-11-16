@@ -11,6 +11,7 @@ import type {
   Length,
   Light,
   ListState,
+  Point,
   Scroll,
   ScrollState,
   Span,
@@ -321,12 +322,16 @@ export declare class Game implements GameLike {
   press(key: string): void
   /** `key` repeated while held. */
   repeat(key: string): void
+  /** The mouse pressed, released, dragged, moved or turned its wheel at `at`, in the light buffer's pixels. */
+  mouse(event: Event, at: Point): void
   /** The screen became the size of `light`, so baked art needs redoing. */
   resize(light: Light): void
   /** Advance the world by `dt` seconds, a fixed step. */
   step(keys: Keys, dt: number): void
   /** Draw the world into `light`. */
   render(light: Light): void
+  /** Whether the next frame differs from the last one drawn. While it is false, `play` draws nothing and steps ten times a second. */
+  changed(): boolean
   /** Whether the game is over, so `play` ends after this frame. */
   finished(): boolean
 }

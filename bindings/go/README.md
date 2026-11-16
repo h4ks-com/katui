@@ -115,8 +115,8 @@ func main() {
 }
 ```
 
-The left and right arrow keys steer the comet. <kbd>Q</kbd>,
-<kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> quits.
+The left and right arrow keys steer the comet. <kbd>Q</kbd> or
+<kbd>Ctrl</kbd>+<kbd>C</kbd> quits.
 
 The [examples](https://github.com/h4ks-com/katui/tree/main/bindings/go/examples)
 include a counter, a to-do list, a Markdown help screen and this comet with

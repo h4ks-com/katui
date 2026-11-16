@@ -785,6 +785,7 @@ name = "katui-game"
 version = "0.0.8"
 dependencies = [
  "image",
+ "katui-draw",
  "katui-present",
  "katui-proto",
  "katui-rt",

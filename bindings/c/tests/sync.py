@@ -25,6 +25,7 @@ RENAMED = {
 
 OMITTED = {
     "Key": "keys are named by strings like 'a', 'enter' and 'up'",
+    "MouseEvent": "a game's mouse callback gets a KatuiEvent",
     "Theme.scope": "the app runner and the screen set the theme around every view",
     "HeldKeys.tick": "the game loop feeds the held keys",
     "HeldKeys.press": "the game loop feeds the held keys",

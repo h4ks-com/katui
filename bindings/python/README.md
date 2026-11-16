@@ -92,8 +92,8 @@ class Comet(game.Game):
 game.play(Comet())
 ```
 
-The left and right arrow keys steer the comet. <kbd>Q</kbd>,
-<kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> quits.
+The left and right arrow keys steer the comet. <kbd>Q</kbd> or
+<kbd>Ctrl</kbd>+<kbd>C</kbd> quits.
 
 The [examples](https://github.com/h4ks-com/katui/tree/main/bindings/python/examples)
 include a to-do list, the full widget tour, a Markdown help screen, an HTML

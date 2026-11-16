@@ -56,6 +56,12 @@ static void render(void *user, KatuiLight *light) { katuiGoRender((uintptr_t)use
 
 static bool finished(void *user) { return katuiGoFinished((uintptr_t)user); }
 
+static void mouse(void *user, const KatuiEvent *event, KatuiPoint at) {
+  katuiGoMouse((uintptr_t)user, (KatuiEvent *)event, at);
+}
+
+static bool changed(void *user) { return katuiGoChanged((uintptr_t)user); }
+
 static KatuiGame game(uintptr_t handle) {
   return (KatuiGame){.user = (void *)handle,
                      .press = press,
@@ -63,7 +69,9 @@ static KatuiGame game(uintptr_t handle) {
                      .resize = resize,
                      .step = step,
                      .render = render,
-                     .finished = finished};
+                     .finished = finished,
+                     .mouse = mouse,
+                     .changed = changed};
 }
 
 KatuiStatus katui_go_play(uintptr_t handle) {

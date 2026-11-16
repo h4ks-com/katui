@@ -118,6 +118,42 @@ func (l *Light) Dim(factor float32) {
 	C.katui_light_dim(l.p, C.float(factor))
 }
 
+// Pixel is the light at x, y, and false outside the buffer.
+func (l *Light) Pixel(x, y int) (RGB, bool) {
+	defer runtime.KeepAlive(l)
+	var c C.KatuiRgb
+	ok := C.katui_light_pixel(l.p, C.uint32_t(x), C.uint32_t(y), &c)
+	return rgb(c), bool(ok)
+}
+
+// SetPixel sets the light at x, y; a spot outside the buffer is ignored.
+func (l *Light) SetPixel(x, y int, c RGB) {
+	defer runtime.KeepAlive(l)
+	C.katui_light_set_pixel(l.p, C.uint32_t(x), C.uint32_t(y), c.c())
+}
+
+// Image draws img with its top left at at, blended by its alpha.
+func (l *Light) Image(at Point, img *Image) {
+	defer runtime.KeepAlive(l)
+	defer runtime.KeepAlive(img)
+	C.katui_light_image(l.p, at.c(), img.ptr())
+}
+
+// UIText draws text in the UI font, size pixels tall, with its top left at at.
+func (l *Light) UIText(at Point, text string, size float32, c RGB) {
+	defer runtime.KeepAlive(l)
+	s := cString(text)
+	defer free(s)
+	C.katui_light_ui_text(l.p, at.c(), s, C.float(size), c.c())
+}
+
+func (l *Light) UITextWidth(text string, size float32) float32 {
+	defer runtime.KeepAlive(l)
+	s := cString(text)
+	defer free(s)
+	return float32(C.katui_light_ui_text_width(l.p, s, C.float(size)))
+}
+
 func (l *Light) Rect(at Point, width, height float32, c RGB, blend Blend) {
 	defer runtime.KeepAlive(l)
 	C.katui_light_rect(l.p, at.c(), C.float(width), C.float(height), c.c(), C.KatuiBlend(blend))
@@ -363,8 +399,8 @@ func (s *Sparks) IsEmpty() bool {
 }
 
 // Game is a game Play can run: it moves the world in Step and draws it in
-// Render. A Game can also be a Presser, a Repeater, a Resizer and a
-// Finisher.
+// Render. A Game can also be a Presser, a Repeater, a Mouser, a Resizer, a
+// Changer and a Finisher.
 type Game interface {
 	// Step advances the world by dt seconds, a fixed step.
 	Step(keys *Keys, dt float32)
@@ -382,10 +418,23 @@ type Repeater interface {
 	Repeat(key string)
 }
 
+// Mouser is a Game told when the mouse presses, releases, drags, moves or
+// turns its wheel, at a point in the light buffer's pixels.
+type Mouser interface {
+	Mouse(event *Event, at Point)
+}
+
 // Resizer is a Game told when the screen becomes the size of light, so
 // baked art needs redoing.
 type Resizer interface {
 	Resize(light *Light)
+}
+
+// Changer is a Game that says whether its next frame differs from the last
+// one drawn. While Changed reports false, Play draws nothing and steps ten
+// times a second.
+type Changer interface {
+	Changed() bool
 }
 
 // Finisher is a Game that can end itself: Play ends after the frame where
@@ -420,6 +469,24 @@ func katuiGoPress(user C.uintptr_t, key *C.char, repeat C.bool) {
 	if repeater, ok := p.game.(Repeater); ok && bool(repeat) {
 		repeater.Repeat(name)
 	}
+}
+
+//export katuiGoMouse
+func katuiGoMouse(user C.uintptr_t, e *C.KatuiEvent, at C.KatuiPoint) {
+	p := playerOf(user)
+	defer p.guard()
+	if mouser, ok := p.game.(Mouser); ok && p.failure == nil {
+		mouser.Mouse(event(C.katui_event_clone(e)), Point{float32(at.x), float32(at.y)})
+	}
+}
+
+//export katuiGoChanged
+func katuiGoChanged(user C.uintptr_t) (changed C.bool) {
+	p := playerOf(user)
+	changed = true
+	defer p.guard()
+	changer, ok := p.game.(Changer)
+	return C.bool(p.failure != nil || !ok || changer.Changed())
 }
 
 //export katuiGoResize

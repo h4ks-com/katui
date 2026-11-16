@@ -327,7 +327,31 @@ static void events_and_state_answer(void) {
   katui_event_free(paste);
 }
 
+static void a_light_takes_pixels_images_and_ui_text(void) {
+  KatuiLight *light = katui_light_new(60, 30, 1);
+  katui_light_set_pixel(light, 1, 2, (KatuiRgb){0.5f, 0.25f, 1});
+  KatuiRgb color = {0};
+  CHECK(katui_light_pixel(light, 1, 2, &color) && color.r == 0.5f && color.b == 1);
+  CHECK(!katui_light_pixel(light, 60, 0, &color));
+  uint8_t red[16];
+  for (int at = 0; at < 16; at += 4) {
+    memcpy(red + at, (uint8_t[]){255, 0, 0, 255}, 4);
+  }
+  KatuiImage *sprite = katui_image_from_rgba(2, 2, red, sizeof red);
+  katui_light_image(light, (KatuiPoint){10, 10}, sprite);
+  float width = katui_light_ui_text_width(light, "Hi", 16);
+  CHECK(width > 0 && width < 40);
+  katui_light_ui_text(light, (KatuiPoint){30, 4}, "Hi", 16, (KatuiRgb){1, 1, 1});
+  KatuiImage *drawn = katui_light_to_image(light);
+  KatuiColor pixel = {0};
+  CHECK(katui_image_pixel(drawn, 11, 11, &pixel) && pixel.r == 255 && pixel.g == 0);
+  katui_image_free(drawn);
+  katui_image_free(sprite);
+  katui_light_free(light);
+}
+
 int main(void) {
+  a_light_takes_pixels_images_and_ui_text();
   every_widget_draws_and_the_theme_switches();
   a_link_click_sends_its_href();
   reveal_scrolls_to_an_anchor();

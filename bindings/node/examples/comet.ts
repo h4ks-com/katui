@@ -1,7 +1,9 @@
-// A comet you steer with the arrow keys, trailing sparks. Space bursts.
+// A comet you steer with the arrow keys, trailing sparks. A click moves it
+// there and space bursts.
 
 import { fileURLToPath } from 'node:url'
 import {
+  type Event,
   Game,
   type Keys,
   type Light,
@@ -36,6 +38,10 @@ export class Comet extends Game {
     if (key === ' ') this.burst()
   }
 
+  mouse(event: Event, at: Point) {
+    if (event.action === 'press') this.at = at
+  }
+
   step(keys: Keys, dt: number) {
     let [x, y] = this.at
     if (keys.isHeld('left')) x -= SPEED * dt
@@ -52,7 +58,7 @@ export class Comet extends Game {
     this.sparks.draw(light, (at) => [at.x, at.y])
     light.glow(this.at, 9, scaled(TAIL, 0.35))
     light.glow(this.at, 3, HEAD)
-    light.text([4, 4], 'arrows to steer, space to burst', srgb(120, 120, 140))
+    light.text([4, 4], 'arrows to steer, click to jump, space to burst', srgb(120, 120, 140))
   }
 }
 

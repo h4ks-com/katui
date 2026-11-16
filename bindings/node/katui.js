@@ -41,11 +41,17 @@ export class Game {
 
   repeat(_key) {}
 
+  mouse(_event, _at) {}
+
   resize(_light) {}
 
   step(_keys, _dt) {}
 
   render(_light) {}
+
+  changed() {
+    return true
+  }
 
   finished() {
     return false

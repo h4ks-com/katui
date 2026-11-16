@@ -21,6 +21,10 @@ int main(void) {
   CHECK(comet.at.x > 60);
   CHECK(comet.at.y == 40);
   shot(moved, "comet");
+  KatuiEvent *key = katui_event_press("a", false, false, false, false, false, false);
+  game.mouse(game.user, key, (KatuiPoint){5, 6});
+  CHECK(comet.at.x > 60);
+  katui_event_free(key);
 
   const char *unknown[] = {"no such key"};
   CHECK(katui_frame(&game, 200, 120, 1, unknown, 1, 1.0f / 60) == NULL);

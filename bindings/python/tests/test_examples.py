@@ -81,3 +81,5 @@ def test_the_comet_glows_and_bursts() -> None:
     assert lit(moved) > 0
     assert game.at[0] > 60
     assert still.pixel(0, 0) is not None
+    game.mouse(Event.press("a"), (5.0, 6.0))
+    assert game.at[0] > 60, "only a mouse press moves it"

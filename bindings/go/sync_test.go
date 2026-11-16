@@ -42,7 +42,7 @@ var omitted = map[string]string{
 	"HeldKeys.clear":   "the game loop feeds the held keys",
 }
 
-var initialisms = map[string]string{"id": "ID", "xy": "XY", "html": "HTML", "srgb": "SRGB", "rgb": "RGB"}
+var initialisms = map[string]string{"id": "ID", "xy": "XY", "html": "HTML", "srgb": "SRGB", "rgb": "RGB", "ui": "UI"}
 
 // camel is a Rust snake_case or SCREAMING_CASE name in Go's MixedCaps.
 func camel(name string) string {

@@ -187,6 +187,13 @@ there, values above one bloom, and `katui_light_dim` fades the last frame
 into a trail. `katui_srgb` turns an ordinary color into light. For 3D,
 `KatuiV3`, `KatuiCamera`, `KatuiRng` and `KatuiSparks` come with it.
 
+The other callbacks are optional. `mouse` gets a `KatuiEvent` and its
+point in the buffer's pixels. Return false from `changed` while nothing
+moves, and `katui_play` stops drawing until something does.
+`katui_light_text` draws with a 5 by 7 pixel font,
+`katui_light_ui_text` with katui's smooth UI font at any size, and
+`katui_light_image` draws a `KatuiImage` blended by its alpha.
+
 ## Tests
 
 `katui_screen_new` runs an app without a terminal.

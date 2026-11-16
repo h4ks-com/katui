@@ -43,8 +43,10 @@ export interface AppLike {
 export interface GameLike {
   press?(key: string): void
   repeat?(key: string): void
+  mouse?(event: Event, at: Point): void
   resize?(light: Light): void
   step?(keys: Keys, dt: number): void
   render?(light: Light): void
+  changed?(): boolean
   finished?(): boolean
 }

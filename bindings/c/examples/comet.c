@@ -1,4 +1,5 @@
-/* A comet you steer with the arrow keys, trailing sparks. Space bursts. */
+/* A comet you steer with the arrow keys, trailing sparks. A click moves it
+   there and space bursts. */
 
 #include <stdio.h>
 #include <string.h>
@@ -32,6 +33,13 @@ static void comet_press(void *user, const char *key) {
   }
 }
 
+static void comet_mouse(void *user, const KatuiEvent *event, KatuiPoint at) {
+  Comet *comet = user;
+  if (katui_event_action(event) == KATUI_MOUSE_PRESS) {
+    comet->at = at;
+  }
+}
+
 static float axis(const KatuiKeys *keys, const char *less, const char *more) {
   return (float)katui_keys_is_held(keys, more) - (float)katui_keys_is_held(keys, less);
 }
@@ -61,7 +69,7 @@ static void comet_render(void *user, KatuiLight *light) {
   katui_sparks_draw(comet->sparks, light, flat, NULL);
   katui_light_glow(light, comet->at, 9, katui_scaled(tail(), 0.35f));
   katui_light_glow(light, comet->at, 3, katui_srgb(255, 230, 190));
-  katui_light_text(light, (KatuiPoint){4, 4}, "arrows to steer, space to burst", 1, katui_srgb(120, 120, 140));
+  katui_light_text(light, (KatuiPoint){4, 4}, "arrows to steer, click to jump, space to burst", 1, katui_srgb(120, 120, 140));
 }
 
 static void comet_open(Comet *comet) {
@@ -74,7 +82,8 @@ static void comet_close(Comet *comet) {
 }
 
 static KatuiGame comet_game(Comet *comet) {
-  return (KatuiGame){.user = comet, .press = comet_press, .step = comet_step, .render = comet_render};
+  return (KatuiGame){
+      .user = comet, .press = comet_press, .mouse = comet_mouse, .step = comet_step, .render = comet_render};
 }
 
 #ifndef KATUI_NO_MAIN

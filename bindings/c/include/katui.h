@@ -407,6 +407,17 @@ typedef struct KatuiGame {
    * Whether the game is over, so `katui_play` ends after this frame.
    */
   bool (*finished)(void *user);
+  /**
+   * The mouse did `event` at `at`, in the light buffer's pixels: a
+   * press, release, drag, move or wheel turn.
+   */
+  void (*mouse)(void *user, const struct KatuiEvent *event, struct KatuiPoint at);
+  /**
+   * Whether the next frame differs from the last one drawn; NULL means
+   * always. While it returns false, `katui_play` draws nothing and steps
+   * ten times a second.
+   */
+  bool (*changed)(void *user);
 } KatuiGame;
 
 /**
@@ -997,6 +1008,37 @@ void katui_light_paint(struct KatuiLight *light, KatuiShade shade, void *user);
  * Fade the last frame by `factor`, 0 for black and 1 to keep it.
  */
 void katui_light_dim(struct KatuiLight *light, float factor);
+
+/**
+ * Write the light at `x`, `y` into `color`. False outside the buffer.
+ */
+bool katui_light_pixel(const struct KatuiLight *light,
+                       uint32_t x,
+                       uint32_t y,
+                       struct KatuiRgb *color);
+
+/**
+ * Set the light at `x`, `y`; a spot outside the buffer is ignored.
+ */
+void katui_light_set_pixel(struct KatuiLight *light, uint32_t x, uint32_t y, struct KatuiRgb color);
+
+/**
+ * Draw `image` with its top left at `at`, blended by its alpha.
+ */
+void katui_light_image(struct KatuiLight *light,
+                       struct KatuiPoint at,
+                       const struct KatuiImage *image);
+
+/**
+ * Text in the UI font, `size` pixels tall, with its top left at `at`.
+ */
+void katui_light_ui_text(struct KatuiLight *light,
+                         struct KatuiPoint at,
+                         const char *text,
+                         float size,
+                         struct KatuiRgb color);
+
+float katui_light_ui_text_width(const struct KatuiLight *light, const char *text, float size);
 
 void katui_light_rect(struct KatuiLight *light,
                       struct KatuiPoint at,

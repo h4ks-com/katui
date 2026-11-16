@@ -6,6 +6,7 @@ from katui._katui import (
     MULTIPLEXED_SHRINK,
     V3,
     Camera,
+    Event,
     Keys,
     Light,
     Rng,
@@ -27,6 +28,10 @@ class Game:
     def repeat(self, key: str) -> None:
         """`key` auto-repeated while held."""
 
+    def mouse(self, event: Event, at: tuple[float, float]) -> None:
+        """The mouse pressed, released, dragged, moved or turned its wheel
+        at `at`, in the light buffer's pixels."""
+
     def resize(self, light: Light) -> None:
         """The screen became the size of `light`, so baked art needs redoing."""
 
@@ -35,6 +40,11 @@ class Game:
 
     def render(self, light: Light) -> None:
         """Draw the world into `light`."""
+
+    def changed(self) -> bool:
+        """Whether the next frame differs from the last one drawn. While it
+        is false, `play` draws nothing and steps ten times a second."""
+        return True
 
     def finished(self) -> bool:
         """Whether the game is over, so `play` ends after this frame."""

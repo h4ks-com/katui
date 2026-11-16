@@ -9,7 +9,7 @@ mod light;
 mod space;
 
 pub use arcade::{BASE_IMAGE, Game, MULTIPLEXED_SHRINK, play};
-pub use katui_proto::input::Key;
+pub use katui_proto::input::{Button, Key, MouseAction, MouseEvent};
 pub use keys::HeldKeys;
 pub use light::{Blend, Light, P2, Rgb, lerp3, scaled, srgb};
 pub use space::{Camera, Rng, Spark, Sparks, V3, v3};

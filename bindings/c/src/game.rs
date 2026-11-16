@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use katui_bindings::game::{Frame, GameHost, held};
 use katui_game::{Blend, Camera, HeldKeys, Light, P2, Rgb, Rng, Spark, Sparks, V3, v3};
-use katui_proto::input::Key;
+use katui_proto::input::{InputEvent, Key};
 
 use crate::element::{KatuiImage, image};
-use crate::event::key;
+use crate::event::{KatuiEvent, key};
 use crate::ffi::{
     Error, KatuiStatus, guard, owned, owned_or_null, raise, slice, status, text, texts,
 };
@@ -181,6 +181,73 @@ pub unsafe extern "C" fn katui_light_paint(
 #[unsafe(no_mangle)]
 pub extern "C" fn katui_light_dim(light: Option<&mut KatuiLight>, factor: f32) {
     draw(light, |light| light.dim(factor));
+}
+
+/// Write the light at `x`, `y` into `color`. False outside the buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn katui_light_pixel(
+    light: Option<&KatuiLight>,
+    x: u32,
+    y: u32,
+    color: Option<&mut KatuiRgb>,
+) -> bool {
+    let Some(found) = light.and_then(|light| light.0.pixel(x, y)) else {
+        return false;
+    };
+    if let Some(color) = color {
+        *color = found.into();
+    }
+    true
+}
+
+/// Set the light at `x`, `y`; a spot outside the buffer is ignored.
+#[unsafe(no_mangle)]
+pub extern "C" fn katui_light_set_pixel(
+    light: Option<&mut KatuiLight>,
+    x: u32,
+    y: u32,
+    color: KatuiRgb,
+) {
+    draw(light, |light| light.set_pixel(x, y, rgb(color)));
+}
+
+/// Draw `image` with its top left at `at`, blended by its alpha.
+#[unsafe(no_mangle)]
+pub extern "C" fn katui_light_image(
+    light: Option<&mut KatuiLight>,
+    at: KatuiPoint,
+    image: Option<&KatuiImage>,
+) {
+    if let Some(image) = image {
+        draw(light, |light| light.image(p2(at), &image.0));
+    }
+}
+
+/// Text in the UI font, `size` pixels tall, with its top left at `at`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn katui_light_ui_text(
+    light: Option<&mut KatuiLight>,
+    at: KatuiPoint,
+    text: *const c_char,
+    size: f32,
+    color: KatuiRgb,
+) {
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
+    let text = unsafe { self::text(text) };
+    draw(light, |light| {
+        light.ui_text(p2(at), &text, size, rgb(color));
+    });
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn katui_light_ui_text_width(
+    light: Option<&KatuiLight>,
+    text: *const c_char,
+    size: f32,
+) -> f32 {
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
+    let text = unsafe { self::text(text) };
+    light.map_or(0.0, |light| light.0.ui_text_width(&text, size))
 }
 
 #[unsafe(no_mangle)]
@@ -594,6 +661,14 @@ pub struct KatuiGame {
     pub render: Option<unsafe extern "C" fn(user: *mut c_void, light: *mut KatuiLight)>,
     /// Whether the game is over, so `katui_play` ends after this frame.
     pub finished: Option<unsafe extern "C" fn(user: *mut c_void) -> bool>,
+    /// The mouse did `event` at `at`, in the light buffer's pixels: a
+    /// press, release, drag, move or wheel turn.
+    pub mouse:
+        Option<unsafe extern "C" fn(user: *mut c_void, event: *const KatuiEvent, at: KatuiPoint)>,
+    /// Whether the next frame differs from the last one drawn; NULL means
+    /// always. While it returns false, `katui_play` draws nothing and steps
+    /// ten times a second.
+    pub changed: Option<unsafe extern "C" fn(user: *mut c_void) -> bool>,
 }
 
 /// A C game, as the shared bridge calls it.
@@ -626,6 +701,12 @@ impl CGame {
         unsafe { call(self.game.user, name.as_ptr()) };
     }
 
+    /// What `call` answers, or `None` when the game left it NULL.
+    fn ask(&self, call: Option<unsafe extern "C" fn(*mut c_void) -> bool>) -> Option<bool> {
+        // SAFETY: `CGame::new` requires `call` to take `user`, which outlives us.
+        call.map(|call| unsafe { call(self.game.user) })
+    }
+
     /// Lend `light` to `call` through our own `KatuiLight`, then take it back.
     fn with_light(&mut self, light: &mut Light, call: impl FnOnce(*mut c_void, *mut KatuiLight)) {
         std::mem::swap(&mut self.light.0, light);
@@ -648,6 +729,16 @@ impl GameHost for CGame {
 
     fn repeat(&mut self, key: Key) -> Result<(), Error> {
         self.key(self.game.repeat, key);
+        Ok(())
+    }
+
+    fn mouse(&mut self, event: &InputEvent, at: P2) -> Result<(), Error> {
+        if let Some(mouse) = self.game.mouse {
+            let event = KatuiEvent(event.clone());
+            let at = KatuiPoint { x: at.x, y: at.y };
+            // SAFETY: `CGame::new` requires `mouse` to take `user`, which outlives us.
+            unsafe { mouse(self.game.user, &raw const event, at) };
+        }
         Ok(())
     }
 
@@ -676,11 +767,12 @@ impl GameHost for CGame {
         Ok(())
     }
 
+    fn changed(&self) -> Result<bool, Error> {
+        Ok(self.ask(self.game.changed).unwrap_or(true))
+    }
+
     fn finished(&self) -> Result<bool, Error> {
-        let user = self.game.user;
-        // SAFETY: `CGame::new` requires `finished` to take `user`, which outlives us.
-        let over = |finished: unsafe extern "C" fn(*mut c_void) -> bool| unsafe { finished(user) };
-        Ok(self.game.finished.is_some_and(over))
+        Ok(self.ask(self.game.finished).unwrap_or(false))
     }
 }
 

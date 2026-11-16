@@ -92,8 +92,8 @@ class Comet extends Game {
 play(new Comet())
 ```
 
-The left and right arrow keys steer the comet. <kbd>Q</kbd>,
-<kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> quits.
+The left and right arrow keys steer the comet. <kbd>Q</kbd> or
+<kbd>Ctrl</kbd>+<kbd>C</kbd> quits.
 
 `run` and `play` keep the thread busy until the app or game ends, so
 timers and promises wait until then. The

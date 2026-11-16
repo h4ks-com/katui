@@ -2,7 +2,7 @@
 
 These are games and animations built on katui-game, which steps a game at a fixed rate and draws its light buffer as real pixels. The `support/` folder holds a helper the tests share.
 
-Every demo here quits with q, Esc or Ctrl+C.
+Every demo here quits with q or Ctrl+C.
 
 ### cube
 

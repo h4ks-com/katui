@@ -43,9 +43,11 @@ export interface AppLike {
 export interface GameLike {
   press?(key: string): void
   repeat?(key: string): void
+  mouse?(event: Event, at: Point): void
   resize?(light: Light): void
   step?(keys: Keys, dt: number): void
   render?(light: Light): void
+  changed?(): boolean
   finished?(): boolean
 }
 
@@ -212,6 +214,14 @@ export declare class Light {
   /** Fill every pixel with `shade(x, y)`, for backdrops baked once. */
   paint(shade: (x: number, y: number) => LightColor): void
   dim(factor: number): void
+  /** The light at `x`, `y`, or `null` outside the buffer. */
+  pixel(x: number, y: number): LightColor | null
+  setPixel(x: number, y: number, color: LightColor): void
+  /** Draw `image` with its top-left at `at`, blended by its alpha. */
+  image(at: Point, image: Image): void
+  /** Draw `text` in the UI font, `size` pixels tall. */
+  uiText(at: Point, text: string, color: LightColor, size: number): void
+  uiTextWidth(text: string, size: number): number
   rect(at: Point, width: number, height: number, color: LightColor, blend?: Blend): void
   polygon(points: Point[], color: LightColor, blend?: Blend): void
   line(start: Point, end: Point, width: number, color: LightColor): void

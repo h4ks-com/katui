@@ -18,7 +18,7 @@ import {
   html,
   Image,
   type Keys,
-  type Light,
+  Light,
   ListState,
   label,
   markdown,
@@ -292,6 +292,35 @@ test('an error in a game reaches the caller as thrown', () => {
     }
   }
   assert.throws(() => frame(new Broken()), SyntaxError)
+})
+
+test('a light takes pixels, images and ui text', () => {
+  const light = new Light(60, 30)
+  light.setPixel(1, 2, [0.5, 0.25, 1])
+  assert.deepEqual(light.pixel(1, 2), [0.5, 0.25, 1])
+  assert.equal(light.pixel(60, 0), null)
+  const red = Image.fromRgba(
+    2,
+    2,
+    new Uint8Array([255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255]),
+  )
+  light.image([10, 10], red)
+  assert.deepEqual(light.toImage().pixel(11, 11), [255, 0, 0, 255])
+  const width = light.uiTextWidth('Hi', 16)
+  assert.ok(width > 0 && width < 40)
+  light.uiText([30, 4], 'Hi', [1, 1, 1], 16)
+  const drawn = light.toImage()
+  let lit = false
+  for (let x = 30; x < 60; x++) {
+    for (let y = 4; y < 24; y++) lit ||= drawn.pixel(x, y)?.[0] !== 0
+  }
+  assert.ok(lit)
+})
+
+test('a game has mouse and changed hooks with defaults', () => {
+  const game = new Game()
+  game.mouse(Event.press('a'), [1, 2])
+  assert.equal(game.changed(), true)
 })
 
 test('world math matches the engine', () => {

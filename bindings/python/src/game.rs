@@ -7,13 +7,13 @@ use katui_game::{
     BASE_IMAGE, Blend, Camera, HeldKeys, Light, MULTIPLEXED_SHRINK, P2, Rgb, Rng, Spark, Sparks,
     V3, v3,
 };
-use katui_proto::input::Key;
+use katui_proto::input::{InputEvent, Key};
 use pyo3::prelude::*;
 
 use crate::app::call_optional;
 use crate::convert::raise;
 use crate::element::PyImage;
-use crate::event::key;
+use crate::event::{PyEvent, key};
 
 type Color = (f32, f32, f32);
 type Point = (f32, f32);
@@ -99,6 +99,29 @@ impl PyLight {
 
     fn dim(&mut self, factor: f32) {
         self.inner.dim(factor);
+    }
+
+    /// The light at `x`, `y`, or `None` outside the buffer.
+    fn pixel(&self, x: u32, y: u32) -> Option<Color> {
+        self.inner.pixel(x, y).map(color_tuple)
+    }
+
+    fn set_pixel(&mut self, x: u32, y: u32, color: Color) {
+        self.inner.set_pixel(x, y, rgb(color));
+    }
+
+    /// Draw `image` with its top-left at `at`, blended by its alpha.
+    fn image(&mut self, at: Point, image: PyRef<'_, PyImage>) {
+        self.inner.image(p2(at), &image.surface);
+    }
+
+    /// Draw `text` in the UI font, `size` pixels tall.
+    fn ui_text(&mut self, at: Point, text: &str, color: Color, size: f32) {
+        self.inner.ui_text(p2(at), text, size, rgb(color));
+    }
+
+    fn ui_text_width(&self, text: &str, size: f32) -> f32 {
+        self.inner.ui_text_width(text, size)
     }
 
     #[pyo3(signature = (at, width, height, color, blend="over"))]
@@ -455,6 +478,14 @@ impl PyGame {
         Python::attach(|py| call_optional(self.game.bind(py), name, args).map(drop))
     }
 
+    /// The truth of what the game's `name` returns, or `missing` without one.
+    fn ask(&self, name: &str, missing: bool) -> PyResult<bool> {
+        Python::attach(|py| match call_optional(self.game.bind(py), name, ())? {
+            Some(answer) => answer.is_truthy(),
+            None => Ok(missing),
+        })
+    }
+
     /// Lend `light` to the game's `name` through our own `Light`.
     fn call_with_light(&self, name: &str, light: &mut Light) -> PyResult<()> {
         Python::attach(|py| {
@@ -481,6 +512,13 @@ impl GameHost for PyGame {
         self.call("repeat", (key.name(),))
     }
 
+    fn mouse(&mut self, event: &InputEvent, at: P2) -> PyResult<()> {
+        let event = PyEvent {
+            inner: event.clone(),
+        };
+        self.call("mouse", (event, (at.x, at.y)))
+    }
+
     fn resize(&mut self, light: &mut Light) -> PyResult<()> {
         self.call_with_light("resize", light)
     }
@@ -496,13 +534,12 @@ impl GameHost for PyGame {
         self.call_with_light("render", light)
     }
 
+    fn changed(&self) -> PyResult<bool> {
+        self.ask("changed", true)
+    }
+
     fn finished(&self) -> PyResult<bool> {
-        Python::attach(
-            |py| match call_optional(self.game.bind(py), "finished", ())? {
-                Some(over) => over.is_truthy(),
-                None => Ok(false),
-            },
-        )
+        self.ask("finished", false)
     }
 }
 

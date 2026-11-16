@@ -86,4 +86,6 @@ test('the comet glows and bursts', () => {
   assert.ok(lit(moved) > 0)
   assert.ok(game.at[0] > 60)
   assert.notEqual(still.pixel(0, 0), null)
+  game.mouse(Event.press('a'), [5, 6])
+  assert.ok(game.at[0] > 60, 'only a mouse press moves it')
 })

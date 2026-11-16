@@ -7,29 +7,31 @@ use std::time::{Duration, Instant};
 use katui_present::select::{Backend, select};
 use katui_present::session;
 use katui_present::surface::{PatchedKitty, PixelScreen};
-use katui_proto::input::{InputEvent, Key};
-use katui_proto::probe::Capabilities;
+use katui_proto::input::{InputEvent, Key, Mods, MouseEvent, Pointer};
+use katui_proto::probe::{Capabilities, CellPixels};
 use katui_rt::RtError;
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
 use katui_scene::CellSize;
 
 use crate::keys::HeldKeys;
-use crate::light::Light;
+use crate::light::{Light, P2};
 
 const FRAMES_PER_SECOND: u32 = 60;
 const STEP: Duration = Duration::from_micros(16_667);
 const MOST_STEPS_PER_FRAME: u32 = 6;
+/// How often a still game steps and is asked again whether it changed.
+const STILL_TICK: Duration = Duration::from_millis(100);
 /// The first kitty image id a full-screen pixel surface takes.
 pub const BASE_IMAGE: u32 = 900;
 const TILE_BUDGET: usize = 320;
-const MOST_PIXELS_ACROSS: u32 = 1100;
-const MOST_PIXELS_DOWN: u32 = 620;
+/// The most pixels we compose a frame of each way, which the CPU keeps up with.
+const MOST_PIXELS_ACROSS: u32 = 1800;
+const MOST_PIXELS_DOWN: u32 = 1100;
 /// How many times fewer pixels to send each way under a multiplexer, which
 /// carries graphics far more slowly than a terminal does.
 pub const MULTIPLEXED_SHRINK: u32 = 2;
-/// We keep each height at twice its width so a tile of three heights spans whole cells.
-const DENSITIES: [(u32, u32); 5] = [(10, 20), (8, 16), (5, 10), (4, 8), (2, 4)];
+/// Tiles are this many cells tall.
 const TILE_HEIGHTS: u32 = 3;
 
 /// A game [`play`] can run.
@@ -38,37 +40,60 @@ pub trait Game {
     fn press(&mut self, _key: Key) {}
     /// `key` auto-repeated while held.
     fn repeat(&mut self, _key: Key) {}
+    /// The mouse did `mouse.action` at `at`, in the light buffer's pixels:
+    /// a press, release, drag, move or wheel turn.
+    fn mouse(&mut self, _mouse: MouseEvent, _at: P2) {}
     /// The screen became the size of `light`, so baked art needs redoing.
     fn resize(&mut self, _light: &Light) {}
     /// Advance the world by `dt` seconds, a fixed step.
     fn step(&mut self, keys: &HeldKeys, dt: f32);
     fn render(&mut self, light: &mut Light);
+    /// Whether the next frame differs from the last one drawn. While it is
+    /// false, [`play`] draws nothing and steps ten times a second, and input
+    /// still reaches the game at once.
+    fn changed(&self) -> bool {
+        true
+    }
     /// Whether the game is over, so [`play`] ends after this frame.
     fn finished(&self) -> bool {
         false
     }
 }
 
-/// Run `game` on the terminal until the player quits.
+/// Run `game` on the terminal until the player quits with q or Ctrl+C.
 pub fn play<G: Game>(game: G) -> Result<(), RtError> {
     let caps = katui_rt::tty::probe_default();
     let mut arcade = Arcade::new(game, caps.clone());
     run_app(&mut arcade, io::stdout(), &caps, FRAMES_PER_SECOND)
 }
 
+/// What wakes the arcade besides input.
+enum Wake {
+    /// The keys the game controllers hold.
+    #[cfg(feature = "gamepad")]
+    Pads(Vec<Key>),
+    Tick,
+}
+
 struct Arcade<G> {
     game: G,
     caps: Capabilities,
+    cell: CellPixels,
+    density: (u32, u32),
+    pointer: Pointer,
     light: Light,
     screen: PixelScreen,
     fitted: Option<CellSize>,
+    fresh: bool,
     keys: HeldKeys,
     last_step: Instant,
     banked: Duration,
     asked_for_releases: bool,
 }
 
-fn density(size: CellSize, caps: &Capabilities) -> (u32, u32) {
+/// Game pixels per cell across and down: one per screen pixel when the
+/// budget allows, fewer on a large or multiplexed screen.
+fn density(size: CellSize, caps: &Capabilities, cell: CellPixels) -> (u32, u32) {
     if select(caps) == Backend::Blocks {
         return (2, 2);
     }
@@ -77,21 +102,38 @@ fn density(size: CellSize, caps: &Capabilities) -> (u32, u32) {
     } else {
         1
     };
-    let fits = |(across, down): &(u32, u32)| {
+    let (cell_width, cell_height) = (u32::from(cell.width).max(1), u32::from(cell.height));
+    let down_for = |across: u32| ((across * cell_height + cell_width / 2) / cell_width).max(1);
+    let fits = |across: &u32| {
         u32::from(size.columns) * across <= MOST_PIXELS_ACROSS / shrink
-            && u32::from(size.rows) * down <= MOST_PIXELS_DOWN / shrink
+            && u32::from(size.rows) * down_for(*across) <= MOST_PIXELS_DOWN / shrink
     };
-    DENSITIES.into_iter().find(fits).unwrap_or((2, 4))
+    let across = (1..=cell_width).rev().find(fits).unwrap_or(1);
+    (across, down_for(across))
+}
+
+/// q and Ctrl+C quit a game; Esc reaches the game, which often opens a menu with it.
+fn quits(event: &InputEvent) -> bool {
+    match event {
+        InputEvent::Key(Key::Char('q'), Mods::NONE) => true,
+        InputEvent::Key(Key::Char('c'), mods) => mods.ctrl,
+        _ => false,
+    }
 }
 
 impl<G: Game> Arcade<G> {
     fn new(game: G, caps: Capabilities) -> Self {
+        let cell = katui_rt::tty::cell_size(&caps);
         Self {
             game,
+            pointer: Pointer::new(caps.cell, cell),
             caps,
+            cell,
+            density: (1, 1),
             light: Light::new(1, 1, 1.0),
             screen: PixelScreen::default(),
             fitted: None,
+            fresh: true,
             keys: HeldKeys::default(),
             last_step: Instant::now(),
             banked: Duration::ZERO,
@@ -104,7 +146,7 @@ impl<G: Game> Arcade<G> {
             return Ok(());
         }
         let cell = katui_rt::tty::cell_size(&self.caps);
-        let (across, down) = density(size, &self.caps);
+        let (across, down) = density(size, &self.caps, cell);
         let pixel_width = f32::from(cell.width) / across as f32;
         let pixel_height = f32::from(cell.height) / down as f32;
         self.light = Light::new(
@@ -119,7 +161,11 @@ impl<G: Game> Arcade<G> {
             patched = patched.with_stash(stash);
         }
         self.screen = PixelScreen::new(&self.caps, cell, patched);
+        self.cell = cell;
+        self.density = (across, down);
+        self.pointer.resize(size.columns, size.rows);
         self.fitted = Some(size);
+        self.fresh = true;
         self.game.resize(&self.light);
         Ok(())
     }
@@ -141,7 +187,7 @@ impl<G: Game> Arcade<G> {
     }
 
     fn on_input(&mut self, event: &InputEvent, now: Instant) -> Control {
-        if event.is_quit_key() {
+        if quits(event) {
             return Control::Quit;
         }
         match event {
@@ -156,33 +202,56 @@ impl<G: Game> Arcade<G> {
             }
             InputEvent::KeyUp(key, _) => self.keys.release(*key),
             InputEvent::Focus(false) => self.keys.clear(),
-            _ => {}
+            InputEvent::Mouse(mouse) => self.on_mouse(mouse),
+            other => self.pointer.observe(other),
         }
         Control::Animate
+    }
+
+    fn on_mouse(&mut self, mouse: &MouseEvent) {
+        let (x, y) = self.pointer.locate(mouse, self.cell);
+        let (across, down) = self.density;
+        let at = P2::new(
+            x * across as f32 / f32::from(self.cell.width.max(1)),
+            y * down as f32 / f32::from(self.cell.height.max(1)),
+        );
+        self.game.mouse(*mouse, at);
+    }
+
+    fn present(&mut self, out: &mut Vec<u8>, size: CellSize) -> io::Result<()> {
+        self.fresh = false;
+        self.game.render(&mut self.light);
+        let surface = self.light.to_surface();
+        self.screen
+            .render_frame(out, &surface, size.columns, size.rows)
+            .map(drop)
     }
 }
 
 impl<G: Game> App for Arcade<G> {
-    /// The keys the game controllers hold.
-    type Message = Vec<Key>;
+    type Message = Wake;
 
-    fn start(&mut self, waker: Waker<Vec<Key>>) {
+    fn start(&mut self, waker: Waker<Wake>) {
+        waker.every(STILL_TICK, || Wake::Tick);
         watch_pads(waker);
     }
 
-    fn update(&mut self, event: AppEvent<Vec<Key>>) -> Control {
+    fn update(&mut self, event: AppEvent<Wake>) -> Control {
         match event {
             AppEvent::Input(input) => return self.on_input(&input, Instant::now()),
             AppEvent::Repaint => {
                 self.keys.clear();
                 self.last_step = Instant::now();
                 self.screen.repaint();
+                self.fresh = true;
             }
-            AppEvent::Message(keys) => {
+            #[cfg(feature = "gamepad")]
+            AppEvent::Message(Wake::Pads(keys)) => {
                 for key in self.keys.hold_for_pads(keys) {
                     self.game.press(key);
                 }
             }
+            AppEvent::Message(Wake::Tick) => return Control::Redraw,
             AppEvent::Resized(_) => {}
         }
         Control::Animate
@@ -195,14 +264,16 @@ impl<G: Game> App for Arcade<G> {
         }
         self.fit(out, size)?;
         self.advance();
-        self.game.render(&mut self.light);
-        let surface = self.light.to_surface();
-        self.screen
-            .render_frame(out, &surface, size.columns, size.rows)?;
+        let changed = self.game.changed();
+        if changed || self.fresh {
+            self.present(out, size)?;
+        }
         Ok(if self.game.finished() {
             Control::Quit
-        } else {
+        } else if changed {
             Control::Animate
+        } else {
+            Control::Wait
         })
     }
 }
@@ -210,7 +281,7 @@ impl<G: Game> App for Arcade<G> {
 /// Send the keys the game controllers hold to the loop whenever they
 /// change. A system without controller support plays from the keyboard.
 #[cfg(feature = "gamepad")]
-fn watch_pads(waker: Waker<Vec<Key>>) {
+fn watch_pads(waker: Waker<Wake>) {
     let mut held = Vec::new();
     let _ = katui_rt::gamepad::watch(move |pads| {
         let keys = pad_keys(pads);
@@ -218,12 +289,12 @@ fn watch_pads(waker: Waker<Vec<Key>>) {
             return true;
         }
         held.clone_from(&keys);
-        waker.send(keys)
+        waker.send(Wake::Pads(keys))
     });
 }
 
 #[cfg(not(feature = "gamepad"))]
-fn watch_pads(_waker: Waker<Vec<Key>>) {}
+fn watch_pads(_waker: Waker<Wake>) {}
 
 /// How far a stick leans before it counts as an arrow.
 #[cfg(feature = "gamepad")]
@@ -275,50 +346,115 @@ fn pad_keys(pads: &[katui_rt::gamepad::Pad]) -> Vec<Key> {
 mod tests {
     use std::time::Instant;
 
-    use katui_proto::input::{InputEvent, Key, Mods};
+    use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent};
     use katui_proto::probe::{Capabilities, CellPixels, Identity};
-    use katui_rt::app::{App, Control};
+    use katui_rt::app::{App, AppEvent, Control};
     use katui_scene::CellSize;
 
-    use super::{Arcade, Game, HeldKeys, Light, density};
+    use super::{Arcade, Game, HeldKeys, Light, Wake, density};
     use crate::light::{Blend, P2};
 
     #[derive(Default)]
     struct Recorder {
-        presses: u32,
+        presses: Vec<Key>,
         repeats: u32,
+        clicks: Vec<(MouseAction, P2)>,
+        still: bool,
+        renders: u32,
         over: bool,
     }
 
     impl Game for Recorder {
-        fn press(&mut self, _key: Key) {
-            self.presses += 1;
+        fn press(&mut self, key: Key) {
+            self.presses.push(key);
         }
         fn repeat(&mut self, _key: Key) {
             self.repeats += 1;
         }
+        fn mouse(&mut self, mouse: MouseEvent, at: P2) {
+            self.clicks.push((mouse.action, at));
+        }
         fn resize(&mut self, _light: &Light) {}
         fn step(&mut self, _keys: &HeldKeys, _dt: f32) {}
         fn render(&mut self, light: &mut Light) {
+            self.renders += 1;
             light.rect(P2::new(0.0, 0.0), 4.0, 4.0, [1.0; 3], Blend::Over);
+        }
+        fn changed(&self) -> bool {
+            !self.still
         }
         fn finished(&self) -> bool {
             self.over
         }
     }
 
+    const CELL: CellPixels = CellPixels {
+        width: 10,
+        height: 20,
+    };
+
     fn arcade() -> Arcade<Recorder> {
         Arcade::new(
             Recorder::default(),
             Capabilities {
                 kitty: true,
-                cell: Some(CellPixels {
-                    width: 10,
-                    height: 20,
-                }),
+                cell: Some(CELL),
                 ..Capabilities::default()
             },
         )
+    }
+
+    #[test]
+    fn a_mouse_report_reaches_the_game_in_light_pixels() {
+        let size = CellSize {
+            columns: 40,
+            rows: 12,
+        };
+        let mut arcade = arcade();
+        arcade
+            .draw(&mut Vec::new(), size)
+            .expect("a Vec accepts writes");
+        let click = |x, y| {
+            InputEvent::Mouse(MouseEvent {
+                action: MouseAction::Press(Button::Left),
+                x,
+                y,
+                mods: Mods::NONE,
+            })
+        };
+        arcade.on_input(&click(3, 2), Instant::now());
+        arcade.on_input(&InputEvent::Mode(1016, true), Instant::now());
+        arcade.on_input(&click(35, 50), Instant::now());
+        let (across, down) = density(size, &arcade.caps, CELL);
+        let cell_center = P2::new(3.5 * across as f32, 2.5 * down as f32);
+        let pixel = P2::new(35.0 * across as f32 / 10.0, 50.0 * down as f32 / 20.0);
+        let press = MouseAction::Press(Button::Left);
+        assert_eq!(arcade.game.clicks, [(press, cell_center), (press, pixel)]);
+    }
+
+    #[test]
+    fn a_still_game_draws_nothing_and_sleeps_until_input_or_a_tick() {
+        let size = CellSize {
+            columns: 20,
+            rows: 6,
+        };
+        let mut arcade = arcade();
+        arcade.game.still = true;
+        let mut first = Vec::new();
+        let control = arcade.draw(&mut first, size).ok();
+        assert_eq!(control, Some(Control::Wait), "it sleeps");
+        assert_eq!(arcade.game.renders, 1, "a fresh screen is drawn once");
+        let mut later = Vec::new();
+        let tick = arcade.update(AppEvent::Message(Wake::Tick));
+        assert_eq!(tick, Control::Redraw);
+        assert_eq!(arcade.draw(&mut later, size).ok(), Some(Control::Wait));
+        assert_eq!(arcade.game.renders, 1);
+        assert!(later.is_empty());
+        let input = InputEvent::Key(Key::Enter, Mods::NONE);
+        assert_eq!(arcade.on_input(&input, Instant::now()), Control::Animate);
+        arcade.game.still = false;
+        assert_eq!(arcade.draw(&mut later, size).ok(), Some(Control::Animate));
+        assert_eq!(arcade.game.renders, 2);
     }
 
     #[test]
@@ -340,16 +476,25 @@ mod tests {
     }
 
     #[test]
-    fn a_held_key_repeats_and_a_quit_key_quits() {
+    fn a_held_key_repeats_escape_reaches_the_game_and_q_or_ctrl_c_quits() {
         let mut arcade = arcade();
         let now = Instant::now();
         let enter = InputEvent::Key(Key::Enter, Mods::NONE);
         arcade.on_input(&enter, now);
         arcade.on_input(&enter, now);
         arcade.on_input(&InputEvent::KeyRepeat(Key::Enter, Mods::NONE), now);
-        assert_eq!((arcade.game.presses, arcade.game.repeats), (1, 2));
+        assert_eq!((arcade.game.presses.len(), arcade.game.repeats), (1, 2));
+        let escape = InputEvent::Key(Key::Escape, Mods::NONE);
+        assert_eq!(arcade.on_input(&escape, now), Control::Animate);
+        assert_eq!(arcade.game.presses, [Key::Enter, Key::Escape]);
         let quit = InputEvent::Key(Key::Char('q'), Mods::NONE);
         assert_eq!(arcade.on_input(&quit, now), Control::Quit);
+        let ctrl = Mods {
+            ctrl: true,
+            ..Mods::NONE
+        };
+        let interrupt = InputEvent::Key(Key::Char('c'), ctrl);
+        assert_eq!(arcade.on_input(&interrupt, now), Control::Quit);
     }
 
     #[test]
@@ -366,7 +511,7 @@ mod tests {
     }
 
     #[test]
-    fn density_shrinks_to_stay_affordable() {
+    fn density_follows_the_cell_and_shrinks_to_stay_affordable() {
         let small = CellSize {
             columns: 80,
             rows: 24,
@@ -374,6 +519,10 @@ mod tests {
         let huge = CellSize {
             columns: 274,
             rows: 72,
+        };
+        let retina = CellPixels {
+            width: 16,
+            height: 34,
         };
         let graphics = Capabilities {
             kitty: true,
@@ -386,10 +535,15 @@ mod tests {
             }),
             ..graphics.clone()
         };
-        assert_eq!(density(small, &graphics), (10, 20));
-        assert_eq!(density(huge, &graphics), (4, 8));
-        assert_eq!(density(huge, &multiplexed), (2, 4));
-        assert_eq!(density(huge, &Capabilities::default()), (2, 2));
+        assert_eq!(density(small, &graphics, CELL), (10, 20), "one per pixel");
+        assert_eq!(
+            density(small, &graphics, retina),
+            (16, 34),
+            "crisp on retina"
+        );
+        assert_eq!(density(huge, &graphics, retina), (6, 13));
+        assert_eq!(density(huge, &multiplexed, retina), (3, 6));
+        assert_eq!(density(huge, &Capabilities::default(), retina), (2, 2));
     }
 
     #[cfg(feature = "gamepad")]

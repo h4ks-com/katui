@@ -245,6 +245,27 @@ def test_an_error_in_a_game_reaches_the_caller() -> None:
         frame(Broken())
 
 
+def test_a_light_takes_pixels_images_and_ui_text() -> None:
+    light = Light(60, 30)
+    light.set_pixel(1, 2, (0.5, 0.25, 1.0))
+    assert light.pixel(1, 2) == (0.5, 0.25, 1.0)
+    assert light.pixel(60, 0) is None
+    red = Image.from_rgba(2, 2, bytes([255, 0, 0, 255] * 4))
+    light.image((10, 10), red)
+    assert light.to_image().pixel(11, 11) == (255, 0, 0, 255)
+    width = light.ui_text_width("Hi", 16)
+    assert 0 < width < 40
+    light.ui_text((30, 4), "Hi", (1.0, 1.0, 1.0), 16)
+    drawn = light.to_image()
+    assert any(drawn.pixel(x, y) != (0, 0, 0, 255) for x in range(30, 60) for y in range(4, 24))
+
+
+def test_a_game_has_mouse_and_changed_hooks_with_defaults() -> None:
+    game = katui.game.Game()
+    game.mouse(Event.press("a"), (1.0, 2.0))
+    assert game.changed()
+
+
 def test_world_math_matches_the_engine() -> None:
     offset = (1.0, 1.0, 1.0)
     assert V3(1, 2, 3) + offset == V3(2, 3, 4)

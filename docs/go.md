@@ -211,8 +211,12 @@ func main() {
 values above one bloom, and `Dim` fades the last frame into a trail.
 `SRGB` turns an ordinary color into light. For 3D, `V3`, `Camera`, `Rng`
 and `Sparks` come from the same package. A game that is a `Presser` or a
-`Repeater` gets key names, and a `Finisher` ends the game when `Finished`
-returns true.
+`Repeater` gets key names, a `Mouser` gets an `Event` and its `Point` in
+the buffer's pixels, and a `Finisher` ends the game when `Finished`
+returns true. A `Changer` that returns false from `Changed` while nothing
+moves makes `Play` stop drawing until something does. `Text` draws with a
+5 by 7 pixel font, `UIText` with katui's smooth UI font at any size, and
+`Image` draws an `Image` blended by its alpha.
 
 ## Tests
 

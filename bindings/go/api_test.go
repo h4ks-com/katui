@@ -192,6 +192,29 @@ func TestPressHoldsEveryModifier(t *testing.T) {
 	}
 }
 
+func TestALightTakesPixelsImagesAndUIText(t *testing.T) {
+	light := NewLight(60, 30, 1)
+	light.SetPixel(1, 2, RGB{0.5, 0.25, 1})
+	if c, ok := light.Pixel(1, 2); !ok || c != (RGB{0.5, 0.25, 1}) {
+		t.Fatalf("the pixel reads back %v", c)
+	}
+	if _, ok := light.Pixel(60, 0); ok {
+		t.Fatal("a pixel outside the buffer is missing")
+	}
+	sprite, err := NewImage(2, 2, []byte{255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255})
+	if err != nil {
+		t.Fatal(err)
+	}
+	light.Image(Point{10, 10}, sprite)
+	if width := light.UITextWidth("Hi", 16); width <= 0 || width >= 40 {
+		t.Fatalf("Hi is %v wide", width)
+	}
+	light.UIText(Point{30, 4}, "Hi", 16, RGB{1, 1, 1})
+	if c, _ := light.ToImage().Pixel(11, 11); c != (Color{255, 0, 0, 255}) {
+		t.Fatalf("the sprite shows as %v", c)
+	}
+}
+
 func TestStateTypesAnswer(t *testing.T) {
 	down, _ := Press("down")
 	list := NewListState(5, 2)

@@ -3,8 +3,8 @@
 
 use std::time::Instant;
 
-use katui_game::{Game, HeldKeys, Light};
-use katui_proto::input::Key;
+use katui_game::{Game, HeldKeys, Light, P2};
+use katui_proto::input::{InputEvent, Key, MouseEvent};
 use katui_scene::surface::Surface;
 
 use crate::Error;
@@ -23,12 +23,18 @@ pub trait GameHost {
 
     fn repeat(&mut self, key: Key) -> Result<(), Self::Error>;
 
+    /// `event`, a mouse event, happened at `at` in the light buffer's pixels.
+    fn mouse(&mut self, event: &InputEvent, at: P2) -> Result<(), Self::Error>;
+
     /// The screen became the size of `light`, so baked art needs redoing.
     fn resize(&mut self, light: &mut Light) -> Result<(), Self::Error>;
 
     fn step(&mut self, keys: &HeldKeys, dt: f32) -> Result<(), Self::Error>;
 
     fn render(&mut self, light: &mut Light) -> Result<(), Self::Error>;
+
+    /// Whether the next frame differs from the last one drawn.
+    fn changed(&self) -> Result<bool, Self::Error>;
 
     fn finished(&self) -> Result<bool, Self::Error>;
 }
@@ -59,6 +65,11 @@ impl<H: GameHost> Game for Played<H> {
         self.kept(done);
     }
 
+    fn mouse(&mut self, mouse: MouseEvent, at: P2) {
+        let done = self.host.mouse(&InputEvent::Mouse(mouse), at);
+        self.kept(done);
+    }
+
     fn resize(&mut self, light: &Light) {
         let mut copy = light.clone();
         let done = self.host.resize(&mut copy);
@@ -73,6 +84,14 @@ impl<H: GameHost> Game for Played<H> {
     fn render(&mut self, light: &mut Light) {
         let done = self.host.render(light);
         self.kept(done);
+    }
+
+    fn changed(&self) -> bool {
+        self.failure.is_set()
+            || self.host.changed().unwrap_or_else(|error| {
+                self.failure.keep(error);
+                true
+            })
     }
 
     fn finished(&self) -> bool {
@@ -139,9 +158,12 @@ pub fn held<S: AsRef<str>>(names: &[S]) -> Result<HeldKeys, Error> {
 
 #[cfg(test)]
 mod tests {
+    use katui_proto::input::{Mods, MouseAction};
+
     use super::*;
 
-    /// Lights its whole buffer once it has stepped with the space bar held.
+    /// Lights its whole buffer once it has stepped with the space bar held,
+    /// or once clicked.
     struct Flash {
         lit: bool,
     }
@@ -161,12 +183,17 @@ mod tests {
             Ok(())
         }
 
+        fn mouse(&mut self, event: &InputEvent, at: P2) -> Result<(), String> {
+            self.lit = matches!(event, InputEvent::Mouse(_)) && at.x > 0.0;
+            Ok(())
+        }
+
         fn resize(&mut self, _light: &mut Light) -> Result<(), String> {
             Ok(())
         }
 
         fn step(&mut self, keys: &HeldKeys, _dt: f32) -> Result<(), String> {
-            self.lit = keys.is_held(Key::Char(' '));
+            self.lit |= keys.is_held(Key::Char(' '));
             Ok(())
         }
 
@@ -179,9 +206,40 @@ mod tests {
             }
         }
 
+        fn changed(&self) -> Result<bool, String> {
+            if self.lit {
+                Ok(true)
+            } else {
+                Err("unlit".to_owned())
+            }
+        }
+
         fn finished(&self) -> Result<bool, String> {
             Ok(false)
         }
+    }
+
+    #[test]
+    fn a_click_reaches_the_host_and_a_failing_hook_ends_the_game() {
+        let played = Played {
+            host: Flash { lit: false },
+            failure: Failure::default(),
+        };
+        assert!(played.changed(), "a failure draws the last frame");
+        assert!(played.finished());
+        let mut played = Played {
+            host: Flash { lit: false },
+            failure: Failure::default(),
+        };
+        let click = MouseEvent {
+            action: MouseAction::Move,
+            x: 0,
+            y: 0,
+            mods: Mods::NONE,
+        };
+        played.mouse(click, P2::new(3.0, 1.0));
+        assert!(played.changed());
+        assert!(!played.finished());
     }
 
     #[test]

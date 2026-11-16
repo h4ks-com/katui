@@ -225,8 +225,12 @@ play(new Ball())
 values above one bloom, and `dim` fades the last frame into a trail.
 `srgb` turns an ordinary color into light. Positions are `[x, y]` arrays
 in the buffer's pixels. For 3D there are `V3`, `Camera`, `Rng` and `Sparks`.
-`press` and `repeat` get key names, and `finished` ends the game when it
-returns `true`.
+`press` and `repeat` get key names, `mouse` gets an `Event` and its
+`[x, y]` in the buffer's pixels, and `finished` ends the game when it
+returns `true`. Return `false` from `changed` while nothing moves, and
+`play` stops drawing until something does. `text` draws with a 5 by 7
+pixel font, `uiText` with katui's smooth UI font at any size, and `image`
+draws an `Image` blended by its alpha.
 
 ## Tests
 

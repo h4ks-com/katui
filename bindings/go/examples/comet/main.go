@@ -1,4 +1,5 @@
-// A comet you steer with the arrow keys, trailing sparks. Space bursts.
+// A comet you steer with the arrow keys, trailing sparks. A click moves it
+// there and space bursts.
 package main
 
 import (
@@ -37,6 +38,12 @@ func (c *comet) Press(key string) {
 	}
 }
 
+func (c *comet) Mouse(event *katui.Event, at katui.Point) {
+	if event.Action() == katui.MousePress {
+		c.at = at
+	}
+}
+
 func axis(keys *katui.Keys, less, more string) float32 {
 	var value float32
 	if keys.IsHeld(more) {
@@ -63,7 +70,7 @@ func (c *comet) Render(light *katui.Light) {
 	})
 	light.Glow(c.at, 9, katui.Scaled(tail, 0.35))
 	light.Glow(c.at, 3, head)
-	light.Text(katui.Point{X: 4, Y: 4}, "arrows to steer, space to burst", 1, katui.SRGB(120, 120, 140))
+	light.Text(katui.Point{X: 4, Y: 4}, "arrows to steer, click to jump, space to burst", 1, katui.SRGB(120, 120, 140))
 }
 
 func main() {

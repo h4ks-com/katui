@@ -7,14 +7,14 @@ use katui_game::{
     Blend, Camera as UiCamera, HeldKeys, Light as UiLight, P2, Rgb, Rng as UiRng, Spark as UiSpark,
     Sparks as UiSparks, V3 as UiV3, v3,
 };
-use katui_proto::input::Key;
+use katui_proto::input::{InputEvent, Key};
 use napi::bindgen_prelude::{ClassInstance, Either, FnArgs, Function, JavaScriptClassExt, Object};
 use napi::{Env, Error, JsValue, Result};
 
 use crate::app::{call_optional, object};
 use crate::convert::raise;
 use crate::element::Image;
-use crate::event::key;
+use crate::event::{Event, key};
 use crate::message::{Obj, fetch, hold};
 
 type Color = (f64, f64, f64);
@@ -120,6 +120,34 @@ impl Light {
     #[napi]
     pub fn dim(&mut self, factor: f64) {
         self.inner.dim(factor as f32);
+    }
+
+    /// The light at `x`, `y`, or `null` outside the buffer.
+    #[napi(ts_return_type = "LightColor | null")]
+    pub fn pixel(&self, x: u32, y: u32) -> Option<Color> {
+        self.inner.pixel(x, y).map(color_tuple)
+    }
+
+    #[napi(ts_args_type = "x: number, y: number, color: LightColor")]
+    pub fn set_pixel(&mut self, x: u32, y: u32, color: Color) {
+        self.inner.set_pixel(x, y, rgb(color));
+    }
+
+    /// Draw `image` with its top-left at `at`, blended by its alpha.
+    #[napi(ts_args_type = "at: Point, image: Image")]
+    pub fn image(&mut self, at: Point, image: &Image) {
+        self.inner.image(p2(at), &image.surface);
+    }
+
+    /// Draw `text` in the UI font, `size` pixels tall.
+    #[napi(ts_args_type = "at: Point, text: string, color: LightColor, size: number")]
+    pub fn ui_text(&mut self, at: Point, text: String, color: Color, size: f64) {
+        self.inner.ui_text(p2(at), &text, size as f32, rgb(color));
+    }
+
+    #[napi]
+    pub fn ui_text_width(&self, text: String, size: f64) -> f64 {
+        f64::from(self.inner.ui_text_width(&text, size as f32))
     }
 
     #[napi(
@@ -562,6 +590,14 @@ impl NodeGame {
         env.run_in_scope(|| body(&env, object(&env, &self.game)?))
     }
 
+    /// The truth of what the game's `name` returns, or `missing` without one.
+    fn ask(&self, name: &str, missing: bool) -> Result<bool> {
+        self.scoped(|_, game| match call_optional(&game, name, ())? {
+            Some(answer) => answer.coerce_to_bool(),
+            None => Ok(missing),
+        })
+    }
+
     /// Lend `light` to the game's `name` through our own `Light`.
     fn call_with_light(&self, name: &str, light: &mut UiLight) -> Result<()> {
         self.scoped(|env, game| {
@@ -589,6 +625,14 @@ impl GameHost for NodeGame {
         self.scoped(|_, game| call_optional(&game, "repeat", key.name()).map(drop))
     }
 
+    fn mouse(&mut self, event: &InputEvent, at: P2) -> Result<()> {
+        self.scoped(|_, game| {
+            let at = (f64::from(at.x), f64::from(at.y));
+            let args = FnArgs::from((Event::new(event.clone()), at));
+            call_optional(&game, "mouse", args).map(drop)
+        })
+    }
+
     fn resize(&mut self, light: &mut UiLight) -> Result<()> {
         self.call_with_light("resize", light)
     }
@@ -606,11 +650,12 @@ impl GameHost for NodeGame {
         self.call_with_light("render", light)
     }
 
+    fn changed(&self) -> Result<bool> {
+        self.ask("changed", true)
+    }
+
     fn finished(&self) -> Result<bool> {
-        self.scoped(|_, game| match call_optional(&game, "finished", ())? {
-            Some(over) => over.coerce_to_bool(),
-            None => Ok(false),
-        })
+        self.ask("finished", false)
     }
 }
 

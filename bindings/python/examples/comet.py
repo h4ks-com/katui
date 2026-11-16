@@ -1,6 +1,7 @@
-"""A comet you steer with the arrow keys, trailing sparks. Space bursts."""
+"""A comet you steer with the arrow keys, trailing sparks. A click moves it
+there and space bursts."""
 
-from katui import game
+from katui import Event, game
 from katui.game import V3, Keys, Light, Rng, Spark, Sparks, scaled, srgb
 
 SPEED = 90.0
@@ -23,6 +24,10 @@ class Comet(game.Game):
         if key == " ":
             self.burst()
 
+    def mouse(self, event: Event, at: tuple[float, float]) -> None:
+        if event.action == "press":
+            self.at = at
+
     def step(self, keys: Keys, dt: float) -> None:
         x, y = self.at
         if keys.is_held("left"):
@@ -42,7 +47,7 @@ class Comet(game.Game):
         self.sparks.draw(light, lambda at: (at.x, at.y))
         light.glow(self.at, 9, scaled(TAIL, 0.35))
         light.glow(self.at, 3, HEAD)
-        light.text((4, 4), "arrows to steer, space to burst", srgb(120, 120, 140))
+        light.text((4, 4), "arrows to steer, click to jump, space to burst", srgb(120, 120, 140))
 
 
 def new_game() -> Comet:

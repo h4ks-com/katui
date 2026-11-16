@@ -41,6 +41,11 @@ func TestTheCometGlowsFollowsTheKeysAndBursts(t *testing.T) {
 	if err := moved.Save(shots.Path("comet")); err != nil {
 		t.Fatal(err)
 	}
+	key, _ := katui.Press("a")
+	game.Mouse(key, katui.Point{X: 5, Y: 6})
+	if game.at.X <= 60 {
+		t.Fatal("only a mouse press moves the comet")
+	}
 	if _, err := katui.Frame(game, katui.FrameOptions{Held: []string{"no such key"}}); err == nil {
 		t.Fatal("an unknown key name fails")
 	}

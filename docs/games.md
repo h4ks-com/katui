@@ -48,8 +48,9 @@ fn main() -> Result<(), katui::rt::RtError> {
 }
 ```
 
-Run it, hold the arrow keys, and press <kbd>Ctrl</kbd>+<kbd>C</kbd> to
-quit.
+Run it, hold the arrow keys, and press <kbd>q</kbd> or
+<kbd>Ctrl</kbd>+<kbd>C</kbd> to quit. <kbd>Esc</kbd> reaches your game as
+a key, so you can use it for a menu.
 
 ## The loop
 
@@ -62,10 +63,37 @@ quit.
 - `render` paints the current world. katui calls it once per frame and
   sends only the parts of the picture that changed.
 
-Three more methods are optional. `press` runs once when a key goes down,
+The other methods are optional. `press` runs once when a key goes down,
 `repeat` runs while the terminal repeats a held key, and `resize` runs when
 the screen changes size, which is the place to redo anything you drew in
-advance.
+advance. `finished` ends the game when it returns true.
+
+## Still frames
+
+A board game or a menu sits still most of the time. Return false from
+`changed` while nothing moves, and katui skips drawing and sending frames
+and lets the CPU rest. It still steps your game ten times a second, so a
+clock keeps running, and it calls `press` and `mouse` the moment input
+arrives. Set a flag when something changes and clear it in `render`:
+
+```rust,ignore
+fn changed(&self) -> bool {
+    self.dirty
+}
+```
+
+## The mouse
+
+`mouse` runs for every press, release, drag, move and wheel turn, with the
+position in game pixels, the same coordinates you draw at:
+
+```rust,ignore
+fn mouse(&mut self, mouse: MouseEvent, at: P2) {
+    if mouse.action == MouseAction::Press(Button::Left) {
+        self.target = at;
+    }
+}
+```
 
 ## Held keys
 
@@ -104,17 +132,23 @@ positions fade out.
 - `glow`, `ring`, `line`, `rect` and `polygon` draw shapes. `rect` and
   `polygon` take a `Blend`: `Over` for solid things, `Add` for things that
   shine.
-- `text`, `centered_text` and `text_width` draw with a built-in pixel
-  font, in capital letters.
+- `text`, `centered_text` and `text_width` draw with a built-in 5 by 7
+  pixel font, for the retro look.
+- `ui_text` and `ui_text_width` draw smooth text in katui's UI font at any
+  size, for a sharp score or menu.
+- `image` draws a picture or sprite from an RGBA surface, blended by its
+  alpha.
+- `pixel` and `set_pixel` read and write single pixels.
 - `bloom(threshold, strength)` makes bright areas bleed into their
   surroundings.
 - `paint` fills every pixel from a function, for backgrounds.
 
 Coordinates are in game pixels, with the origin at the top left.
 `light.width()` and `light.height()` tell you the size, which depends on
-the terminal and its window. Game pixels can be taller than wide.
-`light.pixel_aspect()` tells you by how much, and `glow` already accounts
-for it, so a glow stays round.
+the terminal and its window. katui gives a game one pixel per screen pixel
+when it can afford to, and fewer on a very large window or under a
+multiplexer. Game pixels can be taller than wide. `light.pixel_aspect()`
+tells you by how much, and `glow` and `ui_text` already account for it.
 
 ## Next
 

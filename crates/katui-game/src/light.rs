@@ -2,9 +2,40 @@
 // a coordinate left of or above the buffer becomes index 0
 #![allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
 
+use std::cell::RefCell;
+
+use katui_draw::{Canvas, Paint, Point, Rgba, TextEngine, TextLayout, TextStyle};
 use katui_scene::surface::Surface;
 
 use crate::font::{ADVANCE, GLYPH_ROWS, glyph};
+
+thread_local! {
+    // We load the fonts once per thread, since parsing them takes far longer than a frame.
+    static UI_FONT: RefCell<Option<TextEngine>> =
+        RefCell::new(TextEngine::new(katui_draw::bundled_fonts()).ok());
+}
+
+/// What `use_layout` makes of `text` laid out in the UI font at `size`
+/// pixels, or `None` when the font failed to load.
+fn with_ui_layout<T>(
+    text: &str,
+    size: f32,
+    use_layout: impl FnOnce(&TextLayout) -> T,
+) -> Option<T> {
+    UI_FONT.with_borrow_mut(|engine| {
+        let layout = engine.as_mut()?.layout(text, &TextStyle::new(size), None);
+        Some(use_layout(&layout))
+    })
+}
+
+fn rasterized(layout: &TextLayout) -> Option<Surface> {
+    let (width, height) = layout.size();
+    let mut canvas =
+        Canvas::new(width.ceil().max(1.0) as u32, height.ceil().max(1.0) as u32).ok()?;
+    let ink = Paint::Solid(Rgba::solid(255, 255, 255));
+    canvas.draw_text(layout, Point::new(0.0, 0.0), &ink);
+    canvas.to_surface().ok()
+}
 
 /// Linear light; values above 1 bloom.
 pub type Rgb = [f32; 3];
@@ -150,6 +181,77 @@ impl Light {
         for pixel in &mut self.pixels {
             *pixel = scaled(*pixel, factor);
         }
+    }
+
+    fn index(&self, x: u32, y: u32) -> Option<usize> {
+        let (x, y) = (x as usize, y as usize);
+        (x < self.width && y < self.height).then_some(y * self.width + x)
+    }
+
+    /// The light at `x`, `y`, or `None` outside the buffer.
+    #[must_use]
+    pub fn pixel(&self, x: u32, y: u32) -> Option<Rgb> {
+        self.pixels.get(self.index(x, y)?).copied()
+    }
+
+    /// Set the light at `x`, `y`; a spot outside the buffer is ignored.
+    pub fn set_pixel(&mut self, x: u32, y: u32, color: Rgb) {
+        if let Some(pixel) = self.index(x, y).and_then(|at| self.pixels.get_mut(at)) {
+            *pixel = color;
+        }
+    }
+
+    /// Draw `image` with its top-left at `at`, one image pixel per buffer
+    /// pixel, over what is there by its alpha. The image's colors are
+    /// sRGB, so they show as they are; the parts off the buffer are cut.
+    pub fn image(&mut self, at: P2, image: &Surface) {
+        self.stamp(at, image, |[red, green, blue, _]| srgb(red, green, blue));
+    }
+
+    /// Lay `image` over the buffer, its pixels colored by `ink` and covering
+    /// by their alpha.
+    fn stamp(&mut self, at: P2, image: &Surface, ink: impl Fn([u8; 4]) -> Rgb) {
+        let at = P2::new(at.x.round(), at.y.round());
+        let far = P2::new(at.x + image.width() as f32, at.y + image.height() as f32);
+        let Some(bounds) = self.bounds(at, far) else {
+            return;
+        };
+        let (pixels, row_width) = (image.pixels(), image.width() as usize);
+        self.for_each_pixel(bounds, |x, y, pixel| {
+            let start = ((y - at.y) as usize * row_width + (x - at.x) as usize) * 4;
+            let rgba = pixels.get(start..start + 4).map(<[u8; 4]>::try_from);
+            let Some(Ok(source)) = rgba else {
+                return;
+            };
+            let [.., alpha] = source;
+            if alpha > 0 {
+                mix(pixel, ink(source), f32::from(alpha) / 255.0, Blend::Over);
+            }
+        });
+    }
+
+    /// Draw `text` in the bundled UI font, `size` buffer pixels tall, with
+    /// its top-left at `at`, over what is there. It renders smooth and
+    /// proportional, for a sharp HUD beside the pixel font's retro look.
+    pub fn ui_text(&mut self, at: P2, text: &str, size: f32, color: Rgb) {
+        let Some(drawn) = with_ui_layout(text, size, rasterized).flatten() else {
+            return;
+        };
+        let wide = (drawn.width() as f32 / self.pixel_aspect).round().max(1.0) as u32;
+        let fitted = if wide == drawn.width() {
+            Some(drawn)
+        } else {
+            drawn.scaled(wide, drawn.height())
+        };
+        if let Some(fitted) = fitted {
+            self.stamp(at, &fitted, |_| color);
+        }
+    }
+
+    /// How many pixels wide `text` is in the UI font at `size`.
+    #[must_use]
+    pub fn ui_text_width(&self, text: &str, size: f32) -> f32 {
+        with_ui_layout(text, size, |layout| layout.size().0).unwrap_or(0.0) / self.pixel_aspect
     }
 
     fn bounds(&self, low: P2, high: P2) -> Option<Bounds> {
@@ -488,7 +590,7 @@ fn polygon_box(points: &[P2]) -> Option<(P2, P2)> {
 
 #[cfg(test)]
 mod tests {
-    use katui_scene::surface::PixelPos;
+    use katui_scene::surface::{PixelPos, Surface};
 
     use super::{Blend, Light, P2, srgb};
 
@@ -563,6 +665,94 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn sprite() -> Surface {
+        let opaque_red = [255, 0, 0, 255];
+        let half_blue = [0, 0, 255, 128];
+        let clear = [0, 0, 0, 0];
+        let pixels = [opaque_red, half_blue, clear, opaque_red].concat();
+        Surface::from_rgba(2, 2, pixels).expect("2 by 2 pixels of 4 bytes")
+    }
+
+    #[test]
+    fn an_image_blends_by_its_alpha_and_clips_at_the_edges() {
+        let mut light = Light::new(4, 4, 1.0);
+        light.rect(P2::new(0.0, 0.0), 4.0, 4.0, srgb(0, 255, 0), Blend::Over);
+        light.image(P2::new(1.0, 1.0), &sprite());
+        assert_eq!(red_at(&light, 1, 1), 255, "an opaque pixel covers");
+        let half = light.to_surface().get(PixelPos::new(2, 1)).expect("inside");
+        assert!(half.b > 100 && half.g > 100, "a half-clear pixel mixes");
+        assert_eq!(
+            light.pixel(1, 2),
+            light.pixel(0, 0),
+            "a clear pixel leaves it"
+        );
+        light.image(P2::new(2.0, -1.0), &sprite());
+        assert_eq!(red_at(&light, 3, 0), 255, "the part on the buffer lands");
+        light.image(P2::new(-9.0, 9.0), &sprite());
+    }
+
+    #[test]
+    fn a_pixel_reads_back_what_was_set_and_nothing_outside() {
+        let mut light = Light::new(3, 2, 1.0);
+        light.set_pixel(2, 1, [0.5, 0.25, 1.0]);
+        light.set_pixel(3, 0, [9.0; 3]);
+        assert_eq!(light.pixel(2, 1), Some([0.5, 0.25, 1.0]));
+        assert_eq!(light.pixel(0, 0), Some([0.0; 3]));
+        assert_eq!(light.pixel(3, 0), None);
+    }
+
+    #[test]
+    fn ui_text_draws_smooth_glyphs_as_wide_as_it_measures() {
+        let mut light = Light::new(120, 30, 1.0);
+        let width = light.ui_text_width("Score 42", 20.0);
+        assert!(width > 40.0 && width < 120.0, "{width}");
+        light.ui_text(P2::new(2.0, 2.0), "Score 42", 20.0, [1.0; 3]);
+        let lit = |x: u32| (0..30).any(|y| red_at(&light, x, y) > 0);
+        assert!((2..2 + width as u32).any(lit));
+        assert!(!lit(width as u32 + 6), "nothing past its width");
+        let wide = Light::new(10, 10, 0.5).ui_text_width("Score 42", 20.0);
+        assert!(
+            (wide - width * 2.0).abs() < 1.0,
+            "narrow pixels take twice as many"
+        );
+    }
+
+    #[test]
+    fn writes_the_text_and_image_drawing_as_a_png() {
+        let mut light = Light::new(320, 90, 1.0);
+        light.text(
+            P2::new(4.0, 4.0),
+            "ABC abc 0-9 !?.,:;'\"()[]{}<>/*+=_#%&@$^~|",
+            1,
+            [1.0; 3],
+        );
+        light.text(
+            P2::new(4.0, 16.0),
+            "Pixel font, scale 2",
+            2,
+            srgb(255, 200, 80),
+        );
+        light.ui_text(
+            P2::new(4.0, 36.0),
+            "UI font: Score 1,234",
+            22.0,
+            srgb(120, 200, 255),
+        );
+        let big = sprite().scaled(16, 16).expect("16 by 16 is a valid size");
+        light.image(P2::new(290.0, 40.0), &big);
+        let surface = light.to_surface();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/screenshots");
+        std::fs::create_dir_all(dir).expect("the target directory is writable");
+        image::save_buffer(
+            format!("{dir}/light-text.png"),
+            surface.pixels(),
+            surface.width(),
+            surface.height(),
+            image::ColorType::Rgba8,
+        )
+        .expect("the png writer saves under target");
     }
 
     #[test]

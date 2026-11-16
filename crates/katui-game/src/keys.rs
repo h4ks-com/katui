@@ -49,6 +49,7 @@ impl HeldKeys {
 
     /// Hold exactly `keys` for the game controllers, and return the ones
     /// that just went down.
+    #[cfg_attr(not(feature = "gamepad"), allow(dead_code))]
     pub(crate) fn hold_for_pads(&mut self, keys: Vec<Key>) -> Vec<Key> {
         let pressed = keys
             .iter()
