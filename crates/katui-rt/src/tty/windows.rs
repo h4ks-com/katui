@@ -59,8 +59,7 @@ impl RawConsole {
     /// The next input before `end`; `None` on silence.
     fn read_until(&self, end: Instant) -> Option<Vec<u8>> {
         loop {
-            let records = self.input.read_console_input().ok()?;
-            let bytes = utf8(records.iter().flat_map(typed));
+            let bytes = self.pending().ok()?;
             if !bytes.is_empty() {
                 return Some(bytes);
             }
@@ -71,6 +70,16 @@ impl RawConsole {
             std::thread::sleep(INPUT_POLL.min(left));
         }
     }
+
+    /// What the console holds right now, without waiting: reading an empty
+    /// console blocks until the next event arrives.
+    fn pending(&self) -> std::io::Result<Vec<u8>> {
+        if self.input.number_of_console_input_events()? == 0 {
+            return Ok(Vec::new());
+        }
+        let records = self.input.read_console_input()?;
+        Ok(utf8(records.iter().flat_map(typed)))
+    }
 }
 
 impl Drop for RawConsole {
@@ -78,7 +87,7 @@ impl Drop for RawConsole {
         // replies and keys that arrived after the last read would reach
         // the parent shell as typed junk, so we discard them first; drop
         // cannot report, so the restore is best effort
-        let _ = self.input.read_console_input();
+        let _ = self.pending();
         let _ = self.input_mode.set_mode(self.saved_input);
         let _ = self.output_mode.set_mode(self.saved_output);
     }

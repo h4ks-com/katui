@@ -129,10 +129,14 @@ fn fit_filter((width, height): (u32, u32), frames_per_second: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::process::Command;
+    #[cfg(unix)]
     use std::time::{Duration, Instant};
 
-    use super::{VideoStream, fit_filter};
+    #[cfg(unix)]
+    use super::VideoStream;
+    use super::fit_filter;
 
     #[test]
     fn the_filter_letterboxes_to_the_frame_at_the_frame_rate() {
