@@ -430,11 +430,11 @@ demo-video clip="":
 
 # fly through a nebula and split crystal rocks
 demo-shardrift:
-    cargo run --release -p katui-game --example shardrift
+    cargo run --release -p katui-game --features gamepad --example shardrift
 
 # stack glowing blocks down a 3d shaft
 demo-lumenshaft:
-    cargo run --release -p katui-game --example lumenshaft
+    cargo run --release -p katui-game --features gamepad --example lumenshaft
 
 # a lit cube in software 3d, steered with the arrows
 demo-cube:

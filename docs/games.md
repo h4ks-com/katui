@@ -7,7 +7,7 @@ and how to draw with light.
 Add the `game` feature to your project:
 
 ```sh
-cargo add katui --git https://github.com/h4ks-com/katui --features game
+cargo add katui --features game
 ```
 
 ## The game
@@ -76,6 +76,21 @@ treats a key as held until its repeats stop.
 
 Use `press` for things that happen once per key press, like firing or
 pausing.
+
+## Game controllers
+
+With the `gamepad` feature, a game controller plays as keys: the d-pad and
+the left stick are the arrow keys, the bottom face button is space, and the
+right face button and start are enter. Your game needs no change for it.
+On Linux the feature needs libudev (`libudev-dev` on Debian and Ubuntu).
+
+```sh
+cargo add katui --features game,gamepad
+```
+
+`katui::rt::gamepad::watch` gives you every controller in the standard
+gamepad layout, with analog sticks and triggers, when you want more than
+keys.
 
 ## Drawing with light
 

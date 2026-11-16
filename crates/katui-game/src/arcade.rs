@@ -163,11 +163,14 @@ impl<G: Game> Arcade<G> {
 }
 
 impl<G: Game> App for Arcade<G> {
-    type Message = ();
+    /// The keys the game controllers hold.
+    type Message = Vec<Key>;
 
-    fn start(&mut self, _waker: Waker<()>) {}
+    fn start(&mut self, waker: Waker<Vec<Key>>) {
+        watch_pads(waker);
+    }
 
-    fn update(&mut self, event: AppEvent<()>) -> Control {
+    fn update(&mut self, event: AppEvent<Vec<Key>>) -> Control {
         match event {
             AppEvent::Input(input) => return self.on_input(&input, Instant::now()),
             AppEvent::Repaint => {
@@ -175,7 +178,12 @@ impl<G: Game> App for Arcade<G> {
                 self.last_step = Instant::now();
                 self.screen.repaint();
             }
-            AppEvent::Message(()) | AppEvent::Resized(_) => {}
+            AppEvent::Message(keys) => {
+                for key in self.keys.hold_for_pads(keys) {
+                    self.game.press(key);
+                }
+            }
+            AppEvent::Resized(_) => {}
         }
         Control::Animate
     }
@@ -197,6 +205,62 @@ impl<G: Game> App for Arcade<G> {
             Control::Animate
         })
     }
+}
+
+/// Send the keys the game controllers hold to the loop whenever they
+/// change. A system without controller support plays from the keyboard.
+#[cfg(feature = "gamepad")]
+fn watch_pads(waker: Waker<Vec<Key>>) {
+    let _ = katui_rt::gamepad::watch(move |pads| waker.send(pad_keys(pads)));
+}
+
+#[cfg(not(feature = "gamepad"))]
+fn watch_pads(_waker: Waker<Vec<Key>>) {}
+
+/// How far a stick leans before it counts as an arrow.
+#[cfg(feature = "gamepad")]
+const STICK_DEAD_ZONE: f32 = 0.5;
+
+/// The keys `pads` hold: the d-pad and left stick are the arrows, the
+/// bottom face button is space, and the right face button and start are
+/// enter, which is what every arcade game here reads.
+#[cfg(feature = "gamepad")]
+fn pad_keys(pads: &[katui_rt::gamepad::Pad]) -> Vec<Key> {
+    use katui_rt::gamepad::{PadAxis, PadButton};
+    let leans =
+        |pad: &katui_rt::gamepad::Pad, axis, sign: f32| pad.axis(axis) * sign > STICK_DEAD_ZONE;
+    let mut keys = Vec::new();
+    for pad in pads {
+        let held = [
+            (
+                Key::Up,
+                pad.pressed(PadButton::Up) || leans(pad, PadAxis::LeftY, -1.0),
+            ),
+            (
+                Key::Down,
+                pad.pressed(PadButton::Down) || leans(pad, PadAxis::LeftY, 1.0),
+            ),
+            (
+                Key::Left,
+                pad.pressed(PadButton::Left) || leans(pad, PadAxis::LeftX, -1.0),
+            ),
+            (
+                Key::Right,
+                pad.pressed(PadButton::Right) || leans(pad, PadAxis::LeftX, 1.0),
+            ),
+            (Key::Char(' '), pad.pressed(PadButton::South)),
+            (
+                Key::Enter,
+                pad.pressed(PadButton::East) || pad.pressed(PadButton::Start),
+            ),
+        ];
+        for (key, down) in held {
+            if down && !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+    }
+    keys
 }
 
 #[cfg(test)]
@@ -317,5 +381,27 @@ mod tests {
         assert_eq!(density(huge, &graphics), (4, 8));
         assert_eq!(density(huge, &multiplexed), (2, 4));
         assert_eq!(density(huge, &Capabilities::default()), (2, 2));
+    }
+
+    #[cfg(feature = "gamepad")]
+    #[test]
+    fn a_controller_plays_as_arrows_space_and_enter() {
+        use katui_rt::gamepad::{Pad, PadButton};
+
+        let mut pad = Pad {
+            index: 0,
+            name: "pad".to_owned(),
+            buttons: [0.0; 17],
+            axes: [0.0; 4],
+        };
+        assert!(super::pad_keys(&[pad.clone()]).is_empty());
+        pad.buttons[PadButton::South as usize] = 1.0;
+        pad.buttons[PadButton::Start as usize] = 1.0;
+        pad.axes = [-0.9, 0.2, 0.0, 0.0];
+        assert_eq!(
+            super::pad_keys(&[pad]),
+            vec![Key::Left, Key::Char(' '), Key::Enter],
+            "the stick leans left, a small lean down stays in the dead zone"
+        );
     }
 }

@@ -16,6 +16,10 @@ katui-proto.workspace = true
 katui-rt.workspace = true
 katui-scene.workspace = true
 
+[features]
+# play with game controllers too; on Linux this needs libudev
+gamepad = ["katui-rt/gamepad"]
+
 [dev-dependencies]
 image.workspace = true
 

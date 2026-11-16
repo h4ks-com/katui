@@ -14,6 +14,9 @@ pub struct HeldKeys {
     down: Vec<(Key, Instant)>,
     now: Option<Instant>,
     reports_releases: bool,
+    /// The keys a game controller holds, which it reports exactly, so they
+    /// need no lease.
+    pad: Vec<Key>,
 }
 
 impl HeldKeys {
@@ -44,11 +47,24 @@ impl HeldKeys {
         self.down.clear();
     }
 
+    /// Hold exactly `keys` for the game controllers, and return the ones
+    /// that just went down.
+    pub(crate) fn hold_for_pads(&mut self, keys: Vec<Key>) -> Vec<Key> {
+        let pressed = keys
+            .iter()
+            .filter(|key| !self.is_held(**key))
+            .copied()
+            .collect();
+        self.pad = keys;
+        pressed
+    }
+
     #[must_use]
     pub fn is_held(&self, key: Key) -> bool {
-        self.down.iter().any(|(held, until)| {
-            *held == key && (self.reports_releases || self.now.is_some_and(|now| now < *until))
-        })
+        self.pad.contains(&key)
+            || self.down.iter().any(|(held, until)| {
+                *held == key && (self.reports_releases || self.now.is_some_and(|now| now < *until))
+            })
     }
 
     #[must_use]
@@ -89,5 +105,24 @@ mod tests {
         assert!(keys.is_held(Key::Up), "a hold outlasts any lease");
         keys.release(Key::Up);
         assert!(!keys.is_held(Key::Up));
+    }
+
+    #[test]
+    fn a_controller_holds_keys_until_it_lets_go_and_leaves_leases_alone() {
+        let start = Instant::now();
+        let mut keys = HeldKeys::default();
+        assert_eq!(keys.hold_for_pads(vec![Key::Left]), vec![Key::Left]);
+        assert_eq!(
+            keys.hold_for_pads(vec![Key::Left]),
+            vec![],
+            "a held key goes down once"
+        );
+        keys.tick(start + Duration::from_secs(5));
+        assert!(keys.is_held(Key::Left), "a controller hold needs no lease");
+        keys.hold_for_pads(Vec::new());
+        assert!(!keys.is_held(Key::Left));
+        keys.press(Key::Up, start);
+        keys.tick(start + Duration::from_secs(1));
+        assert!(!keys.is_held(Key::Up), "keyboard presses still lapse");
     }
 }
