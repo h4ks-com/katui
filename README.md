@@ -38,7 +38,7 @@ the widgets:
 
 ```
 cargo new counter && cd counter
-cargo add katui --git https://github.com/h4ks-com/katui --features app
+cargo add katui --features app
 ```
 
 For Python 3.14 or newer, install the package from PyPI. The

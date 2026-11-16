@@ -5,7 +5,7 @@ what you build: `app` (runner and widgets), `game`, `html` (with `app` for
 documents in a view), `ratatui`.
 
 ```sh
-cargo add katui --git https://github.com/h4ks-com/katui --features app
+cargo add katui --features app
 ```
 
 Main paths: `katui::app::{run, UiApp, Control, Waker}`,

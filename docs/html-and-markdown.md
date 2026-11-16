@@ -7,7 +7,7 @@ so you can style documents the way you would on the web.
 Add the `app` and `html` features:
 
 ```sh
-cargo add katui --git https://github.com/h4ks-com/katui --features app,html
+cargo add katui --features app,html
 ```
 
 ## A help screen

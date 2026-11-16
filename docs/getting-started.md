@@ -16,7 +16,7 @@ katui does when it starts.
 ```sh
 cargo new hello-katui
 cd hello-katui
-cargo add katui --git https://github.com/h4ks-com/katui --features app
+cargo add katui --features app
 ```
 
 The `app` feature brings in the app runner and the widgets. Other features
