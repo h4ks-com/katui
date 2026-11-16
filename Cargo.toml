@@ -23,7 +23,7 @@ members = [
 exclude = ["demos/obby-chat"]
 
 [workspace.package]
-version = "0.0.6"
+version = "0.0.7"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
@@ -38,19 +38,19 @@ cosmic-text = "0.19"
 flate2 = "1"
 simd-adler32 = "0.3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-katui-app = { path = "crates/katui-app", version = "0.0.6" }
+katui-app = { path = "crates/katui-app", version = "0.0.7" }
 katui-bindings = { path = "bindings/core" }
-katui-content = { path = "crates/katui-content", version = "0.0.6" }
-katui-draw = { path = "crates/katui-draw", version = "0.0.6" }
-katui-game = { path = "crates/katui-game", version = "0.0.6" }
-katui-layout = { path = "crates/katui-layout", version = "0.0.6" }
-katui-present = { path = "crates/katui-present", version = "0.0.6" }
-katui-proto = { path = "crates/katui-proto", version = "0.0.6" }
-katui-ratatui = { path = "crates/katui-ratatui", version = "0.0.6" }
-katui-rt = { path = "crates/katui-rt", version = "0.0.6" }
-katui-scene = { path = "crates/katui-scene", version = "0.0.6" }
-katui-ui = { path = "crates/katui-ui", version = "0.0.6" }
-katui-widgets = { path = "crates/katui-widgets", version = "0.0.6" }
+katui-content = { path = "crates/katui-content", version = "0.0.7" }
+katui-draw = { path = "crates/katui-draw", version = "0.0.7" }
+katui-game = { path = "crates/katui-game", version = "0.0.7" }
+katui-layout = { path = "crates/katui-layout", version = "0.0.7" }
+katui-present = { path = "crates/katui-present", version = "0.0.7" }
+katui-proto = { path = "crates/katui-proto", version = "0.0.7" }
+katui-ratatui = { path = "crates/katui-ratatui", version = "0.0.7" }
+katui-rt = { path = "crates/katui-rt", version = "0.0.7" }
+katui-scene = { path = "crates/katui-scene", version = "0.0.7" }
+katui-ui = { path = "crates/katui-ui", version = "0.0.7" }
+katui-widgets = { path = "crates/katui-widgets", version = "0.0.7" }
 pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = { version = "0.30", default-features = false }
 signal-hook = { version = "0.3", default-features = false }
