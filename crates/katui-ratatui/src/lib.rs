@@ -2,7 +2,7 @@
 //! kitty images beside the cells.
 
 pub mod image;
-#[cfg(all(unix, feature = "run"))]
+#[cfg(feature = "run")]
 pub mod run;
 
 use std::io;

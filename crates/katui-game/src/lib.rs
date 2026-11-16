@@ -1,6 +1,5 @@
 //! Arcade games on katui: draw into a [`Light`] buffer, read [`HeldKeys`]
 //! and let [`play`] run the fixed-step loop.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 
 mod arcade;
 mod font;

@@ -10,19 +10,12 @@ pub mod media;
 pub mod session;
 pub mod stash;
 
-#[cfg(unix)]
 pub mod app;
-#[cfg(unix)]
 pub mod events;
-#[cfg(unix)]
 pub mod headless;
-#[cfg(unix)]
 pub mod pacing;
-#[cfg(unix)]
 pub mod pane;
-#[cfg(unix)]
 mod stop;
-#[cfg(unix)]
 pub mod tty;
 
 /// Failures of the terminal lifecycle: the crate's one error enum.

@@ -1,7 +1,6 @@
 //! The katui widget tour: a menu bar, a file tree beside a scrolling page
 //! of controls, a table, a note, toasts and a dialog. Run with
 //! `just demo-widgets`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 
 use std::time::{Duration, Instant};
 

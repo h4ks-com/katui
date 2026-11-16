@@ -25,6 +25,10 @@ gamepad = ["dep:gilrs"]
 rustix.workspace = true
 signal-hook.workspace = true
 
+# safe wrappers over the console calls, since unsafe is denied here
+[target.'cfg(windows)'.dependencies]
+crossterm_winapi.workspace = true
+
 # the snake demo's soak test builds its frames with the image crate
 [dev-dependencies]
 base64.workspace = true

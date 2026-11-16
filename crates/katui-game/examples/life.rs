@@ -1,5 +1,4 @@
 //! Conway's game of life over a nebula; a stalled board reseeds. Run with `just demo-life`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(
     // We wrap torus coordinates inside the grid before indexing, so every index is in bounds.
     clippy::indexing_slicing,

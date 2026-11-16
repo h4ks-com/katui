@@ -2,7 +2,6 @@
 //! widgets, with the picture drawn beside them through the kitty graphics
 //! protocol. It shows five generated pictures and any image files you
 //! pass. Run with `just demo-ratatui`, or `just demo-ratatui photo.jpg`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,

@@ -3,7 +3,6 @@
 //! frame counts as delivered when the terminal answers it: the terminal
 //! parses its stream in order, so the answer proves the frame was
 //! consumed. Run with `just pace`.
-#![cfg(unix)] // the instrument drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss, clippy::print_stdout)]
 
 use std::time::{Duration, Instant};

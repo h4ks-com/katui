@@ -4,7 +4,6 @@
 //!
 //! A binding implements [`app::AppHost`] or [`game::GameHost`] over its
 //! own values, converts arguments and raises [`Error`]s in its own style.
-#![cfg(unix)]
 
 pub mod app;
 pub mod event;

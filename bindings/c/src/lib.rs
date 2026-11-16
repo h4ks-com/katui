@@ -1,6 +1,5 @@
 //! The C ABI behind `katui.h`: apps, widgets, documents and games over
 //! opaque pointers and function-pointer callbacks.
-#![cfg(unix)]
 // a C ABI reads raw pointers from its callers, which takes unsafe
 #![allow(unsafe_code)]
 // every function shares one safety contract, stated once in the header

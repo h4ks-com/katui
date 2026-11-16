@@ -142,6 +142,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // the stand-in decoder is a shell one-liner
     #[test]
     fn a_stream_hands_out_the_newest_due_frame_then_ends() {
         let mut command = Command::new("sh");

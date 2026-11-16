@@ -2,7 +2,6 @@
 //! subset, with scrolling and links between local pages. Run with
 //! `just demo-browse` for the bundled pages, `just demo-html` for the page
 //! that shows every part of the subset, or pass a path to a page.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 
 use std::cell::RefCell;
 use std::collections::HashMap;

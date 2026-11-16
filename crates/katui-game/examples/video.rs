@@ -1,7 +1,6 @@
 //! The katui video demo: plays a file or stream URL through ffmpeg, its
 //! sound through ffplay, and a beeping test pattern when given nothing.
 //! Space pauses, the arrows seek, m mutes. Run with `just demo-video`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,

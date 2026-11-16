@@ -1,6 +1,5 @@
 //! A glowing ball the arrow keys steer, the smallest katui game. Run with
 //! `just demo-glow`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss)]
 
 use katui::game::{Game, HeldKeys, Key, Light, P2, play};

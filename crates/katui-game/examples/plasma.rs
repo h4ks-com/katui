@@ -1,6 +1,5 @@
 //! An interference plasma cycling from blue through orange to pink. Run
 //! with `just demo-plasma`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,

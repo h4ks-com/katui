@@ -1,5 +1,4 @@
 //! A click counter, the smallest katui program. Run with `just demo-counter`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 
 use katui::app::{Control, UiApp, run};
 use katui::ui::{Align, Element};

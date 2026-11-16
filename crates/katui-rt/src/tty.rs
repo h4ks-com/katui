@@ -11,9 +11,9 @@ use katui_proto::probe::{Transport, probe, sniff};
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub use unix::{RawInput, TtyTransport, size};
-#[cfg(unix)]
 use unix::measured_cell;
+#[cfg(unix)]
+pub use unix::{RawInput, TtyTransport, size};
 
 #[cfg(windows)]
 mod windows;

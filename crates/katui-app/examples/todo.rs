@@ -1,6 +1,5 @@
 //! The katui to-do demo: a task list on the widgets crate. Run with
 //! `just demo-todo`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss)]
 
 use katui_app::{Control, UiApp, run};

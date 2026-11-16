@@ -1,6 +1,5 @@
 //! The katui snake demo: a snake that plays itself on a bordered grid.
 //! Run with `just demo-snake`.
-#![cfg(unix)] // the runner drives /dev/tty through katui-rt's unix layer
 #![allow(clippy::cast_precision_loss)]
 
 use katui_game::{Blend, Game, HeldKeys, Light, P2, Rng, play, srgb};

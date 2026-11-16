@@ -1,5 +1,4 @@
 //! The native module behind the `katui` npm package.
-#![cfg(unix)]
 // napi passes JavaScript values as raw handles, and reading one as a class
 // instance is an unsafe call even after the type is checked
 #![allow(unsafe_code)]
