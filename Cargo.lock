@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "katui"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "image",
  "katui-app",
@@ -711,7 +711,7 @@ dependencies = [
 
 [[package]]
 name = "katui-app"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "image",
  "katui-content",
@@ -726,7 +726,7 @@ dependencies = [
 
 [[package]]
 name = "katui-bindings"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "image",
  "katui-app",
@@ -742,7 +742,7 @@ dependencies = [
 
 [[package]]
 name = "katui-c"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "katui-app",
  "katui-bindings",
@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "katui-content"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "ego-tree",
  "image",
@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "katui-draw"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "cosmic-text",
  "image",
@@ -782,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "katui-game"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "image",
  "katui-present",
@@ -793,14 +793,14 @@ dependencies = [
 
 [[package]]
 name = "katui-layout"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "katui-scene",
 ]
 
 [[package]]
 name = "katui-node"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "katui-app",
  "katui-bindings",
@@ -818,7 +818,7 @@ dependencies = [
 
 [[package]]
 name = "katui-present"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "katui-proto",
  "katui-scene",
@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "katui-proto"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "base64",
  "flate2",
@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "katui-python"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "katui-app",
  "katui-bindings",
@@ -851,7 +851,7 @@ dependencies = [
 
 [[package]]
 name = "katui-ratatui"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "image",
  "katui-draw",
@@ -865,7 +865,7 @@ dependencies = [
 
 [[package]]
 name = "katui-rt"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "base64",
  "flate2",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "katui-scene"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "unicode-segmentation",
  "unicode-width",
@@ -889,7 +889,7 @@ dependencies = [
 
 [[package]]
 name = "katui-ui"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "image",
  "katui-draw",
@@ -900,7 +900,7 @@ dependencies = [
 
 [[package]]
 name = "katui-widgets"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "image",
  "katui-draw",
@@ -1017,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "md-viewer"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "image",
  "katui",

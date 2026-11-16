@@ -1,6 +1,6 @@
 {
   "name": "@mattfillipe/katui",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Apps, games and documents drawn in pixels inside the terminal",
   "keywords": [
     "terminal",
