@@ -211,7 +211,15 @@ impl<G: Game> App for Arcade<G> {
 /// change. A system without controller support plays from the keyboard.
 #[cfg(feature = "gamepad")]
 fn watch_pads(waker: Waker<Vec<Key>>) {
-    let _ = katui_rt::gamepad::watch(move |pads| waker.send(pad_keys(pads)));
+    let mut held = Vec::new();
+    let _ = katui_rt::gamepad::watch(move |pads| {
+        let keys = pad_keys(pads);
+        if keys == held {
+            return true;
+        }
+        held.clone_from(&keys);
+        waker.send(keys)
+    });
 }
 
 #[cfg(not(feature = "gamepad"))]
