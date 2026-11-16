@@ -14,6 +14,8 @@ const KEYPAD_ENTER: u32 = 57414;
 
 enum Parsed {
     Event(InputEvent, usize),
+    /// A key event with the base layout key the terminal reported for it.
+    Based(char, InputEvent, usize),
     Skip(usize),
     Incomplete,
 }
@@ -36,6 +38,10 @@ impl InputParser {
             match parse_one(rest) {
                 Parsed::Event(event, length) => {
                     events.push(event);
+                    consumed += length;
+                }
+                Parsed::Based(base, event, length) => {
+                    events.extend([InputEvent::BaseLayoutKey(base), event]);
                     consumed += length;
                 }
                 Parsed::Skip(length) => consumed += length,
@@ -120,7 +126,7 @@ fn parse_escape(bytes: &[u8], rest: &[u8]) -> Parsed {
                 key(pressed, Mods { alt: true, ..mods }, length + 1)
             }
             Parsed::Incomplete => Parsed::Incomplete,
-            Parsed::Event(..) | Parsed::Skip(_) => Parsed::Skip(2),
+            Parsed::Event(..) | Parsed::Based(..) | Parsed::Skip(_) => Parsed::Skip(2),
         },
     }
 }
@@ -191,10 +197,10 @@ fn parse_csi(bytes: &[u8], tail: &[u8]) -> Parsed {
             None => Parsed::Skip(length),
         },
     };
-    if reports_release(parameters) {
-        as_release(parsed)
-    } else {
-        parsed
+    let typed = with_event_type(parsed, parameters);
+    match (typed, base_layout_key(parameters)) {
+        (Parsed::Event(event, length), Some(base)) => Parsed::Based(base, event, length),
+        (typed, _) => typed,
     }
 }
 
@@ -227,23 +233,35 @@ fn parse_special_csi(
     }
 }
 
-/// The kitty keyboard protocol puts the event type after the modifiers,
-/// and type 3 is a release.
-fn reports_release(parameters: &str) -> bool {
-    parameters
+/// The kitty keyboard protocol puts the event type after the modifiers:
+/// 1 is a press, 2 a repeat and 3 a release.
+fn with_event_type(parsed: Parsed, parameters: &str) -> Parsed {
+    let Parsed::Event(InputEvent::Key(pressed, mods), length) = parsed else {
+        return parsed;
+    };
+    let event_type = parameters
         .split(';')
         .nth(1)
-        .and_then(|modifiers| modifiers.split(':').nth(1))
-        == Some("3")
+        .and_then(|modifiers| modifiers.split(':').nth(1));
+    let event = match event_type {
+        Some("2") => InputEvent::KeyRepeat(pressed, mods),
+        Some("3") => InputEvent::KeyUp(pressed, mods),
+        _ => InputEvent::Key(pressed, mods),
+    };
+    Parsed::Event(event, length)
 }
 
-fn as_release(parsed: Parsed) -> Parsed {
-    match parsed {
-        Parsed::Event(InputEvent::Key(released, mods), length) => {
-            Parsed::Event(InputEvent::KeyUp(released, mods), length)
-        }
-        other => other,
-    }
+/// The third sub-parameter of the key code, sent under the kitty "report
+/// alternate keys" flag.
+fn base_layout_key(parameters: &str) -> Option<char> {
+    let code = parameters
+        .split(';')
+        .next()?
+        .split(':')
+        .nth(2)?
+        .parse()
+        .ok()?;
+    char::from_u32(code)
 }
 
 /// The number before any `:` sub-parameters in field `index`.
@@ -526,15 +544,37 @@ pub(in crate::input) mod tests {
     }
 
     #[test]
-    fn key_event_types_separate_releases_from_presses() {
+    fn key_event_types_separate_presses_repeats_and_releases() {
         let mut parser = InputParser::default();
         assert_eq!(
-            parser.feed(b"\x1b[97;1:1u\x1b[97;1:2u\x1b[97;1:3u\x1b[1;1:3A"),
+            parser.feed(b"\x1b[97;1:1u\x1b[97;1:2u\x1b[97;1:3u\x1b[1;1:3A\x1b[1;5:2B"),
             vec![
                 InputEvent::Key(Key::Char('a'), Mods::NONE),
-                InputEvent::Key(Key::Char('a'), Mods::NONE),
+                InputEvent::KeyRepeat(Key::Char('a'), Mods::NONE),
                 InputEvent::KeyUp(Key::Char('a'), Mods::NONE),
                 InputEvent::KeyUp(Key::Up, Mods::NONE),
+                InputEvent::KeyRepeat(Key::Down, CTRL),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_reported_base_layout_key_comes_right_before_its_key() {
+        assert_eq!(
+            parse(b"\x1b[1089::99;5u\x1b[1089:1057:99;6:3u\x1b[97:65;2u"),
+            vec![
+                InputEvent::BaseLayoutKey('c'),
+                InputEvent::Key(Key::Char('с'), CTRL),
+                InputEvent::BaseLayoutKey('c'),
+                InputEvent::KeyUp(
+                    Key::Char('с'),
+                    Mods {
+                        shift: true,
+                        ctrl: true,
+                        ..Mods::NONE
+                    }
+                ),
+                InputEvent::Key(Key::Char('a'), SHIFT),
             ]
         );
     }

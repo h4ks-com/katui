@@ -681,6 +681,8 @@ impl Chat {
             }
             InputEvent::Mouse(_)
             | InputEvent::KeyUp(..)
+            | InputEvent::KeyRepeat(..)
+            | InputEvent::BaseLayoutKey(_)
             | InputEvent::Mode(..)
             | InputEvent::GraphicsAnswer(_)
             | InputEvent::DeviceAttributes => Control::Wait,

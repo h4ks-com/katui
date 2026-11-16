@@ -327,10 +327,18 @@ pub struct MouseEvent {
 /// One thing the terminal reported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
-    /// A key press or auto-repeat.
+    /// A key press. Terminals that report no event types send auto-repeats
+    /// as presses too.
     Key(Key, Mods),
+    /// A key auto-repeating while held, reported only after the
+    /// application asks for releases.
+    KeyRepeat(Key, Mods),
     /// A key release, reported only after the application asks for them.
     KeyUp(Key, Mods),
+    /// The key at the same place on a US layout as the key of the event
+    /// that follows, which shortcuts can match whatever layout is active.
+    /// Only the kitty keyboard protocol reports it.
+    BaseLayoutKey(char),
     /// A mouse event.
     Mouse(MouseEvent),
     /// Text pasted as one block.

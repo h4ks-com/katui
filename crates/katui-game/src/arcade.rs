@@ -145,7 +145,7 @@ impl<G: Game> Arcade<G> {
             return Control::Quit;
         }
         match event {
-            InputEvent::Key(key, _) => {
+            InputEvent::Key(key, _) | InputEvent::KeyRepeat(key, _) => {
                 self.keys.tick(now);
                 if self.keys.is_held(*key) {
                     self.game.repeat(*key);
@@ -334,7 +334,7 @@ mod tests {
             .draw(&mut second, size)
             .expect("a Vec accepts writes");
         let text = String::from_utf8_lossy(&first);
-        assert!(text.contains("\x1b[=11;1u"));
+        assert!(text.contains("\x1b[=15;1u"));
         assert!(text.contains("\x1b_G"), "the first frame sends pixels");
         assert!(second.is_empty());
     }
@@ -346,7 +346,8 @@ mod tests {
         let enter = InputEvent::Key(Key::Enter, Mods::NONE);
         arcade.on_input(&enter, now);
         arcade.on_input(&enter, now);
-        assert_eq!((arcade.game.presses, arcade.game.repeats), (1, 1));
+        arcade.on_input(&InputEvent::KeyRepeat(Key::Enter, Mods::NONE), now);
+        assert_eq!((arcade.game.presses, arcade.game.repeats), (1, 2));
         let quit = InputEvent::Key(Key::Char('q'), Mods::NONE);
         assert_eq!(arcade.on_input(&quit, now), Control::Quit);
     }

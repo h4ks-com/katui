@@ -18,9 +18,10 @@ pub fn leave<W: Sink>(out: &mut W) -> io::Result<()> {
 
 /// Turn on what an interactive application reads: all mouse motion in SGR
 /// form with pixel coordinates, focus changes, bracketed paste and
-/// unambiguous keys, then ask whether pixel coordinates took effect.
+/// unambiguous keys with their base layout key, then ask whether pixel
+/// coordinates took effect.
 pub fn enable_input<W: Sink>(out: &mut W) -> io::Result<()> {
-    out.write_all(b"\x1b[?1003h\x1b[?1006h\x1b[?1016h\x1b[?1004h\x1b[?2004h\x1b[>1u\x1b[?1016$p")
+    out.write_all(b"\x1b[?1003h\x1b[?1006h\x1b[?1016h\x1b[?1004h\x1b[?2004h\x1b[>5u\x1b[?1016$p")
 }
 
 /// Undo [`enable_input`].
@@ -29,10 +30,11 @@ pub fn disable_input<W: Sink>(out: &mut W) -> io::Result<()> {
 }
 
 /// Also report key repeats and releases, with every key as an escape
-/// code so that plain letters report theirs too. [`disable_input`] undoes
+/// code so that plain letters and modifier keys report theirs too, and
+/// keep the base layout key. [`disable_input`] undoes
 /// this along with the rest.
 pub fn report_key_releases<W: Sink>(out: &mut W) -> io::Result<()> {
-    out.write_all(b"\x1b[=11;1u")
+    out.write_all(b"\x1b[=15;1u")
 }
 
 /// Ask the terminal to answer under `id` once it has consumed everything
@@ -56,7 +58,7 @@ mod tests {
         let (mut flags, mut off) = (Vec::new(), Vec::new());
         report_key_releases(&mut flags).expect("writing to a Vec cannot fail");
         disable_input(&mut off).expect("writing to a Vec cannot fail");
-        assert_eq!(flags, b"\x1b[=11;1u");
+        assert_eq!(flags, b"\x1b[=15;1u");
         assert!(
             off.starts_with(b"\x1b[=0;1u\x1b[<u"),
             "clearing the flags before popping covers terminals that keep them"
