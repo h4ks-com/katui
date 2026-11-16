@@ -188,6 +188,9 @@ Your existing widgets keep working, with real images placed next to them.
 | Any other color terminal | Quarter blocks, four pixels per cell |
 | tmux and rmux | Kitty graphics in kitty and Ghostty outside the multiplexer |
 
+On Windows, kitty graphics need WezTerm's nightly build, and Windows
+Terminal 1.22 or newer shows sixel images.
+
 katui checks what the terminal supports when it starts. To choose yourself,
 set `KATUI_GRAPHICS` when you run your app:
 
