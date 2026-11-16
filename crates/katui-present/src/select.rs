@@ -58,6 +58,7 @@ mod tests {
             text_area: None,
             relative_placements: false,
             local_files: false,
+            key_releases: false,
             id_space: katui_proto::kitty::IdSpace::default(),
             trust: ProbeSource::Probed,
         }

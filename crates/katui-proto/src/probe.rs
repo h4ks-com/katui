@@ -220,6 +220,9 @@ pub struct Capabilities {
     /// frames can skip compression, base64 and the terminal connection.
     /// The runtime asks, since only the same machine can answer yes.
     pub local_files: bool,
+    /// The terminal reports key repeats and releases on request, as the
+    /// kitty keyboard protocol does, from its answer to `CSI ? u`.
+    pub key_releases: bool,
     /// The image ids this program owns. The runtime gives each program its
     /// own space under a multiplexer, where programs share one terminal.
     pub id_space: IdSpace,
@@ -252,8 +255,8 @@ const PROBE_ANIMATION_ID: u32 = 30;
 
 /// The query batch: the kitty query under [`PROBE_IMAGE_ID`], an
 /// animation probe that creates a silent one-pixel image, appends one
-/// answered frame and frees the image, XTVERSION, the cell size and DA1
-/// last as the barrier. `AAAA` decodes to three bytes, one RGB pixel, so
+/// answered frame and frees the image, XTVERSION, the cell size, the
+/// kitty keyboard flags and DA1 last as the barrier. `AAAA` decodes to three bytes, one RGB pixel, so
 /// every command here declares `f=24`.
 fn batch(env: &Env) -> Vec<u8> {
     let queries = format!(
@@ -261,7 +264,7 @@ fn batch(env: &Env) -> Vec<u8> {
          \x1b_Ga=t,i={PROBE_ANIMATION_ID},s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\\
          \x1b_Ga=f,i={PROBE_ANIMATION_ID},s=1,v=1,f=24,t=d;AAAA\x1b\\\
          \x1b_Ga=d,d=I,i={PROBE_ANIMATION_ID},q=2\x1b\\\
-         \x1b[>0q\x1b[14t\x1b[16t\x1b[c"
+         \x1b[>0q\x1b[14t\x1b[16t\x1b[?u\x1b[c"
     )
     .into_bytes();
     if env.inside_multiplexer() {
@@ -283,6 +286,7 @@ struct Replies {
     cell: Option<CellPixels>,
     text_area: Option<CellPixels>,
     sixel: bool,
+    key_releases: bool,
     barrier: bool,
     animation_answer: Option<bool>,
 }
@@ -317,6 +321,7 @@ pub fn probe(transport: &mut dyn Transport, env: &Env) -> Capabilities {
     if let Some(identity) = replies.identity {
         caps.identity = Some(identity);
     }
+    caps.key_releases = replies.key_releases;
     caps.cell = replies.cell.or(caps.cell);
     caps.text_area = replies.text_area.or(caps.text_area);
     if let Some(forced) = env.forced_graphics() {
@@ -370,6 +375,7 @@ pub fn sniff(env: &Env) -> Capabilities {
         text_area: None,
         relative_placements: env.launched_from_kitty(),
         local_files: false,
+        key_releases: false,
         id_space: IdSpace::default(),
         trust: ProbeSource::Sniffed,
     };
@@ -459,6 +465,7 @@ fn note_csi(params: &str, final_byte: u8, replies: &mut Replies) {
             replies.barrier = true;
             replies.sixel |= params.strip_prefix('?').is_some_and(has_sixel);
         }
+        b'u' if params.starts_with('?') => replies.key_releases = true,
         b't' => {
             replies.cell = parse_size(params, "6").or(replies.cell);
             replies.text_area = parse_size(params, "4").or(replies.text_area);
@@ -603,7 +610,7 @@ mod tests {
     #[test]
     fn a_full_kitty_session_reports_everything() {
         let mut transport = Scripted::new(&[
-            b"\x1b_Gi=31;OK\x1b\\\x1b_Gi=30,r=2;OK\x1b\\\x1bP>|kitty(0.29.0)\x1b\\\x1b[4;700;560t\x1b[6;14;7t\x1b[?62;1;2;6;9;22c",
+            b"\x1b_Gi=31;OK\x1b\\\x1b_Gi=30,r=2;OK\x1b\\\x1bP>|kitty(0.29.0)\x1b\\\x1b[4;700;560t\x1b[6;14;7t\x1b[?1u\x1b[?62;1;2;6;9;22c",
         ]);
         let caps = probe(&mut transport, &env());
         assert_eq!(
@@ -627,6 +634,7 @@ mod tests {
                 }),
                 relative_placements: true,
                 local_files: false,
+                key_releases: true,
                 id_space: super::IdSpace::default(),
                 trust: super::ProbeSource::Probed,
             }
@@ -672,6 +680,7 @@ mod tests {
         let mut transport = Scripted::new(&[b"\x1b[?64;1;2;4;6;9;15c"]);
         let caps = probe(&mut transport, &env());
         assert!(caps.sixel);
+        assert!(!caps.key_releases, "no keyboard flags answer, no releases");
         assert_eq!(caps.kitty, env().supports_kitty(), "DA1 alone adds nothing");
         assert_eq!(caps.trust, super::ProbeSource::Probed);
     }
@@ -783,7 +792,7 @@ mod tests {
               \x1b_Ga=t,i=30,s=1,v=1,f=24,t=d,q=2;AAAA\x1b\\\
               \x1b_Ga=f,i=30,s=1,v=1,f=24,t=d;AAAA\x1b\\\
               \x1b_Ga=d,d=I,i=30,q=2\x1b\\\
-              \x1b[>0q\x1b[14t\x1b[16t\x1b[c"
+              \x1b[>0q\x1b[14t\x1b[16t\x1b[?u\x1b[c"
                 .to_vec()
         );
     }
@@ -794,7 +803,7 @@ mod tests {
         mux.tmux = Some("pane".to_owned());
         let batch = super::batch(&mux);
         assert!(batch.starts_with(b"\x1bPtmux;\x1b\x1b_Gi=31"));
-        assert!(batch.ends_with(b"\x1b[>0q\x1b[14t\x1b[16t\x1b[c"));
+        assert!(batch.ends_with(b"\x1b[>0q\x1b[14t\x1b[16t\x1b[?u\x1b[c"));
     }
 
     #[test]
