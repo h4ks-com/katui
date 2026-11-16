@@ -146,13 +146,12 @@ where
 fn read<F: FnMut(&[Pad]) -> bool>(mut gilrs: Gilrs, mut on_change: F) {
     let mut last = Vec::new();
     loop {
-        let mut changed = false;
-        while gilrs.next_event_blocking(Some(POLL)).is_some() {
-            changed = true;
-        }
-        if !changed {
+        if gilrs.next_event_blocking(Some(POLL)).is_none() {
             continue;
         }
+        // a controller in use reports without pause, so we take only the
+        // events already queued and never wait for a quiet moment
+        while gilrs.next_event().is_some() {}
         let pads = snapshot(&gilrs);
         if pads != last {
             if !on_change(&pads) {
