@@ -123,9 +123,8 @@ mod tests {
     #[test]
     fn a_press_reads_back_its_key_and_mods() {
         let ctrl = Mods {
-            shift: false,
-            alt: false,
             ctrl: true,
+            ..Mods::NONE
         };
         let event = press("enter", ctrl).ok();
         let event = event.as_ref();

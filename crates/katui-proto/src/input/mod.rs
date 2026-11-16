@@ -8,12 +8,17 @@ mod parse;
 
 pub use parse::InputParser;
 
-/// Modifier keys held during a key or mouse event.
+/// Modifier keys held during a key or mouse event. Only the kitty keyboard
+/// protocol reports Super, Hyper and Meta.
+#[allow(clippy::struct_excessive_bools)] // a modifier set is flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Mods {
     pub shift: bool,
     pub alt: bool,
     pub ctrl: bool,
+    pub super_key: bool,
+    pub hyper: bool,
+    pub meta: bool,
 }
 
 impl Mods {
@@ -21,6 +26,9 @@ impl Mods {
         shift: false,
         alt: false,
         ctrl: false,
+        super_key: false,
+        hyper: false,
+        meta: false,
     };
 
     /// From the xterm parameter form, one plus a bit mask.
@@ -30,6 +38,9 @@ impl Mods {
             shift: bits & 1 != 0,
             alt: bits & 2 != 0,
             ctrl: bits & 4 != 0,
+            super_key: bits & 8 != 0,
+            hyper: bits & 16 != 0,
+            meta: bits & 32 != 0,
         }
     }
 }
@@ -55,10 +66,84 @@ pub enum Key {
     PageDown,
     /// A function key, 1-based.
     Function(u8),
+    /// A key on the numeric keypad. The keypad Enter reports as
+    /// [`Key::Enter`].
+    Keypad(KeypadKey),
+    /// A media or volume key.
+    Media(MediaKey),
+    /// A modifier key pressed or released on its own.
+    Modifier(ModifierKey),
+    CapsLock,
+    NumLock,
+    ScrollLock,
+    PrintScreen,
+    Pause,
+    Menu,
+}
+
+/// A key on the numeric keypad.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeypadKey {
+    /// A digit key, 0 to 9.
+    Digit(u8),
+    Decimal,
+    Divide,
+    Multiply,
+    Subtract,
+    Add,
+    Equal,
+    Separator,
+    Left,
+    Right,
+    Up,
+    Down,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Insert,
+    Delete,
+    /// The middle key, 5 with Num Lock off.
+    Begin,
+}
+
+/// A media or volume key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaKey {
+    Play,
+    Pause,
+    PlayPause,
+    Reverse,
+    Stop,
+    FastForward,
+    Rewind,
+    Next,
+    Previous,
+    Record,
+    LowerVolume,
+    RaiseVolume,
+    Mute,
+}
+
+/// A modifier key, left or right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModifierKey {
+    LeftShift,
+    RightShift,
+    LeftControl,
+    RightControl,
+    LeftAlt,
+    RightAlt,
+    LeftSuper,
+    RightSuper,
+    LeftHyper,
+    RightHyper,
+    LeftMeta,
+    RightMeta,
 }
 
 /// The keys with a name of their own, by the name `Key::name` gives them.
-const NAMED_KEYS: [(&str, Key); 14] = [
+const NAMED_KEYS: [(&str, Key); 63] = [
     ("enter", Key::Enter),
     ("tab", Key::Tab),
     ("backspace", Key::Backspace),
@@ -73,16 +158,66 @@ const NAMED_KEYS: [(&str, Key); 14] = [
     ("end", Key::End),
     ("page_up", Key::PageUp),
     ("page_down", Key::PageDown),
+    ("caps_lock", Key::CapsLock),
+    ("num_lock", Key::NumLock),
+    ("scroll_lock", Key::ScrollLock),
+    ("print_screen", Key::PrintScreen),
+    ("pause", Key::Pause),
+    ("menu", Key::Menu),
+    ("kp_decimal", Key::Keypad(KeypadKey::Decimal)),
+    ("kp_divide", Key::Keypad(KeypadKey::Divide)),
+    ("kp_multiply", Key::Keypad(KeypadKey::Multiply)),
+    ("kp_subtract", Key::Keypad(KeypadKey::Subtract)),
+    ("kp_add", Key::Keypad(KeypadKey::Add)),
+    ("kp_equal", Key::Keypad(KeypadKey::Equal)),
+    ("kp_separator", Key::Keypad(KeypadKey::Separator)),
+    ("kp_left", Key::Keypad(KeypadKey::Left)),
+    ("kp_right", Key::Keypad(KeypadKey::Right)),
+    ("kp_up", Key::Keypad(KeypadKey::Up)),
+    ("kp_down", Key::Keypad(KeypadKey::Down)),
+    ("kp_page_up", Key::Keypad(KeypadKey::PageUp)),
+    ("kp_page_down", Key::Keypad(KeypadKey::PageDown)),
+    ("kp_home", Key::Keypad(KeypadKey::Home)),
+    ("kp_end", Key::Keypad(KeypadKey::End)),
+    ("kp_insert", Key::Keypad(KeypadKey::Insert)),
+    ("kp_delete", Key::Keypad(KeypadKey::Delete)),
+    ("kp_begin", Key::Keypad(KeypadKey::Begin)),
+    ("media_play", Key::Media(MediaKey::Play)),
+    ("media_pause", Key::Media(MediaKey::Pause)),
+    ("media_play_pause", Key::Media(MediaKey::PlayPause)),
+    ("media_reverse", Key::Media(MediaKey::Reverse)),
+    ("media_stop", Key::Media(MediaKey::Stop)),
+    ("media_fast_forward", Key::Media(MediaKey::FastForward)),
+    ("media_rewind", Key::Media(MediaKey::Rewind)),
+    ("media_next", Key::Media(MediaKey::Next)),
+    ("media_previous", Key::Media(MediaKey::Previous)),
+    ("media_record", Key::Media(MediaKey::Record)),
+    ("media_lower_volume", Key::Media(MediaKey::LowerVolume)),
+    ("media_raise_volume", Key::Media(MediaKey::RaiseVolume)),
+    ("media_mute", Key::Media(MediaKey::Mute)),
+    ("left_shift", Key::Modifier(ModifierKey::LeftShift)),
+    ("right_shift", Key::Modifier(ModifierKey::RightShift)),
+    ("left_control", Key::Modifier(ModifierKey::LeftControl)),
+    ("right_control", Key::Modifier(ModifierKey::RightControl)),
+    ("left_alt", Key::Modifier(ModifierKey::LeftAlt)),
+    ("right_alt", Key::Modifier(ModifierKey::RightAlt)),
+    ("left_super", Key::Modifier(ModifierKey::LeftSuper)),
+    ("right_super", Key::Modifier(ModifierKey::RightSuper)),
+    ("left_hyper", Key::Modifier(ModifierKey::LeftHyper)),
+    ("right_hyper", Key::Modifier(ModifierKey::RightHyper)),
+    ("left_meta", Key::Modifier(ModifierKey::LeftMeta)),
+    ("right_meta", Key::Modifier(ModifierKey::RightMeta)),
 ];
 
 impl Key {
-    /// The key's name: the character itself, `"enter"`, `"page_up"`, `"f1"`
-    /// and so on.
+    /// The key's name: the character itself, `"enter"`, `"page_up"`, `"f1"`,
+    /// `"kp_5"`, `"media_play"`, `"left_shift"` and so on.
     #[must_use]
     pub fn name(self) -> String {
         match self {
             Self::Char(character) => character.to_string(),
             Self::Function(number) => format!("f{number}"),
+            Self::Keypad(KeypadKey::Digit(digit)) => format!("kp_{digit}"),
             named => NAMED_KEYS
                 .iter()
                 .find(|(_, key)| *key == named)
@@ -106,6 +241,10 @@ impl Key {
             .find(|(known, _)| *known == name)
             .map(|(_, key)| *key)
             .or_else(|| name.strip_prefix('f')?.parse().ok().map(Self::Function))
+            .or_else(|| {
+                let digit = name.strip_prefix("kp_")?.parse().ok().filter(|d| *d < 10)?;
+                Some(Self::Keypad(KeypadKey::Digit(digit)))
+            })
     }
 }
 
@@ -293,21 +432,27 @@ impl Pointer {
 
 #[cfg(test)]
 mod tests {
-    use crate::input::{InputEvent, Key};
+    use crate::input::{InputEvent, Key, KeypadKey};
 
     use super::parse::tests::{CTRL, plain};
 
     #[test]
     fn every_key_name_reads_back_as_its_key() {
-        let keys = [Key::Char('a'), Key::Char(' '), Key::Function(12)]
-            .into_iter()
-            .chain(super::NAMED_KEYS.iter().map(|(_, key)| *key));
+        let keys = [
+            Key::Char('a'),
+            Key::Char(' '),
+            Key::Function(12),
+            Key::Keypad(KeypadKey::Digit(7)),
+        ]
+        .into_iter()
+        .chain(super::NAMED_KEYS.iter().map(|(_, key)| *key));
         for key in keys {
             assert_eq!(Key::from_name(&key.name()), Some(key), "{key:?}");
         }
         assert_eq!(Key::from_name("space"), Some(Key::Char(' ')));
         assert_eq!(Key::from_name("nothing"), None);
         assert_eq!(Key::from_name("fx"), None);
+        assert_eq!(Key::from_name("kp_10"), None);
     }
 
     #[test]

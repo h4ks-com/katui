@@ -55,7 +55,12 @@ pub unsafe extern "C" fn katui_event_press(
     alt: bool,
     shift: bool,
 ) -> *mut KatuiEvent {
-    let mods = Mods { shift, alt, ctrl };
+    let mods = Mods {
+        shift,
+        alt,
+        ctrl,
+        ..Mods::NONE
+    };
     owned_or_null(
         // SAFETY: the header requires `name` to be NULL or NUL-terminated.
         event::press(&unsafe { text(name) }, mods)

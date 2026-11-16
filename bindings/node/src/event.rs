@@ -43,6 +43,7 @@ impl Event {
             shift: modifiers.shift.unwrap_or(false),
             alt: modifiers.alt.unwrap_or(false),
             ctrl: modifiers.ctrl.unwrap_or(false),
+            ..Mods::NONE
         };
         event::press(&name, mods).map(Self::new).map_err(raise)
     }

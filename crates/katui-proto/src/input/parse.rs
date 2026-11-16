@@ -1,6 +1,8 @@
 //! The parser that turns terminal input bytes into events.
 
-use super::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent};
+use super::{
+    Button, InputEvent, Key, KeypadKey, MediaKey, ModifierKey, Mods, MouseAction, MouseEvent,
+};
 use crate::kitty;
 
 /// The longest incomplete sequence kept before it is discarded.
@@ -141,6 +143,7 @@ fn letter_key(letter: u8) -> Option<Key> {
         b'D' => Key::Left,
         b'H' => Key::Home,
         b'F' => Key::End,
+        b'E' => Key::Keypad(KeypadKey::Begin),
         b'P' => Key::Function(1),
         b'Q' => Key::Function(2),
         b'R' => Key::Function(3),
@@ -293,6 +296,7 @@ fn parse_tilde(parameters: &str, length: usize) -> Parsed {
         Some(15) => Key::Function(5),
         Some(number @ 17..=21) => Key::Function(u8::try_from(number - 11).unwrap_or(0)),
         Some(number @ 23..=24) => Key::Function(u8::try_from(number - 12).unwrap_or(0)),
+        Some(57427) => Key::Keypad(KeypadKey::Begin),
         _ => return Parsed::Skip(length),
     };
     key(pressed, modifiers_at(parameters, 1), length)
@@ -305,12 +309,93 @@ fn parse_unicode_key(parameters: &str, length: usize) -> Parsed {
         Some(13 | KEYPAD_ENTER) => key(Key::Enter, mods, length),
         Some(9) => key(Key::Tab, mods, length),
         Some(127) => key(Key::Backspace, mods, length),
-        Some(code) if FUNCTIONAL_KEYS.contains(&code) => Parsed::Skip(length),
+        Some(code) if FUNCTIONAL_KEYS.contains(&code) => match functional_key(code) {
+            Some(pressed) => key(pressed, mods, length),
+            None => Parsed::Skip(length),
+        },
         Some(code) => match char::from_u32(code) {
             Some(character) => key(Key::Char(character), mods, length),
             None => Parsed::Skip(length),
         },
         None => Parsed::Skip(length),
+    }
+}
+
+const LOCK_KEYS: [Key; 6] = [
+    Key::CapsLock,
+    Key::ScrollLock,
+    Key::NumLock,
+    Key::PrintScreen,
+    Key::Pause,
+    Key::Menu,
+];
+const KEYPAD_OPERATORS: [KeypadKey; 5] = [
+    KeypadKey::Decimal,
+    KeypadKey::Divide,
+    KeypadKey::Multiply,
+    KeypadKey::Subtract,
+    KeypadKey::Add,
+];
+const KEYPAD_REST: [KeypadKey; 13] = [
+    KeypadKey::Equal,
+    KeypadKey::Separator,
+    KeypadKey::Left,
+    KeypadKey::Right,
+    KeypadKey::Up,
+    KeypadKey::Down,
+    KeypadKey::PageUp,
+    KeypadKey::PageDown,
+    KeypadKey::Home,
+    KeypadKey::End,
+    KeypadKey::Insert,
+    KeypadKey::Delete,
+    KeypadKey::Begin,
+];
+const MEDIA_KEYS: [MediaKey; 13] = [
+    MediaKey::Play,
+    MediaKey::Pause,
+    MediaKey::PlayPause,
+    MediaKey::Reverse,
+    MediaKey::Stop,
+    MediaKey::FastForward,
+    MediaKey::Rewind,
+    MediaKey::Next,
+    MediaKey::Previous,
+    MediaKey::Record,
+    MediaKey::LowerVolume,
+    MediaKey::RaiseVolume,
+    MediaKey::Mute,
+];
+const MODIFIER_KEYS: [ModifierKey; 12] = [
+    ModifierKey::LeftShift,
+    ModifierKey::LeftControl,
+    ModifierKey::LeftAlt,
+    ModifierKey::LeftSuper,
+    ModifierKey::LeftHyper,
+    ModifierKey::LeftMeta,
+    ModifierKey::RightShift,
+    ModifierKey::RightControl,
+    ModifierKey::RightAlt,
+    ModifierKey::RightSuper,
+    ModifierKey::RightHyper,
+    ModifierKey::RightMeta,
+];
+
+/// A key from the kitty functional key table, which numbers each group
+/// consecutively.
+fn functional_key(code: u32) -> Option<Key> {
+    let nth = |first: u32| usize::try_from(code.checked_sub(first)?).ok();
+    match code {
+        57358..=57363 => LOCK_KEYS.get(nth(57358)?).copied(),
+        57376..=57398 => u8::try_from(code - 57363).ok().map(Key::Function),
+        57399..=57408 => u8::try_from(code - 57399)
+            .ok()
+            .map(|digit| Key::Keypad(KeypadKey::Digit(digit))),
+        57409..=57413 => KEYPAD_OPERATORS.get(nth(57409)?).copied().map(Key::Keypad),
+        57415..=57427 => KEYPAD_REST.get(nth(57415)?).copied().map(Key::Keypad),
+        57428..=57440 => MEDIA_KEYS.get(nth(57428)?).copied().map(Key::Media),
+        57441..=57452 => MODIFIER_KEYS.get(nth(57441)?).copied().map(Key::Modifier),
+        _ => None,
     }
 }
 
@@ -332,6 +417,7 @@ fn parse_mouse(fields: &str, final_byte: u8, length: usize) -> Parsed {
                 shift: code & 4 != 0,
                 alt: code & 8 != 0,
                 ctrl: code & 16 != 0,
+                ..Mods::NONE
             },
         }),
         length,
@@ -364,7 +450,13 @@ fn mouse_action(code: u32, released: bool) -> Option<MouseAction> {
 #[cfg(test)]
 pub(in crate::input) mod tests {
     use crate::input::{
-        Button, InputEvent, InputParser, Key, Mods, MouseAction, MouseEvent, Pointer,
+        Button, InputEvent, InputParser, Key, KeypadKey, MediaKey, ModifierKey, Mods, MouseAction,
+        MouseEvent, Pointer,
+    };
+
+    const SHIFT: Mods = Mods {
+        shift: true,
+        ..Mods::NONE
     };
     use crate::probe::CellPixels;
 
@@ -425,9 +517,8 @@ pub(in crate::input) mod tests {
     }
 
     pub(in crate::input) const CTRL: Mods = Mods {
-        shift: false,
-        alt: false,
         ctrl: true,
+        ..Mods::NONE
     };
 
     pub(in crate::input) fn plain(pressed: Key) -> InputEvent {
@@ -568,9 +659,96 @@ pub(in crate::input) mod tests {
     }
 
     #[test]
-    fn keypad_enter_sends_and_other_functional_keys_type_nothing() {
+    fn keypad_enter_sends_and_unknown_functional_keys_type_nothing() {
         assert_eq!(parse(b"\x1b[57414u"), vec![plain(Key::Enter)]);
-        assert_eq!(parse(b"\x1b[57376u"), vec![]);
+        assert_eq!(parse(b"\x1b[57364u\x1b[57453u"), vec![]);
+    }
+
+    #[test]
+    fn modifier_keys_pressed_alone_report_their_side() {
+        assert_eq!(
+            parse(b"\x1b[57441;2u\x1b[57447;2:3u\x1b[57442u\x1b[57450u\x1b[57446u\x1b[57452u"),
+            vec![
+                InputEvent::Key(Key::Modifier(ModifierKey::LeftShift), SHIFT),
+                InputEvent::KeyUp(Key::Modifier(ModifierKey::RightShift), SHIFT),
+                plain(Key::Modifier(ModifierKey::LeftControl)),
+                plain(Key::Modifier(ModifierKey::RightSuper)),
+                plain(Key::Modifier(ModifierKey::LeftMeta)),
+                plain(Key::Modifier(ModifierKey::RightMeta)),
+            ]
+        );
+    }
+
+    #[test]
+    fn super_hyper_and_meta_bits_parse_and_lock_bits_are_ignored() {
+        let all = Mods {
+            shift: true,
+            alt: true,
+            ctrl: true,
+            super_key: true,
+            hyper: true,
+            meta: true,
+        };
+        assert_eq!(
+            parse(b"\x1b[97;9u\x1b[97;17u\x1b[97;33u\x1b[97;64u\x1b[97;257u"),
+            vec![
+                InputEvent::Key(
+                    Key::Char('a'),
+                    Mods {
+                        super_key: true,
+                        ..Mods::NONE
+                    }
+                ),
+                InputEvent::Key(
+                    Key::Char('a'),
+                    Mods {
+                        hyper: true,
+                        ..Mods::NONE
+                    }
+                ),
+                InputEvent::Key(
+                    Key::Char('a'),
+                    Mods {
+                        meta: true,
+                        ..Mods::NONE
+                    }
+                ),
+                InputEvent::Key(Key::Char('a'), all),
+                plain(Key::Char('a')),
+            ]
+        );
+    }
+
+    #[test]
+    fn keypad_media_lock_and_high_function_keys_parse() {
+        assert_eq!(
+            parse(
+                b"\x1b[57399u\x1b[57404u\x1b[57409u\x1b[57413u\x1b[57415u\x1b[57417u\x1b[57426u\
+                  \x1b[57427u\x1b[1E\x1b[57427~\x1b[57428u\x1b[57430u\x1b[57440u\
+                  \x1b[57358u\x1b[57360u\x1b[57361u\x1b[57363u\x1b[57376u\x1b[57398u"
+            ),
+            vec![
+                plain(Key::Keypad(KeypadKey::Digit(0))),
+                plain(Key::Keypad(KeypadKey::Digit(5))),
+                plain(Key::Keypad(KeypadKey::Decimal)),
+                plain(Key::Keypad(KeypadKey::Add)),
+                plain(Key::Keypad(KeypadKey::Equal)),
+                plain(Key::Keypad(KeypadKey::Left)),
+                plain(Key::Keypad(KeypadKey::Delete)),
+                plain(Key::Keypad(KeypadKey::Begin)),
+                plain(Key::Keypad(KeypadKey::Begin)),
+                plain(Key::Keypad(KeypadKey::Begin)),
+                plain(Key::Media(MediaKey::Play)),
+                plain(Key::Media(MediaKey::PlayPause)),
+                plain(Key::Media(MediaKey::Mute)),
+                plain(Key::CapsLock),
+                plain(Key::NumLock),
+                plain(Key::PrintScreen),
+                plain(Key::Menu),
+                plain(Key::Function(13)),
+                plain(Key::Function(35)),
+            ]
+        );
     }
 
     #[test]

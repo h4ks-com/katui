@@ -25,7 +25,12 @@ impl PyEvent {
     #[pyo3(signature = (name, ctrl=false, alt=false, shift=false))]
     #[allow(clippy::fn_params_excessive_bools)]
     fn press(name: &str, ctrl: bool, alt: bool, shift: bool) -> PyResult<Self> {
-        let mods = Mods { shift, alt, ctrl };
+        let mods = Mods {
+            shift,
+            alt,
+            ctrl,
+            ..Mods::NONE
+        };
         let inner = event::press(name, mods).map_err(raise)?;
         Ok(Self { inner })
     }
