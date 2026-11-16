@@ -24,7 +24,7 @@ static void todo_screenshot(void) {
   KatuiApp app = todo_app(&todo);
   KatuiScreen *screen = katui_screen_new(&app, WIDTH, HEIGHT, 10, 20);
   CHECK(screen != NULL);
-  KatuiEvent *enter = katui_event_press("enter", false, false, false);
+  KatuiEvent *enter = katui_event_press("enter", false, false, false, false, false, false);
   CHECK(enter != NULL);
   const char *tasks[] = {"buy bread", "call the bank"};
   for (size_t index = 0; index < 2; index++) {

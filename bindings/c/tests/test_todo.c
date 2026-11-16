@@ -5,7 +5,7 @@
 #include "check.h"
 
 static void press(KatuiScreen *screen, const char *name) {
-  KatuiEvent *event = katui_event_press(name, false, false, false);
+  KatuiEvent *event = katui_event_press(name, false, false, false, false, false, false);
   CHECK(event != NULL);
   CHECK(katui_screen_send(screen, event) == KATUI_STATUS_OK);
   katui_event_free(event);

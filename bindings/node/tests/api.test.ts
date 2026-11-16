@@ -238,6 +238,11 @@ test('text fields and lists take events', () => {
   assert.equal(rows.selected, 1)
   assert.deepEqual(rows.inView(), [0, 3])
   assert.equal(Event.press('a', { ctrl: true }).ctrl, true)
+  const chord = Event.press('left_shift', { superKey: true, hyper: true, meta: true })
+  assert.deepEqual(
+    [chord.key, chord.superKey, chord.hyper, chord.meta, chord.ctrl],
+    ['left_shift', true, true, true, false],
+  )
   assert.throws(() => Event.press('nothing'), /name a key/)
 })
 

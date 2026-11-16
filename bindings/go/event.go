@@ -25,26 +25,31 @@ func (e *Event) ptr() *C.KatuiEvent {
 	return e.p
 }
 
-// Modifier is a key held with another: Ctrl, Alt or Shift.
+// Modifier is a key held with another: Ctrl, Alt, Shift, Super, Hyper or
+// Meta.
 type Modifier int
 
 const (
 	Ctrl Modifier = iota
 	Alt
 	Shift
+	Super
+	Hyper
+	Meta
 )
 
 // Press is a press of the key named name: one character, or "enter",
 // "tab", "escape", "up", "page_down", "f1" and so on. It is for tests and
 // for handing keys to widgets.
 func Press(name string, modifiers ...Modifier) (*Event, error) {
-	held := [3]bool{}
+	held := [6]bool{}
 	for _, modifier := range modifiers {
 		held[modifier] = true
 	}
 	s := cString(name)
 	defer free(s)
-	p := C.katui_event_press(s, C.bool(held[Ctrl]), C.bool(held[Alt]), C.bool(held[Shift]))
+	p := C.katui_event_press(s, C.bool(held[Ctrl]), C.bool(held[Alt]), C.bool(held[Shift]),
+		C.bool(held[Super]), C.bool(held[Hyper]), C.bool(held[Meta]))
 	if p == nil {
 		return nil, nullError("press " + name)
 	}
@@ -62,12 +67,13 @@ func Paste(text string) *Event {
 type EventKind uint32
 
 const (
-	OtherEvent EventKind = C.KATUI_EVENT_OTHER
-	KeyEvent   EventKind = C.KATUI_EVENT_KEY
-	KeyUpEvent EventKind = C.KATUI_EVENT_KEY_UP
-	MouseEvent EventKind = C.KATUI_EVENT_MOUSE
-	PasteEvent EventKind = C.KATUI_EVENT_PASTE
-	FocusEvent EventKind = C.KATUI_EVENT_FOCUS
+	OtherEvent     EventKind = C.KATUI_EVENT_OTHER
+	KeyEvent       EventKind = C.KATUI_EVENT_KEY
+	KeyRepeatEvent EventKind = C.KATUI_EVENT_KEY_REPEAT
+	KeyUpEvent     EventKind = C.KATUI_EVENT_KEY_UP
+	MouseEvent     EventKind = C.KATUI_EVENT_MOUSE
+	PasteEvent     EventKind = C.KATUI_EVENT_PASTE
+	FocusEvent     EventKind = C.KATUI_EVENT_FOCUS
 )
 
 func (e *Event) Kind() EventKind {
@@ -95,6 +101,21 @@ func (e *Event) Alt() bool {
 func (e *Event) Shift() bool {
 	defer runtime.KeepAlive(e)
 	return bool(C.katui_event_shift(e.ptr()))
+}
+
+func (e *Event) Super() bool {
+	defer runtime.KeepAlive(e)
+	return bool(C.katui_event_super(e.ptr()))
+}
+
+func (e *Event) Hyper() bool {
+	defer runtime.KeepAlive(e)
+	return bool(C.katui_event_hyper(e.ptr()))
+}
+
+func (e *Event) Meta() bool {
+	defer runtime.KeepAlive(e)
+	return bool(C.katui_event_meta(e.ptr()))
 }
 
 // Text is the pasted text, or "" for another event.

@@ -81,7 +81,7 @@ links), or `KATUI_PAYLOAD_NONE`. Return `KATUI_CONTROL_REDRAW`, `_WAIT`,
 
 - `input` gets a `KatuiEvent`. `katui_event_key(event)` returns the key name
   (one character, or `"enter"`, `"tab"`, `"up"`, ...) as a `char *` to free
-  with `katui_string_free`. `katui_event_press(name, ctrl, alt, shift)`
+  with `katui_string_free`. `katui_event_press(name, ctrl, alt, shift, super, hyper, meta)`
   builds one for tests.
 - State types with a `handle` function: `KatuiTextField`
   (`katui_text_field_handle` returns `KATUI_EDIT_SUBMITTED` on Enter),

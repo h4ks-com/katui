@@ -617,6 +617,8 @@ typedef struct KatuiColumn {
 
 #define KATUI_EVENT_FOCUS 5
 
+#define KATUI_EVENT_KEY_REPEAT 6
+
 #define KATUI_MOUSE_NONE 0
 
 #define KATUI_MOUSE_PRESS 1
@@ -1189,7 +1191,13 @@ struct KatuiElement *katui_markdown(const char *source, const struct KatuiDocume
  * A press of the key `name`, for tests and for handing keys to widgets.
  * NULL when `name` names no key.
  */
-struct KatuiEvent *katui_event_press(const char *name, bool ctrl, bool alt, bool shift);
+struct KatuiEvent *katui_event_press(const char *name,
+                                     bool ctrl,
+                                     bool alt,
+                                     bool shift,
+                                     bool super_key,
+                                     bool hyper,
+                                     bool meta);
 
 /**
  * A paste of `text`.
@@ -1220,6 +1228,12 @@ bool katui_event_ctrl(const struct KatuiEvent *event);
 bool katui_event_alt(const struct KatuiEvent *event);
 
 bool katui_event_shift(const struct KatuiEvent *event);
+
+bool katui_event_super(const struct KatuiEvent *event);
+
+bool katui_event_hyper(const struct KatuiEvent *event);
+
+bool katui_event_meta(const struct KatuiEvent *event);
 
 /**
  * The pasted text, or NULL for another event. The caller frees it with

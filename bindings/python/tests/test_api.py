@@ -213,6 +213,9 @@ def test_trees_toasts_and_events_keep_their_state() -> None:
     assert toasts.is_empty()
     paste = Event.paste("hello")
     assert (paste.kind, paste.text, paste.key) == ("paste", "hello", None)
+    chord = Event.press("media_play", super_key=True, hyper=True, meta=True)
+    assert (chord.key, chord.super_key, chord.hyper, chord.meta) == ("media_play", True, True, True)
+    assert not chord.ctrl
 
 
 def test_games_draw_through_frame() -> None:

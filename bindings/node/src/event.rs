@@ -19,6 +19,9 @@ pub struct Modifiers {
     pub ctrl: Option<bool>,
     pub alt: Option<bool>,
     pub shift: Option<bool>,
+    pub super_key: Option<bool>,
+    pub hyper: Option<bool>,
+    pub meta: Option<bool>,
 }
 
 /// A key press, a release, a mouse event, a paste or a focus change.
@@ -43,7 +46,9 @@ impl Event {
             shift: modifiers.shift.unwrap_or(false),
             alt: modifiers.alt.unwrap_or(false),
             ctrl: modifiers.ctrl.unwrap_or(false),
-            ..Mods::NONE
+            super_key: modifiers.super_key.unwrap_or(false),
+            hyper: modifiers.hyper.unwrap_or(false),
+            meta: modifiers.meta.unwrap_or(false),
         };
         event::press(&name, mods).map(Self::new).map_err(raise)
     }
@@ -53,10 +58,11 @@ impl Event {
         Self::new(InputEvent::Paste(text))
     }
 
-    /// `"key"`, `"key_up"`, `"mouse"`, `"paste"`, `"focus"` or `"other"`.
+    /// `"key"`, `"key_repeat"`, `"key_up"`, `"mouse"`, `"paste"`, `"focus"`
+    /// or `"other"`.
     #[napi(
         getter,
-        ts_return_type = "'key' | 'key_up' | 'mouse' | 'paste' | 'focus' | 'other'"
+        ts_return_type = "'key' | 'key_repeat' | 'key_up' | 'mouse' | 'paste' | 'focus' | 'other'"
     )]
     pub fn kind(&self) -> &'static str {
         event::kind(&self.inner).name()
@@ -81,6 +87,21 @@ impl Event {
     #[napi(getter)]
     pub fn shift(&self) -> bool {
         event::mods(&self.inner).shift
+    }
+
+    #[napi(getter)]
+    pub fn super_key(&self) -> bool {
+        event::mods(&self.inner).super_key
+    }
+
+    #[napi(getter)]
+    pub fn hyper(&self) -> bool {
+        event::mods(&self.inner).hyper
+    }
+
+    #[napi(getter)]
+    pub fn meta(&self) -> bool {
+        event::mods(&self.inner).meta
     }
 
     /// The pasted text.

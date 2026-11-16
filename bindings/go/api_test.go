@@ -182,6 +182,16 @@ func TestFailuresComeBackAsErrors(t *testing.T) {
 	}
 }
 
+func TestPressHoldsEveryModifier(t *testing.T) {
+	chord, err := Press("kp_5", Super, Hyper, Meta)
+	if err != nil || chord.Key() != "kp_5" || chord.Kind() != KeyEvent {
+		t.Fatalf("a keypad press reads back, got %v", err)
+	}
+	if !chord.Super() || !chord.Hyper() || !chord.Meta() || chord.Ctrl() {
+		t.Fatal("super, hyper and meta are held and ctrl is not")
+	}
+}
+
 func TestStateTypesAnswer(t *testing.T) {
 	down, _ := Press("down")
 	list := NewListState(5, 2)

@@ -274,26 +274,30 @@ static void bad_values_fail_with_a_message(void) {
   CHECK(strstr(katui_last_error(), "RGBA") != NULL);
   CHECK(katui_image_decode(pixels, 3) == NULL);
   CHECK(katui_image_open("no/such/file.png") == NULL);
-  CHECK(katui_event_press("nonsense", false, false, false) == NULL);
+  CHECK(katui_event_press("nonsense", false, false, false, false, false, false) == NULL);
   CHECK(katui_focus_new(0) == NULL);
 }
 
 static void events_and_state_answer(void) {
-  KatuiEvent *event = katui_event_press("down", true, false, false);
+  KatuiEvent *event = katui_event_press("down", true, false, false, false, false, false);
   CHECK(katui_event_kind(event) == KATUI_EVENT_KEY);
   char *key = katui_event_key(event);
   CHECK(strcmp(key, "down") == 0);
   katui_string_free(key);
   CHECK(katui_event_ctrl(event) && !katui_event_shift(event));
+  KatuiEvent *chord = katui_event_press("left_super", false, false, false, true, true, true);
+  CHECK(katui_event_super(chord) && katui_event_hyper(chord) && katui_event_meta(chord));
+  CHECK(!katui_event_ctrl(chord));
+  katui_event_free(chord);
   KatuiListState *list = katui_list_state_new(5, 2);
-  KatuiEvent *plain = katui_event_press("down", false, false, false);
+  KatuiEvent *plain = katui_event_press("down", false, false, false, false, false, false);
   CHECK(katui_list_state_handle(list, plain));
   CHECK(katui_list_state_selected(list) == 1);
   float moved = 0;
-  KatuiEvent *right = katui_event_press("right", false, false, false);
+  KatuiEvent *right = katui_event_press("right", false, false, false, false, false, false);
   CHECK(katui_nudge(0.5f, right, 0.1f, &moved) && moved > 0.5f);
   KatuiFocus *focus = katui_focus_new(3);
-  KatuiEvent *tab = katui_event_press("tab", false, false, false);
+  KatuiEvent *tab = katui_event_press("tab", false, false, false, false, false, false);
   CHECK(katui_focus_handle(focus, tab) && katui_focus_is(focus, 1));
   KatuiEvent *paste = katui_event_paste("pasted");
   char *text = katui_event_text(paste);

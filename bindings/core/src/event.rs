@@ -24,6 +24,7 @@ pub fn typed(text: &str) -> impl Iterator<Item = InputEvent> + '_ {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventKind {
     Key,
+    KeyRepeat,
     KeyUp,
     Mouse,
     Paste,
@@ -36,6 +37,7 @@ impl EventKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::Key => "key",
+            Self::KeyRepeat => "key_repeat",
             Self::KeyUp => "key_up",
             Self::Mouse => "mouse",
             Self::Paste => "paste",
@@ -49,6 +51,7 @@ impl EventKind {
 pub fn kind(event: &InputEvent) -> EventKind {
     match event {
         InputEvent::Key(..) => EventKind::Key,
+        InputEvent::KeyRepeat(..) => EventKind::KeyRepeat,
         InputEvent::KeyUp(..) => EventKind::KeyUp,
         InputEvent::Mouse(_) => EventKind::Mouse,
         InputEvent::Paste(_) => EventKind::Paste,
@@ -57,11 +60,13 @@ pub fn kind(event: &InputEvent) -> EventKind {
     }
 }
 
-/// The name of the key pressed or released.
+/// The name of the key pressed, repeated or released.
 #[must_use]
 pub fn key_name(event: &InputEvent) -> Option<String> {
     match event {
-        InputEvent::Key(key, _) | InputEvent::KeyUp(key, _) => Some(key.name()),
+        InputEvent::Key(key, _) | InputEvent::KeyRepeat(key, _) | InputEvent::KeyUp(key, _) => {
+            Some(key.name())
+        }
         _ => None,
     }
 }
@@ -70,7 +75,9 @@ pub fn key_name(event: &InputEvent) -> Option<String> {
 #[must_use]
 pub fn mods(event: &InputEvent) -> Mods {
     match event {
-        InputEvent::Key(_, mods) | InputEvent::KeyUp(_, mods) => *mods,
+        InputEvent::Key(_, mods) | InputEvent::KeyRepeat(_, mods) | InputEvent::KeyUp(_, mods) => {
+            *mods
+        }
         InputEvent::Mouse(mouse) => mouse.mods,
         _ => Mods::NONE,
     }
@@ -119,6 +126,7 @@ pub fn button(event: &InputEvent) -> Option<Button> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use katui_proto::input::ModifierKey;
 
     #[test]
     fn a_press_reads_back_its_key_and_mods() {
@@ -152,6 +160,19 @@ mod tests {
         let left = mouse(MouseAction::WheelLeft);
         assert_eq!(action(&left).map(MouseAction::name), Some("wheel_left"));
         assert_eq!(button(&left), None);
+    }
+
+    #[test]
+    fn a_repeat_reads_back_as_its_own_kind_with_its_key_and_mods() {
+        let hyper = Mods {
+            hyper: true,
+            ..Mods::NONE
+        };
+        let repeat = InputEvent::KeyRepeat(Key::Modifier(ModifierKey::LeftMeta), hyper);
+        assert_eq!(kind(&repeat).name(), "key_repeat");
+        assert_eq!(key_name(&repeat).as_deref(), Some("left_meta"));
+        assert!(mods(&repeat).hyper);
+        assert_eq!(kind(&InputEvent::BaseLayoutKey('c')), EventKind::Other);
     }
 
     #[test]

@@ -131,13 +131,19 @@ export declare class Event {
   /** A press of the key `name`, for tests and for handing keys to widgets. */
   static press(name: string, modifiers?: Modifiers | undefined | null): Event
   static paste(text: string): Event
-  /** `"key"`, `"key_up"`, `"mouse"`, `"paste"`, `"focus"` or `"other"`. */
-  get kind(): 'key' | 'key_up' | 'mouse' | 'paste' | 'focus' | 'other'
+  /**
+   * `"key"`, `"key_repeat"`, `"key_up"`, `"mouse"`, `"paste"`, `"focus"`
+   * or `"other"`.
+   */
+  get kind(): 'key' | 'key_repeat' | 'key_up' | 'mouse' | 'paste' | 'focus' | 'other'
   /** The key's name: one character, `"enter"`, `"up"`, `"f1"` and so on. */
   get key(): string | null
   get ctrl(): boolean
   get alt(): boolean
   get shift(): boolean
+  get superKey(): boolean
+  get hyper(): boolean
+  get meta(): boolean
   /** The pasted text. */
   get text(): string | null
   /** Whether the window has the focus, for a focus event. */
@@ -507,6 +513,9 @@ export interface Modifiers {
   ctrl?: boolean
   alt?: boolean
   shift?: boolean
+  superKey?: boolean
+  hyper?: boolean
+  meta?: boolean
 }
 
 /** How much smaller games draw under a terminal multiplexer. */

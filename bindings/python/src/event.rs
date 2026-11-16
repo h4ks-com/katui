@@ -22,14 +22,24 @@ pub(crate) fn key(name: &str) -> PyResult<Key> {
 impl PyEvent {
     /// A press of the key `name`, for tests and for handing keys to widgets.
     #[staticmethod]
-    #[pyo3(signature = (name, ctrl=false, alt=false, shift=false))]
+    #[pyo3(signature = (name, ctrl=false, alt=false, shift=false, super_key=false, hyper=false, meta=false))]
     #[allow(clippy::fn_params_excessive_bools)]
-    fn press(name: &str, ctrl: bool, alt: bool, shift: bool) -> PyResult<Self> {
+    fn press(
+        name: &str,
+        ctrl: bool,
+        alt: bool,
+        shift: bool,
+        super_key: bool,
+        hyper: bool,
+        meta: bool,
+    ) -> PyResult<Self> {
         let mods = Mods {
             shift,
             alt,
             ctrl,
-            ..Mods::NONE
+            super_key,
+            hyper,
+            meta,
         };
         let inner = event::press(name, mods).map_err(raise)?;
         Ok(Self { inner })
@@ -42,7 +52,8 @@ impl PyEvent {
         }
     }
 
-    /// `"key"`, `"key_up"`, `"mouse"`, `"paste"`, `"focus"` or `"other"`.
+    /// `"key"`, `"key_repeat"`, `"key_up"`, `"mouse"`, `"paste"`, `"focus"`
+    /// or `"other"`.
     #[getter]
     fn kind(&self) -> &'static str {
         event::kind(&self.inner).name()
@@ -67,6 +78,21 @@ impl PyEvent {
     #[getter]
     fn shift(&self) -> bool {
         event::mods(&self.inner).shift
+    }
+
+    #[getter]
+    fn super_key(&self) -> bool {
+        event::mods(&self.inner).super_key
+    }
+
+    #[getter]
+    fn hyper(&self) -> bool {
+        event::mods(&self.inner).hyper
+    }
+
+    #[getter]
+    fn meta(&self) -> bool {
+        event::mods(&self.inner).meta
     }
 
     /// The pasted text.

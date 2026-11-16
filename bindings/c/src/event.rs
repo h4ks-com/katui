@@ -24,6 +24,7 @@ pub const KATUI_EVENT_KEY_UP: KatuiEventKind = 2;
 pub const KATUI_EVENT_MOUSE: KatuiEventKind = 3;
 pub const KATUI_EVENT_PASTE: KatuiEventKind = 4;
 pub const KATUI_EVENT_FOCUS: KatuiEventKind = 5;
+pub const KATUI_EVENT_KEY_REPEAT: KatuiEventKind = 6;
 
 /// What the mouse did.
 pub type KatuiMouseAction = u32;
@@ -53,17 +54,23 @@ pub(crate) fn input(event: Option<&KatuiEvent>) -> Option<&InputEvent> {
 /// A press of the key `name`, for tests and for handing keys to widgets.
 /// NULL when `name` names no key.
 #[unsafe(no_mangle)]
+#[allow(clippy::fn_params_excessive_bools)]
 pub unsafe extern "C" fn katui_event_press(
     name: *const c_char,
     ctrl: bool,
     alt: bool,
     shift: bool,
+    super_key: bool,
+    hyper: bool,
+    meta: bool,
 ) -> *mut KatuiEvent {
     let mods = Mods {
         shift,
         alt,
         ctrl,
-        ..Mods::NONE
+        super_key,
+        hyper,
+        meta,
     };
     owned_or_null(
         // SAFETY: the header requires `name` to be NULL or NUL-terminated.
@@ -100,6 +107,7 @@ pub extern "C" fn katui_event_free(event: Option<Box<KatuiEvent>>) {
 pub extern "C" fn katui_event_kind(event: Option<&KatuiEvent>) -> KatuiEventKind {
     match input(event).map(event::kind) {
         Some(EventKind::Key) => KATUI_EVENT_KEY,
+        Some(EventKind::KeyRepeat) => KATUI_EVENT_KEY_REPEAT,
         Some(EventKind::KeyUp) => KATUI_EVENT_KEY_UP,
         Some(EventKind::Mouse) => KATUI_EVENT_MOUSE,
         Some(EventKind::Paste) => KATUI_EVENT_PASTE,
@@ -135,6 +143,21 @@ pub extern "C" fn katui_event_alt(event: Option<&KatuiEvent>) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn katui_event_shift(event: Option<&KatuiEvent>) -> bool {
     mods(event).shift
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn katui_event_super(event: Option<&KatuiEvent>) -> bool {
+    mods(event).super_key
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn katui_event_hyper(event: Option<&KatuiEvent>) -> bool {
+    mods(event).hyper
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn katui_event_meta(event: Option<&KatuiEvent>) -> bool {
+    mods(event).meta
 }
 
 /// The pasted text, or NULL for another event. The caller frees it with
