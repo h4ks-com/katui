@@ -13,7 +13,8 @@
   <a href="#terminals">Terminals</a> ·
   <a href="#demos">Demos</a> ·
   <a href="docs/README.md">Guides</a> ·
-  <a href="https://h4ks-com.github.io/katui/katui/">API docs</a>
+  <a href="https://h4ks-com.github.io/katui/katui/">API docs</a> ·
+  <a href="https://chat.h4ks.com">IRC</a>
 </p>
 
 <p align="center"><img src="assets/demos/shardrift.webp" alt="Shardrift, a katui game: a ship firing through a nebula and splitting crystal rocks" width="800"></p>
