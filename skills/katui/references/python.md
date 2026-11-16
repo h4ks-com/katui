@@ -89,7 +89,8 @@ message)`.
 ## Keys and state
 
 `event.key` is one character or a name like `"enter"`, `"tab"`,
-`"escape"`, `"up"`, `"page_down"`, `"f1"`. State objects take events with
+`"escape"`, `"up"`, `"page_down"`, `"f1"`, `"kp_5"`, `"media_play"`,
+`"left_shift"`. State objects take events with
 `handle`: `TextField` and `TextArea` return an `Edit` (`Edit.SUBMITTED` is
 Enter), `ListState` (for `list_view` and `table`) returns whether it moved,
 plus `ScrollState`, `TreeState` and `Focus`.

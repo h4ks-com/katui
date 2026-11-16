@@ -131,7 +131,11 @@ the `Waker` its `Start` gets. `waker.Send(message)` delivers one, and
 
 An app that is an `Inputter` gets keys and pastes in `Input`.
 `event.Key()` is the key's name: one character, or `"enter"`, `"tab"`,
-`"escape"`, `"up"`, `"page_down"`, `"f1"` and so on.
+`"escape"`, `"up"`, `"page_down"`, `"f1"` and so on. Keypad, media and
+lone modifier keys have names like `"kp_5"`, `"media_play"` and
+`"left_shift"`. Besides `Ctrl`, `Alt` and `Shift`, an event reports
+`Super`, `Hyper` and `Meta`, which only terminals with the kitty keyboard
+protocol send.
 
 The widgets that keep state have a state type you keep in your app and
 pass to the widget. Each one takes events with `Handle`:

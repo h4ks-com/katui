@@ -125,7 +125,10 @@ work.
 Keys and pastes go to `input`, which receives an `Event` and returns a
 `Control`, or nothing to wait. `event.key` is the key's name: one
 character, or `'enter'`, `'tab'`, `'escape'`, `'up'`, `'page_down'`,
-`'f1'` and so on.
+`'f1'` and so on. Keypad, media and lone modifier keys have names like
+`'kp_5'`, `'media_play'` and `'left_shift'`. Besides `ctrl`, `alt` and
+`shift`, an event reports `superKey`, `hyper` and `meta`, which only
+terminals with the kitty keyboard protocol send.
 
 The widgets that keep state have a state object you store on the app and
 pass to `view`. Each one takes events with `handle`:

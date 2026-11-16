@@ -126,7 +126,12 @@ gets. `katui_waker_send(waker, key)` delivers one, and
 
 Keys and pastes go to `input`. `katui_event_key` names the key: one
 character, or `"enter"`, `"tab"`, `"escape"`, `"up"`, `"page_down"`,
-`"f1"` and so on. The widgets that keep state have a state type you keep
+`"f1"` and so on. Keypad, media and lone modifier keys have names like
+`"kp_5"`, `"media_play"` and `"left_shift"`. Besides
+`katui_event_ctrl`, `katui_event_alt` and `katui_event_shift`, an event
+reports `katui_event_super`, `katui_event_hyper` and `katui_event_meta`,
+which only terminals with the kitty keyboard protocol send. The widgets
+that keep state have a state type you keep
 in your app and pass to the widget, and each one takes events with its
 `handle` function: `KatuiTextField`, `KatuiTextArea`, `KatuiListState`,
 `KatuiScrollState`, `KatuiTreeState` and `KatuiFocus`.

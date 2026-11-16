@@ -78,7 +78,8 @@ picked.
 ## Keys and state
 
 `event.key` is one character or a name like `'enter'`, `'tab'`,
-`'escape'`, `'up'`, `'page_down'`, `'f1'`. State objects take events with
+`'escape'`, `'up'`, `'page_down'`, `'f1'`, `'kp_5'`, `'media_play'`,
+`'left_shift'`. State objects take events with
 `handle`: `TextField` (`textField`) and `TextArea` (`textArea`) return an
 `Edit`, `ListState` (`listView`, `table`) returns whether it moved, plus
 `ScrollState` (`scrollView`), `TreeState` (`tree`) and `Focus`.
