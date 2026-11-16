@@ -4,7 +4,7 @@
 use crate::Sink;
 use std::io::{self, Write as _};
 
-use katui_scene::cell::{Buffer, all_cells, diff};
+use katui_scene::cell::{Buffer, Position, all_cells, diff};
 
 /// The stateful cell-buffer presenter: writes a buffer's cells once,
 /// then per frame only the cells that changed, inside synchronized
@@ -29,6 +29,28 @@ impl BufferSurface {
     /// later frame repaints only the changed cells, inside synchronized
     /// output, with no clear that would erase the rest.
     pub fn render_frame<W: Sink>(&mut self, out: &mut W, next: Buffer) -> io::Result<usize> {
+        self.write_frame(out, next, Position { x: 0, y: 0 }, true)
+    }
+
+    /// Write one frame of `next` with its top left cell at `origin`, for a
+    /// buffer that covers part of the screen. A fresh frame repaints every
+    /// cell of `next` and leaves the rest of the screen alone.
+    pub fn render_frame_at<W: Sink>(
+        &mut self,
+        out: &mut W,
+        next: Buffer,
+        origin: Position,
+    ) -> io::Result<usize> {
+        self.write_frame(out, next, origin, false)
+    }
+
+    fn write_frame<W: Sink>(
+        &mut self,
+        out: &mut W,
+        next: Buffer,
+        origin: Position,
+        clears: bool,
+    ) -> io::Result<usize> {
         let full = self
             .prev
             .as_ref()
@@ -40,11 +62,15 @@ impl BufferSurface {
         let mut bytes = Vec::new();
         if !changed.is_empty() {
             bytes.write_all(b"\x1b[?2026h")?;
-            if full {
+            if full && clears {
                 bytes.write_all(b"\x1b[H\x1b[2J")?;
             }
             for (position, cell) in changed {
-                crate::cells::render_cell(&mut bytes, position, cell)?;
+                let at = Position {
+                    x: position.x.saturating_add(origin.x),
+                    y: position.y.saturating_add(origin.y),
+                };
+                crate::cells::render_cell(&mut bytes, at, cell)?;
             }
             bytes.write_all(b"\x1b[0m\x1b[?2026l")?;
         }

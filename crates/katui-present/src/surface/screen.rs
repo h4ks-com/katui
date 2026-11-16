@@ -8,8 +8,9 @@ use std::io;
 use katui_proto::probe::{Capabilities, CellPixels};
 
 use crate::select::{Backend, select};
+use katui_scene::cell::Position;
 use katui_scene::placement::CellRect;
-use katui_scene::surface::Surface;
+use katui_scene::surface::{PixelRect, Surface};
 
 use super::{AnimatedKitty, BlocksSurface, PatchedKitty, SixelSurface};
 
@@ -158,6 +159,50 @@ impl PixelScreen {
             }
         }
     }
+
+    /// Write `surface` scaled over the `area` cells, leaving the rest of the
+    /// screen to the app's own cells, and return the bytes written. On a
+    /// sixel terminal `area` must stay above the bottom row.
+    pub fn render_frame_in<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        area: CellRect,
+    ) -> io::Result<usize> {
+        match &mut self.graphics {
+            Some(PixelStrategy::Patched(patched)) => patched.render_frame(out, surface, area),
+            Some(PixelStrategy::Animated(animated)) => animated.render_frame(out, surface, area),
+            Some(PixelStrategy::Sixel(sixel)) => sixel.render_frame_in(out, surface, area),
+            None => {
+                let (width, height) = (u32::from(area.columns) * 2, u32::from(area.rows) * 2);
+                let origin = Position {
+                    x: area.x,
+                    y: area.y,
+                };
+                surface.scaled(width, height).map_or(Ok(0), |fitted| {
+                    self.blocks.render_frame_at(out, &fitted, origin)
+                })
+            }
+        }
+    }
+
+    /// [`Self::render_frame_in`] for a frame whose changes since the last lie
+    /// inside `damage`, in surface pixels, so kitty graphics compare only
+    /// the tiles those rectangles touch.
+    pub fn render_frame_damaged<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        area: CellRect,
+        damage: &[PixelRect],
+    ) -> io::Result<usize> {
+        match &mut self.graphics {
+            Some(PixelStrategy::Patched(patched)) => {
+                patched.render_frame_damaged(out, surface, area, damage)
+            }
+            _ => self.render_frame_in(out, surface, area),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -189,6 +234,37 @@ mod tests {
 
     fn plain(width: u32, height: u32) -> Surface {
         crate::surface::test_support::solid(width, height, Rgba::solid(255, 80, 40))
+    }
+
+    #[test]
+    fn a_picture_in_a_cell_rectangle_starts_at_its_origin_and_keeps_the_rest() {
+        let area = katui_scene::placement::CellRect {
+            x: 3,
+            y: 2,
+            columns: 4,
+            rows: 2,
+        };
+        let mut blocks = PixelScreen::picture(&caps(false), CELL);
+        let mut out = Vec::new();
+        blocks
+            .render_frame_in(&mut out, &plain(8, 4), area)
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&out);
+        assert!(
+            text.contains("\x1b[3;4H"),
+            "the first cell sits at row 3, column 4"
+        );
+        assert!(!text.contains("\x1b[2J"), "the rest of the screen stays");
+        let sixel = Capabilities {
+            sixel: true,
+            ..caps(false)
+        };
+        let mut sixels = PixelScreen::picture(&sixel, CELL);
+        out.clear();
+        sixels
+            .render_frame_in(&mut out, &plain(8, 8), area)
+            .expect("writing to a Vec cannot fail");
+        assert!(String::from_utf8_lossy(&out).contains("\x1b[3;4H"));
     }
 
     #[test]

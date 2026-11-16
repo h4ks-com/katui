@@ -34,6 +34,18 @@ impl BlocksSurface {
     pub fn render_frame<W: Sink>(&mut self, out: &mut W, surface: &Surface) -> io::Result<usize> {
         self.cells.render_frame(out, cells_for_surface(surface))
     }
+
+    /// Write one frame with its top left cell at `origin`, leaving the rest
+    /// of the screen alone, and return the bytes written.
+    pub fn render_frame_at<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        origin: Position,
+    ) -> io::Result<usize> {
+        self.cells
+            .render_frame_at(out, cells_for_surface(surface), origin)
+    }
 }
 
 /// Classify every cell of a surface into the quarter-block grid.

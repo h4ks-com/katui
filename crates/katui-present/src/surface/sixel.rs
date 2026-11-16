@@ -6,6 +6,7 @@ use std::io::{self, Write as _};
 use katui_proto::probe::CellPixels;
 use katui_proto::sixel;
 use katui_scene::cell::Position;
+use katui_scene::placement::CellRect;
 use katui_scene::surface::{PixelRect, Surface, diff_tiles};
 
 use super::damage_is_dense;
@@ -43,8 +44,25 @@ impl SixelSurface {
         columns: u16,
         rows: u16,
     ) -> io::Result<usize> {
-        let width = u32::from(columns) * u32::from(self.cell.width);
-        let height = u32::from(rows.saturating_sub(1)) * u32::from(self.cell.height);
+        let area = CellRect::full(columns, rows.saturating_sub(1));
+        self.render_frame_in(out, surface, area)
+    }
+
+    /// Write `surface` scaled over the `area` cells and return the bytes
+    /// written. A sixel that touches the screen's bottom row scrolls the
+    /// screen, so `area` must stay above it.
+    pub fn render_frame_in<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        area: CellRect,
+    ) -> io::Result<usize> {
+        let width = u32::from(area.columns) * u32::from(self.cell.width);
+        let height = u32::from(area.rows) * u32::from(self.cell.height);
+        let origin = Position {
+            x: area.x,
+            y: area.y,
+        };
         let Some(screen) = surface.scaled(width, height) else {
             return Ok(0);
         };
@@ -62,7 +80,7 @@ impl SixelSurface {
         if !damage.is_empty() {
             bytes.write_all(b"\x1b[?2026h")?;
             for rect in &damage {
-                self.write_tile(&mut bytes, &screen, *rect)?;
+                self.write_tile(&mut bytes, &screen, *rect, origin)?;
             }
             bytes.write_all(b"\x1b[?2026l")?;
         }
@@ -71,14 +89,24 @@ impl SixelSurface {
         Ok(bytes.len())
     }
 
-    fn write_tile(&self, bytes: &mut Vec<u8>, screen: &Surface, rect: PixelRect) -> io::Result<()> {
+    fn write_tile(
+        &self,
+        bytes: &mut Vec<u8>,
+        screen: &Surface,
+        rect: PixelRect,
+        origin: Position,
+    ) -> io::Result<()> {
         let pixels = tile_pixels(screen, rect);
         let Some(image) = sixel::encode(&pixels, rect.width, rect.height) else {
             return Ok(());
         };
         let at = Position {
-            x: u16::try_from(rect.x / u32::from(self.cell.width)).unwrap_or(u16::MAX),
-            y: u16::try_from(rect.y / u32::from(self.cell.height)).unwrap_or(u16::MAX),
+            x: origin.x.saturating_add(
+                u16::try_from(rect.x / u32::from(self.cell.width)).unwrap_or(u16::MAX),
+            ),
+            y: origin.y.saturating_add(
+                u16::try_from(rect.y / u32::from(self.cell.height)).unwrap_or(u16::MAX),
+            ),
         };
         move_cursor(bytes, at)?;
         bytes.write_all(&image)

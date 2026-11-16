@@ -147,6 +147,30 @@ impl PatchedKitty {
         surface: &Surface,
         area: CellRect,
     ) -> io::Result<usize> {
+        self.render(out, surface, area, None)
+    }
+
+    /// Write one frame whose changes since the last lie inside `damage`, in
+    /// surface pixels, and compare only the tiles those rectangles touch.
+    /// A producer that tracks its own damage, like a browser engine, skips
+    /// most of the frame diff this way.
+    pub fn render_frame_damaged<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        area: CellRect,
+        damage: &[PixelRect],
+    ) -> io::Result<usize> {
+        self.render(out, surface, area, Some(damage))
+    }
+
+    fn render<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        area: CellRect,
+        hint: Option<&[PixelRect]>,
+    ) -> io::Result<usize> {
         let resized = self.prev.as_ref().is_none_or(|prev| {
             prev.width() != surface.width() || prev.height() != surface.height()
         });
@@ -155,11 +179,11 @@ impl PatchedKitty {
             if resized && matches!(self.grid, Grid::Placeholders) {
                 self.fit_tiles_to_cells(surface, area);
             }
-            return self.render_tiles(out, surface, area, resized, repaint);
+            return self.render_tiles(out, surface, area, (resized, repaint), hint);
         }
         let fresh_start = resized || repaint;
         let damage = match self.prev.as_ref() {
-            Some(prev) if !fresh_start => self.damage(prev, surface, area),
+            Some(prev) if !fresh_start => self.damage(prev, surface, area, hint),
             _ => Vec::new(),
         };
         let dense = damage_is_dense(surface, self.tile_side, damage.len());
@@ -274,8 +298,8 @@ impl PatchedKitty {
         out: &mut W,
         surface: &Surface,
         area: CellRect,
-        resized: bool,
-        repaint: bool,
+        (resized, repaint): (bool, bool),
+        hint: Option<&[PixelRect]>,
     ) -> io::Result<usize> {
         let blank = Surface::new(surface.width(), surface.height());
         let before = self
@@ -283,7 +307,7 @@ impl PatchedKitty {
             .as_ref()
             .filter(|_| !resized && !repaint)
             .unwrap_or(&blank);
-        let damage = self.damage(before, surface, area);
+        let damage = self.damage(before, surface, area, hint.filter(|_| !resized && !repaint));
         let mut bytes = Vec::new();
         if resized {
             self.free_tiles(&mut bytes)?;
@@ -341,8 +365,19 @@ impl PatchedKitty {
     }
 
     /// The damaged tiles since `before`.
-    fn damage(&self, before: &Surface, surface: &Surface, area: CellRect) -> Vec<PixelRect> {
-        diff_rects(before, surface, cell_tiles(surface, area, self.tile_side))
+    fn damage(
+        &self,
+        before: &Surface,
+        surface: &Surface,
+        area: CellRect,
+        hint: Option<&[PixelRect]>,
+    ) -> Vec<PixelRect> {
+        let tiles = cell_tiles(surface, area, self.tile_side)
+            .into_iter()
+            .filter(|tile| {
+                hint.is_none_or(|rects| rects.iter().any(|rect| overlaps(*tile, *rect)))
+            });
+        diff_rects(before, surface, tiles)
     }
 
     fn tile_image(&self, index: u32, second_generation: bool) -> KittyImage {
@@ -455,6 +490,11 @@ impl Upload {
             stash,
         )
     }
+}
+
+/// Whether two pixel rectangles share any pixel.
+fn overlaps(a: PixelRect, b: PixelRect) -> bool {
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 }
 
 /// The tile whose top left cell is `column`, `row`.
@@ -714,6 +754,43 @@ mod tests {
             next_column = right;
         }
         assert_eq!(next_column, 16, "the last tile ends at the last column");
+    }
+
+    #[test]
+    fn a_damage_hint_limits_the_tiles_we_compare() {
+        let mut presenter = PatchedKitty::new(90, cell());
+        let mut surface = plain_surface(64, 64);
+        let area = crate::surface::test_support::area();
+        let mut warmup = Vec::new();
+        presenter
+            .render_frame(&mut warmup, &surface, area)
+            .expect("writing to a Vec cannot fail");
+        for at in [(4, 4), (40, 40)] {
+            surface.set(
+                katui_scene::surface::PixelPos::new(at.0, at.1),
+                Rgba::solid(255, 255, 255),
+            );
+        }
+        let hint = katui_scene::surface::PixelRect {
+            x: 40,
+            y: 40,
+            width: 1,
+            height: 1,
+        };
+        let mut out = Vec::new();
+        presenter
+            .render_frame_damaged(&mut out, &surface, area, &[hint])
+            .expect("writing to a Vec cannot fail");
+        let text = String::from_utf8_lossy(&out);
+        assert_eq!(
+            text.matches("a=t,").count(),
+            1,
+            "only the hinted tile travels"
+        );
+        assert!(
+            text.contains("a=p,i=82032"),
+            "the hinted tile at cell 10, 10"
+        );
     }
 
     #[test]
