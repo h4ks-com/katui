@@ -193,8 +193,8 @@ impl EventLoop {
             let first = pump.next(self.wait());
             self.handle_signals(app, first, pump);
             self.handle_resize(app);
-            let wants_frame = matches!(self.pending, Control::Redraw | Control::Animate)
-                && self.pane == PaneView::Active;
+            let wants_frame =
+                matches!(self.pending, Control::Redraw | Control::Animate) && self.pane.draws();
             if self.pending != Control::Quit && wants_frame && Instant::now() >= self.next_draw {
                 self.draw(app, out, pump)?;
             }
@@ -203,7 +203,7 @@ impl EventLoop {
     }
 
     fn wait(&self) -> Duration {
-        if self.pane != PaneView::Active {
+        if !self.pane.draws() {
             return IDLE_POLL;
         }
         match self.pending {
@@ -230,18 +230,26 @@ impl EventLoop {
                 Signal::Input(event) if is_terminal_answer(&event) => {}
                 Signal::Input(event) => self.apply(app, AppEvent::Input(event)),
                 Signal::Message(message) => self.apply(app, AppEvent::Message(message)),
-                Signal::Pane(view) => {
-                    self.pane = view;
-                    if view == PaneView::Active {
-                        self.pacer.restore();
-                        self.apply(app, AppEvent::Repaint);
-                    }
-                }
+                Signal::Pane(view) => self.on_pane(app, view),
             }
             if self.pending == Control::Quit || Instant::now() >= until {
                 break;
             }
             signal = pump.next(Duration::ZERO);
+        }
+    }
+
+    /// The terminal lost what we drew while our pane was out of view, so we
+    /// send everything again when it comes back.
+    fn on_pane<A: App>(&mut self, app: &mut A, view: PaneView) {
+        self.pane = view;
+        match view {
+            PaneView::Active => {
+                self.pacer.restore();
+                self.apply(app, AppEvent::Repaint);
+            }
+            PaneView::Detached => self.pacer.stop_asking(),
+            PaneView::Frozen | PaneView::Hidden => {}
         }
     }
 

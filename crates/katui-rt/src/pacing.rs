@@ -87,6 +87,12 @@ impl Pacer {
         self.pacing = self.configured;
     }
 
+    /// Stop waiting for answers while no terminal can send them, until
+    /// [`Self::restore`].
+    pub(crate) fn stop_asking(&mut self) {
+        self.pacing = Pacing::Timer;
+    }
+
     /// Whether the next frame waits for the terminal's answer.
     pub(crate) fn asks(&self) -> bool {
         self.pacing != Pacing::Timer

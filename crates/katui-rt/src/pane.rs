@@ -18,8 +18,20 @@ pub enum PaneView {
     /// On screen but unfocused: the multiplexer drops graphics, so what
     /// the terminal shows stays as it was.
     Frozen,
-    /// Off screen: another window, a zoomed sibling, or no client.
+    /// Off screen: another window or a zoomed sibling.
     Hidden,
+    /// No client attached: the multiplexer still keeps every cell we
+    /// write, so the loop keeps drawing, without waiting for answers that
+    /// no terminal sends.
+    Detached,
+}
+
+impl PaneView {
+    /// Whether the loop draws while the pane stands here.
+    #[must_use]
+    pub fn draws(self) -> bool {
+        matches!(self, Self::Active | Self::Detached)
+    }
 }
 
 /// Report through `report` each time multiplexer `program` changes what
@@ -63,15 +75,15 @@ fn parse(fields: &str) -> Option<PaneView> {
     let window_active = flag()?;
     let pane_active = flag()?;
     let zoomed = flag()?;
-    Some(
-        if attached == 0 || window_active == 0 || (zoomed == 1 && pane_active == 0) {
-            PaneView::Hidden
-        } else if pane_active == 0 {
-            PaneView::Frozen
-        } else {
-            PaneView::Active
-        },
-    )
+    Some(if attached == 0 {
+        PaneView::Detached
+    } else if window_active == 0 || (zoomed == 1 && pane_active == 0) {
+        PaneView::Hidden
+    } else if pane_active == 0 {
+        PaneView::Frozen
+    } else {
+        PaneView::Active
+    })
 }
 
 #[cfg(test)]
@@ -85,7 +97,7 @@ mod tests {
         assert_eq!(parse("1 0 1 0"), Some(PaneView::Hidden));
         assert_eq!(parse("1 1 0 1"), Some(PaneView::Hidden));
         assert_eq!(parse("1 1 1 1"), Some(PaneView::Active));
-        assert_eq!(parse("0 1 1 0"), Some(PaneView::Hidden));
+        assert_eq!(parse("0 1 1 0"), Some(PaneView::Detached));
         assert_eq!(parse("error"), None);
     }
 }
