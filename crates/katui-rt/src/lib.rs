@@ -3,6 +3,8 @@
 //! the interactive loop. Everything pure lives in the crates below.
 
 pub mod clock;
+#[cfg(feature = "gamepad")]
+pub mod gamepad;
 pub mod info;
 pub mod media;
 pub mod session;

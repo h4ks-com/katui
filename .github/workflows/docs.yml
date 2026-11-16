@@ -25,6 +25,7 @@ jobs:
           tool: just
       - uses: astral-sh/setup-uv@v7
       - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libudev-dev
       - run: just api-docs
       - uses: actions/upload-pages-artifact@v4
         with:

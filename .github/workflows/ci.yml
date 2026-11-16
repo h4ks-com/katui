@@ -32,6 +32,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # the gamepad feature links libudev on Linux
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libudev-dev
       - run: just fmt-check
       - run: just clippy
 
@@ -56,6 +58,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libudev-dev
       - run: just test
 
   # the python package against the rust crates in this commit: lints, types,

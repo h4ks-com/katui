@@ -15,6 +15,11 @@ katui-present.workspace = true
 katui-proto.workspace = true
 katui-scene.workspace = true
 thiserror.workspace = true
+gilrs = { workspace = true, optional = true }
+
+[features]
+# game controllers through gilrs; on Linux this needs libudev
+gamepad = ["dep:gilrs"]
 
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
@@ -28,3 +33,7 @@ image.workspace = true
 
 [lints]
 workspace = true
+
+[[example]]
+name = "pads"
+required-features = ["gamepad"]

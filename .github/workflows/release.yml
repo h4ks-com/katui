@@ -33,7 +33,7 @@ jobs:
         with:
           tool: just,typos,cbindgen
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get install --yes --no-install-recommends clang-tidy
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends clang-tidy libudev-dev
       - run: just release-check "$TAG"
         env:
           TAG: ${{ github.ref_name }}
