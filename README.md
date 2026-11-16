@@ -238,6 +238,11 @@ Clone the repository and run any of these with [just](https://github.com/casey/j
 your terminal. The video demo needs `ffmpeg` for the picture and `ffplay`
 for the sound.
 
+## Apps built with katui
+
+- [katnav](https://github.com/h4ks-com/katnav) is a web browser for the terminal. It runs Chromium off screen and draws each page with katui, fast enough for browser games.
+- [kess](https://github.com/h4ks-com/kess) is chess on a glossy 3D board in your terminal, against a bot, on one keyboard, or online with a code.
+
 ## Learn more
 
 The [guides](docs/README.md) walk you through each kind of program, and the
