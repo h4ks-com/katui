@@ -34,6 +34,9 @@ pub struct Transmit<'a> {
     /// Where the pixels travel: in the escape code, or in a file the
     /// terminal reads, in which case `payload` is ignored.
     pub medium: Medium,
+    /// Mark the image as short-lived (`N=1`), so a terminal that knows the
+    /// hint keeps it out of its disk cache. Others ignore the key.
+    pub transient: bool,
 }
 
 /// Where a transmit's pixels travel.
@@ -46,6 +49,10 @@ pub enum Medium {
     /// reads such a file from a temporary directory, with
     /// `tty-graphics-protocol` in its name, and only on the same machine.
     TempFile(String),
+    /// A POSIX shared memory object the terminal reads `size` bytes from
+    /// and then unlinks (`t=s`), on the same machine only. We send the
+    /// size since macOS rounds the object up to a whole page.
+    SharedMemory { name: String, size: usize },
 }
 
 impl<'a> Transmit<'a> {
@@ -61,6 +68,7 @@ impl<'a> Transmit<'a> {
             quiet: Quiet::Silent,
             compressed: false,
             medium: Medium::Direct,
+            transient: false,
         }
     }
 
@@ -76,10 +84,13 @@ impl<'a> Transmit<'a> {
         let mut head = String::from("a=t");
         let _ = write!(head, ",f={}", self.format.key());
         let compressed = self.compressed && self.medium == Medium::Direct;
-        head.push_str(match self.medium {
-            Medium::Direct => ",t=d",
-            Medium::TempFile(_) => ",t=t",
-        });
+        match &self.medium {
+            Medium::Direct => head.push_str(",t=d"),
+            Medium::TempFile(_) => head.push_str(",t=t"),
+            Medium::SharedMemory { size, .. } => {
+                let _ = write!(head, ",t=s,S={size}");
+            }
+        }
         if compressed {
             head.push_str(",o=z");
         }
@@ -93,9 +104,13 @@ impl<'a> Transmit<'a> {
             let _ = write!(head, ",i={}", self.id.0);
         }
         let _ = write!(head, ",q={}", self.quiet.key());
+        if self.transient {
+            head.push_str(",N=1");
+        }
         let payload = match &self.medium {
             Medium::Direct => self.payload,
             Medium::TempFile(path) => path.as_bytes(),
+            Medium::SharedMemory { name, .. } => name.as_bytes(),
         };
         encode_chunks(&head, payload, compressed)
     }
@@ -285,6 +300,22 @@ pub(in crate::kitty) mod tests {
                     .to_vec()
             ],
             "the terminal reads the file raw, so it is never compressed"
+        );
+    }
+
+    #[test]
+    fn a_shared_memory_transmit_names_the_object_its_size_and_the_transient_hint() {
+        let mut command = transmit();
+        command.compressed = true;
+        command.transient = true;
+        command.medium = crate::kitty::Medium::SharedMemory {
+            name: "/kt1-0".into(),
+            size: 4,
+        };
+        let frames = command.encode().expect("encoding cannot fail");
+        assert_eq!(
+            frames,
+            vec![b"\x1b_Ga=t,f=32,t=s,S=4,s=1,v=1,i=1,q=2,N=1,m=0;L2t0MS0w\x1b\\".to_vec()]
         );
     }
 

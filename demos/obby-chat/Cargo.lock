@@ -519,6 +519,7 @@ dependencies = [
  "katui-present",
  "katui-proto",
  "katui-scene",
+ "memmap2",
  "rustix",
  "signal-hook",
  "thiserror",

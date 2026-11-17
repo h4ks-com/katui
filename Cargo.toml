@@ -57,7 +57,8 @@ ratatui = { version = "0.30", default-features = false }
 signal-hook = { version = "0.3", default-features = false }
 scraper = { version = "0.29", default-features = false }
 ego-tree = "0.11"
-rustix = { version = "1", default-features = false, features = ["std", "termios", "event", "pty", "fs"] }
+memmap2 = "0.9"
+rustix = { version = "1", default-features = false, features = ["std", "termios", "event", "pty", "fs", "shm"] }
 taffy = "0.15"
 thiserror = "2"
 gilrs = "0.11"

@@ -61,6 +61,7 @@ pub(crate) fn transmit_pixels<W: Sink>(
 ) -> io::Result<()> {
     let mut transmit = Transmit::new(image, Format::Rgba, width, height, pixels);
     transmit.compressed = true;
+    transmit.transient = true;
     if let Some(stash) = stash {
         transmit.medium = stash.put(pixels)?;
     }

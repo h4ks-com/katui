@@ -220,6 +220,9 @@ pub struct Capabilities {
     /// frames can skip compression, base64 and the terminal connection.
     /// The runtime asks, since only the same machine can answer yes.
     pub local_files: bool,
+    /// The terminal reads pixels from shared memory on this machine
+    /// (`t=s`), which skips the file system too. The runtime asks.
+    pub shared_memory: bool,
     /// The terminal reports key repeats and releases on request, as the
     /// kitty keyboard protocol does, from its answer to `CSI ? u`.
     pub key_releases: bool,
@@ -375,6 +378,7 @@ pub fn sniff(env: &Env) -> Capabilities {
         text_area: None,
         relative_placements: env.launched_from_kitty(),
         local_files: false,
+        shared_memory: false,
         key_releases: false,
         id_space: IdSpace::default(),
         trust: ProbeSource::Sniffed,
@@ -634,6 +638,7 @@ mod tests {
                 }),
                 relative_placements: true,
                 local_files: false,
+                shared_memory: false,
                 key_releases: true,
                 id_space: super::IdSpace::default(),
                 trust: super::ProbeSource::Probed,

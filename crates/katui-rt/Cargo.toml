@@ -22,6 +22,8 @@ gilrs = { workspace = true, optional = true }
 gamepad = ["dep:gilrs"]
 
 [target.'cfg(unix)'.dependencies]
+# maps shared memory frames, which macOS will not take through write()
+memmap2.workspace = true
 rustix.workspace = true
 signal-hook.workspace = true
 

@@ -67,7 +67,7 @@ fn probe_once(env: &Env, budget: Duration) -> Capabilities {
     match TtyTransport::open(budget) {
         Ok(mut transport) => {
             let mut caps = probe(&mut transport, env);
-            caps.local_files = crate::stash::reads_local_files(&mut transport, &caps);
+            crate::stash::probe_local(&mut transport, &mut caps);
             // answers racing the budget boundary would otherwise leak
             // into the parent shell as typed junk; spend a quiet window
             // draining whatever still arrives, and drop's input flush
