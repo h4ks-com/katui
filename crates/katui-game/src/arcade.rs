@@ -92,12 +92,14 @@ struct Arcade<G> {
 }
 
 /// Game pixels per cell across and down: one per screen pixel when the
-/// budget allows, fewer on a large or multiplexed screen.
+/// budget allows, fewer on a large screen or under a multiplexer that has
+/// to carry every pixel inline.
 fn density(size: CellSize, caps: &Capabilities, cell: CellPixels) -> (u32, u32) {
     if select(caps) == Backend::Blocks {
         return (2, 2);
     }
-    let shrink = if caps.multiplexed() {
+    let local = caps.shared_memory || caps.local_files;
+    let shrink = if caps.multiplexed() && !local {
         MULTIPLEXED_SHRINK
     } else {
         1

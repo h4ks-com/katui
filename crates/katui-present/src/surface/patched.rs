@@ -176,32 +176,74 @@ impl PatchedKitty {
         });
         let repaint = std::mem::take(&mut self.repaint);
         if !matches!(self.grid, Grid::Plain) {
-            if resized && matches!(self.grid, Grid::Placeholders) {
-                self.fit_tiles_to_cells(surface, area);
+            if resized {
+                self.size_tiles(surface, area);
             }
             return self.render_tiles(out, surface, area, (resized, repaint), hint);
         }
-        let fresh_start = resized || repaint;
+        self.render_plain(out, surface, area, hint, resized || repaint)
+    }
+
+    /// One frame on the plain grid: nothing when nothing changed, patches
+    /// for a little damage, the whole frame otherwise.
+    fn render_plain<W: Sink>(
+        &mut self,
+        out: &mut W,
+        surface: &Surface,
+        area: CellRect,
+        hint: Option<&[PixelRect]>,
+        fresh_start: bool,
+    ) -> io::Result<usize> {
         let damage = match self.prev.as_ref() {
             Some(prev) if !fresh_start => self.damage(prev, surface, area, hint),
             _ => Vec::new(),
         };
-        let dense = damage_is_dense(surface, self.tile_side, damage.len());
-        let patching = !fresh_start && !dense && damage.len() <= self.budget;
-
-        let mut bytes = Vec::new();
-        if !patching {
-            self.full_frame(&mut bytes, surface, area)?;
-        } else if damage.is_empty() {
+        if !fresh_start && damage.is_empty() {
             self.prev = Some(surface.clone());
             return Ok(0);
-        } else {
+        }
+        let dense = damage_is_dense(surface, self.tile_side, damage.len());
+        // a whole frame through a stash beats inline tiles even at a few
+        // percent damage, as `just pace` measures in kitty and Ghostty
+        let patching =
+            !fresh_start && !dense && damage.len() <= self.budget && self.stash.is_none();
+
+        let mut bytes = Vec::new();
+        if patching {
             self.patch_all(&mut bytes, surface, &damage, area)?;
+        } else {
+            self.full_frame(&mut bytes, surface, area)?;
         }
         self.prev = Some(surface.clone());
         let written = bytes.len();
         out.write_all(&bytes)?;
         Ok(written)
+    }
+
+    /// Size the tiles for a multiplexer after a resize: one tile when a
+    /// stash carries the pixels, whole cells for placeholder tiles.
+    fn size_tiles(&mut self, surface: &Surface, area: CellRect) {
+        if self.stash.is_some() {
+            self.cover_with_one_tile(surface, area);
+        } else if matches!(self.grid, Grid::Placeholders) {
+            self.fit_tiles_to_cells(surface, area);
+        }
+    }
+
+    /// Grow the tile to cover the whole surface in whole cells. Through a
+    /// stash the multiplexer forwards only a name, so the small tiles it
+    /// needs for inline pixels would only add round trips.
+    fn cover_with_one_tile(&mut self, surface: &Surface, area: CellRect) {
+        let longest = surface.width().max(surface.height()).max(1);
+        let cell_width = surface.width().checked_div(u32::from(area.columns));
+        let cell_height = surface.height().checked_div(u32::from(area.rows));
+        let whole = match (cell_width, cell_height) {
+            (Some(width), Some(height)) if width > 0 && height > 0 => {
+                least_common_multiple(width, height)
+            }
+            _ => 1,
+        };
+        self.tile_side = whole * longest.div_ceil(whole);
     }
 
     /// Make the tile side a whole number of cells again when a resize or a
@@ -477,9 +519,7 @@ impl Upload {
         stash: Option<&mut (dyn Stash + 'static)>,
     ) -> io::Result<()> {
         if placeholders {
-            return upload_placeholder_tile(
-                bytes, self.image, surface, self.rect, self.cells, cell,
-            );
+            return self.encode_placeholder(bytes, surface, cell, stash);
         }
         let padded = with_apron(self.rect, surface);
         transmit_pixels(
@@ -489,6 +529,30 @@ impl Upload {
             (padded.width, padded.height),
             stash,
         )
+    }
+
+    /// A terminal fits a placeholder image into its cells keeping its
+    /// aspect, so we stretch the tile's height to the aspect of its cells
+    /// and keep its width, which keeps a game's reduced resolution.
+    fn encode_placeholder(
+        &self,
+        bytes: &mut Vec<u8>,
+        surface: &Surface,
+        cell: CellPixels,
+        stash: Option<&mut (dyn Stash + 'static)>,
+    ) -> io::Result<()> {
+        let (rect, (columns, rows)) = (self.rect, self.cells);
+        let cells_wide = (u32::from(columns) * u32::from(cell.width)).max(1);
+        let cells_high = u32::from(rows) * u32::from(cell.height);
+        let width = rect.width.max(1);
+        let height = (u64::from(width) * u64::from(cells_high) / u64::from(cells_wide)).max(1);
+        let height = u32::try_from(height).unwrap_or(rect.height);
+        let pixels = resample(
+            &tile_pixels(surface, rect),
+            (rect.width, rect.height),
+            (width, height),
+        );
+        transmit_pixels(bytes, self.image, &pixels, (width, height), stash)
     }
 }
 
@@ -581,30 +645,6 @@ fn least_common_multiple(first: u32, second: u32) -> u32 {
         (a, b) = (b, a % b);
     }
     first / a.max(1) * second
-}
-
-/// A terminal fits a placeholder image into its cells keeping its aspect,
-/// so we stretch the tile's height to the aspect of its cells and keep its
-/// width, which keeps a game's reduced resolution.
-fn upload_placeholder_tile(
-    bytes: &mut Vec<u8>,
-    image: KittyImage,
-    surface: &Surface,
-    rect: PixelRect,
-    (columns, rows): (u16, u16),
-    cell: CellPixels,
-) -> io::Result<()> {
-    let cells_wide = (u32::from(columns) * u32::from(cell.width)).max(1);
-    let cells_high = u32::from(rows) * u32::from(cell.height);
-    let width = rect.width.max(1);
-    let height = (u64::from(width) * u64::from(cells_high) / u64::from(cells_wide)).max(1);
-    let height = u32::try_from(height).unwrap_or(rect.height);
-    let pixels = resample(
-        &tile_pixels(surface, rect),
-        (rect.width, rect.height),
-        (width, height),
-    );
-    transmit_pixels(bytes, image, &pixels, (width, height), None)
 }
 
 /// A virtual placement of the tile's cell size, and the placeholder text
@@ -1066,5 +1106,81 @@ mod tests {
             .expect("writing to a Vec cannot fail");
         let text = String::from_utf8_lossy(&resized);
         assert!(text.contains("a=t"), "a resize retransmits whole");
+    }
+
+    /// A stash that hands out shared memory names and keeps the size of
+    /// every image it was given.
+    #[derive(Debug, Clone, Default)]
+    struct Recording(std::sync::Arc<std::sync::Mutex<Vec<usize>>>);
+
+    impl Recording {
+        fn sizes(&self) -> Vec<usize> {
+            self.0
+                .lock()
+                .expect("no test thread panics holding it")
+                .clone()
+        }
+    }
+
+    impl crate::surface::Stash for Recording {
+        fn put(&mut self, pixels: &[u8]) -> std::io::Result<katui_proto::kitty::Medium> {
+            let mut sizes = self.0.lock().expect("no test thread panics holding it");
+            sizes.push(pixels.len());
+            Ok(katui_proto::kitty::Medium::SharedMemory {
+                name: format!("/kt-{}", sizes.len()),
+                size: pixels.len(),
+            })
+        }
+    }
+
+    #[test]
+    fn under_a_multiplexer_a_stash_takes_the_frame_as_one_tile() {
+        for relative_placements in [true, false] {
+            let stash = Recording::default();
+            let mut presenter = PatchedKitty::new(90, cell())
+                .for_multiplexer(space(), relative_placements)
+                .with_stash(Box::new(stash.clone()));
+            let mut wire = Vec::new();
+            presenter
+                .render_frame(
+                    &mut wire,
+                    &plain_surface(32, 64),
+                    crate::surface::test_support::area(),
+                )
+                .expect("writing to a Vec cannot fail");
+            let sizes = stash.sizes();
+            assert_eq!(sizes.len(), 1, "one upload carries the frame");
+            assert!(sizes.iter().all(|size| *size >= 32 * 64 * 4));
+            assert!(
+                !String::from_utf8_lossy(&wire).contains("o=z"),
+                "no frame pixels travel inline"
+            );
+        }
+    }
+
+    #[test]
+    fn with_a_stash_a_small_change_sends_the_whole_frame_and_no_change_sends_nothing() {
+        let stash = Recording::default();
+        let mut presenter = PatchedKitty::new(90, cell()).with_stash(Box::new(stash.clone()));
+        let area = crate::surface::test_support::area();
+        let mut surface = plain_surface(32, 64);
+        let mut wire = Vec::new();
+        presenter
+            .render_frame(&mut wire, &surface, area)
+            .expect("writing to a Vec cannot fail");
+        surface.set(
+            katui_scene::surface::PixelPos::new(3, 3),
+            Rgba::solid(200, 0, 0),
+        );
+        presenter
+            .render_frame(&mut wire, &surface, area)
+            .expect("writing to a Vec cannot fail");
+        assert_eq!(stash.sizes(), vec![32 * 64 * 4; 2]);
+        let mut unchanged = Vec::new();
+        let written = presenter
+            .render_frame(&mut unchanged, &surface, area)
+            .expect("writing to a Vec cannot fail");
+        assert_eq!(written, 0);
+        assert_eq!(stash.sizes().len(), 2);
     }
 }
