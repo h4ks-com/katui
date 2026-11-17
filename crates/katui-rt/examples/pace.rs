@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use katui_present::surface::{AnimatedKitty, PatchedKitty};
 use katui_proto::kitty::{self, Delete, IdSpace, ImageId};
-use katui_proto::probe::{CellPixels, Transport as _};
+use katui_proto::probe::{Capabilities, CellPixels, Transport as _};
 use katui_rt::tty::TtyTransport;
 use katui_scene::placement::CellRect;
 use katui_scene::surface::{PixelPos, Rgba, Surface};
@@ -18,13 +18,26 @@ const FRAMES: usize = 90;
 /// From this share of damaged tiles the animated strategy sends whole frames.
 const DENSE_DAMAGE_PERCENT: u64 = 25;
 const TILE: u32 = 40;
-const SURFACE_PIXELS_PER_CELL: u32 = 5;
+/// Divide the terminal's pixel size by this, as a game shrinks its frame
+/// under load: `PACE_DIVISOR=2 just pace`.
+static PIXEL_DIVISOR: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
+    std::env::var("PACE_DIVISOR")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|divisor| *divisor > 0)
+        .unwrap_or(1)
+});
 const BASE_IMAGE: u32 = 700;
 const BARRIER_IMAGE: u32 = 41;
 const ANSWER_WAIT: Duration = Duration::from_secs(4);
 
 fn main() {
-    let caps = katui_rt::tty::probe_default();
+    let mut caps = katui_rt::tty::probe_default();
+    // `PACE_FILES=1 just pace` measures temp files on a terminal that also reads shared memory
+    if caps.shared_memory && std::env::var_os("PACE_FILES").is_some() {
+        caps.shared_memory = false;
+        caps.local_files = true;
+    }
     print!("{}", katui_rt::info::card(&caps));
     let Ok(size) = katui_rt::tty::size() else {
         println!("no controlling terminal");
@@ -39,34 +52,35 @@ fn main() {
         return;
     };
     let area = CellRect::full(size.columns, size.rows);
-    let width = u32::from(size.columns) * SURFACE_PIXELS_PER_CELL;
-    let height = u32::from(size.rows) * SURFACE_PIXELS_PER_CELL;
+    let cell = katui_rt::tty::cell_size(&caps);
+    let width = u32::from(size.columns) * u32::from(cell.width) / *PIXEL_DIVISOR;
+    let height = u32::from(size.rows) * u32::from(cell.height) / *PIXEL_DIVISOR;
+    let medium = medium_name(&caps);
 
     let mut lines = vec![format!(
-        "{width}x{height} px, {} frames per row\n{:<10}{:>8}{:>8}{:>9}{:>9}{:>11}",
+        "{width}x{height} px, {} frames per row, local medium: {medium}\n{:<14}{:>8}{:>8}{:>9}{:>9}{:>11}",
         FRAMES, "strategy", "damage", "fps", "p50 ms", "p95 ms", "KB/frame"
     )];
-    for damage in [5, 20, 60] {
-        let mut tiles = PatchedKitty::with_tiles(BASE_IMAGE, cell(), TILE, usize::MAX)
-            .for_multiplexer(IdSpace::of_process(std::process::id()), true);
-        lines.push(run(
-            "tiles",
-            damage,
-            width,
-            height,
-            &mut transport,
-            |out, surface| tiles.render_frame(out, surface, area),
-        ));
-        let mut whole = PatchedKitty::with_tiles(BASE_IMAGE, cell(), TILE, 0);
-        lines.push(run(
-            "whole",
-            damage,
-            width,
-            height,
-            &mut transport,
-            |out, surface| whole.render_frame(out, surface, area),
-        ));
-        if caps.animation && damage < DENSE_DAMAGE_PERCENT {
+    for damage in [5, 20, 60, 100] {
+        for (name, budget, local) in [
+            ("tiles", usize::MAX, false),
+            ("whole", 0, false),
+            ("tiles+local", usize::MAX, true),
+            ("whole+local", 0, true),
+        ] {
+            let Some(mut patched) = presenter(&caps, cell, budget, local) else {
+                continue;
+            };
+            lines.push(run(
+                name,
+                damage,
+                width,
+                height,
+                &mut transport,
+                |out, surface| patched.render_frame(out, surface, area),
+            ));
+        }
+        if caps.animation && !caps.multiplexed() && damage < DENSE_DAMAGE_PERCENT {
             let mut reel = AnimatedKitty::new(BASE_IMAGE, 60, TILE, usize::MAX);
             lines.push(run(
                 "animated",
@@ -82,6 +96,37 @@ fn main() {
     print!("\x1b[2J\x1b[H");
     for line in lines {
         println!("{line}");
+    }
+}
+
+/// The presenter a strategy row measures, or none for a local row on a
+/// terminal without a local medium.
+fn presenter(
+    caps: &Capabilities,
+    cell: CellPixels,
+    budget: usize,
+    local: bool,
+) -> Option<PatchedKitty> {
+    let mut patched = PatchedKitty::with_tiles(BASE_IMAGE, cell, TILE, budget);
+    if caps.multiplexed() {
+        patched = patched.for_multiplexer(
+            IdSpace::of_process(std::process::id()),
+            caps.relative_placements,
+        );
+    }
+    if local {
+        patched = patched.with_stash(katui_rt::stash::local_stash(caps)?);
+    }
+    Some(patched)
+}
+
+fn medium_name(caps: &Capabilities) -> &'static str {
+    if caps.shared_memory {
+        "shm"
+    } else if caps.local_files {
+        "file"
+    } else {
+        "inline"
     }
 }
 
@@ -114,7 +159,7 @@ fn run(
             return format!("{name}: the tty refused the bytes");
         }
         if !await_answer(transport, id) {
-            return format!("{name:<10}{damage_percent:>7}%  stalled at frame {frame}");
+            return format!("{name:<14}{damage_percent:>7}%  stalled at frame {frame}");
         }
         waits.push(submitted.elapsed());
     }
@@ -129,7 +174,7 @@ fn run(
     }
     waits.sort_unstable();
     format!(
-        "{name:<10}{damage_percent:>7}%{:>8.1}{:>9.1}{:>9.1}{:>11.1}",
+        "{name:<14}{damage_percent:>7}%{:>8.1}{:>9.1}{:>9.1}{:>11.1}",
         FRAMES as f32 / elapsed,
         percentile(&waits, 50),
         percentile(&waits, 95),
@@ -205,11 +250,4 @@ fn next(state: &mut u64) -> u64 {
     *state ^= *state >> 7;
     *state ^= *state << 17;
     *state
-}
-
-fn cell() -> CellPixels {
-    CellPixels {
-        width: 10,
-        height: 20,
-    }
 }
