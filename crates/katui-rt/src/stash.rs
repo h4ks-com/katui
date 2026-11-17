@@ -251,6 +251,7 @@ mod tests {
         assert!(String::from_utf8_lossy(&answering.sent).contains("t=s"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_terminal_that_refuses_shared_memory_still_reads_files() {
         let mut caps = kitty();
