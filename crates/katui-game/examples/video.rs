@@ -12,19 +12,19 @@ use std::io;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use katui_game::{BASE_IMAGE, Key, MULTIPLEXED_SHRINK};
-use katui_present::surface::{PatchedKitty, PixelScreen};
+use katui_game::{BASE_IMAGE, Key};
+use katui_present::surface::PixelScreen;
 use katui_proto::input::InputEvent;
 use katui_proto::probe::{Capabilities, CellPixels};
 use katui_rt::app::{App, AppEvent, Control, run_app};
 use katui_rt::events::Waker;
 use katui_rt::media::VideoStream;
+use katui_rt::video::frame_size;
 use katui_scene::CellSize;
 use katui_scene::surface::Surface;
 
 const FRAMES_PER_SECOND: u32 = 30;
 const SEEK_SECONDS: f32 = 5.0;
-const MOST_PIXELS: (u32, u32) = (960, 540);
 const OVERLAY_SECONDS: f32 = 2.0;
 const TEST_SECONDS: f32 = 60.0;
 
@@ -104,21 +104,6 @@ impl Clip {
 
 fn strings(parts: &[&str]) -> Vec<String> {
     parts.iter().map(ToString::to_string).collect()
-}
-
-/// The surface size for a screen of `area` pixels: the same shape, shrunk
-/// to stay within what the terminal can take thirty times a second.
-fn frame_size(area: (u32, u32), multiplexed: bool) -> (u32, u32) {
-    let shrink = if multiplexed { MULTIPLEXED_SHRINK } else { 1 };
-    let (most_across, most_down) = (MOST_PIXELS.0 / shrink, MOST_PIXELS.1 / shrink);
-    let (across, down) = (area.0.max(1) as f32, area.1.max(1) as f32);
-    let scale = (most_across as f32 / across)
-        .min(most_down as f32 / down)
-        .min(1.0);
-    (
-        ((across * scale) as u32).max(2) & !1,
-        ((down * scale) as u32).max(2) & !1,
-    )
 }
 
 struct Killed(Child);
@@ -244,16 +229,9 @@ impl Player {
         }
         let cell = katui_rt::tty::cell_size(&self.caps);
         self.screen.free(out)?;
-        self.screen = PixelScreen::new(
-            &self.caps,
-            cell,
-            PatchedKitty::with_tiles(BASE_IMAGE, cell, 64, 0),
-        );
+        self.screen = katui_rt::video::screen(&self.caps, cell, BASE_IMAGE);
         let rows = self.screen.rows_shown(size.rows);
-        self.size = frame_size(
-            screen_pixels(size.columns, rows, cell),
-            self.caps.multiplexed(),
-        );
+        self.size = frame_size(screen_pixels(size.columns, rows, cell), &self.caps, 1.0);
         self.picture = vec![0; self.size.0 as usize * self.size.1 as usize * 4];
         self.fitted = Some(size);
         let at = self.position();
@@ -375,16 +353,7 @@ mod tests {
 
     use katui_rt::media::VideoStream;
 
-    use super::{Clip, artifact, draw_overlay, frame_size};
-
-    #[test]
-    fn frames_keep_the_screen_shape_and_shrink_under_a_multiplexer() {
-        assert_eq!(frame_size((800, 400), false), (800, 400));
-        assert_eq!(frame_size((1920, 1080), false), (960, 540));
-        assert_eq!(frame_size((1920, 1080), true), (480, 270));
-        let (width, height) = frame_size((3000, 600), false);
-        assert!(width <= 960 && height <= 540 && width % 2 == 0 && height % 2 == 0);
-    }
+    use super::{Clip, artifact, draw_overlay};
 
     #[test]
     fn a_file_seeks_before_its_input_and_the_test_pattern_trims_its_graph() {

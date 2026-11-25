@@ -4,7 +4,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -308,20 +307,9 @@ impl Viewer {
     }
 
     fn open_outside(&mut self, target: &str) {
-        let opener = if cfg!(target_os = "macos") {
-            "open"
-        } else {
-            "xdg-open"
-        };
-        let spawned = Command::new(opener)
-            .arg(target)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-        self.status = Some(match spawned {
-            Ok(_) => format!("See {target} in its own program"),
-            Err(error) => format!("Open {target} by hand, {opener} failed: {error}"),
+        self.status = Some(match katui::rt::open_link(target) {
+            Ok(()) => format!("See {target} in its own program"),
+            Err(error) => format!("Open {target} by hand, the opener failed: {error}"),
         });
     }
 

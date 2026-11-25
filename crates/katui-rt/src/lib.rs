@@ -6,6 +6,7 @@ pub mod clock;
 #[cfg(feature = "gamepad")]
 pub mod gamepad;
 pub mod info;
+mod link;
 pub mod media;
 pub mod session;
 pub mod stash;
@@ -17,6 +18,9 @@ pub mod pacing;
 pub mod pane;
 mod stop;
 pub mod tty;
+pub mod video;
+
+pub use link::open_link;
 
 /// Failures of the terminal lifecycle: the crate's one error enum.
 #[derive(Debug, thiserror::Error)]
