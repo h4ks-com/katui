@@ -6,6 +6,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use gilrs::{Axis, Button, Gilrs};
+use katui_proto::input::Key;
 
 /// How long the reading thread waits for an event before it checks again.
 const POLL: Duration = Duration::from_millis(50);
@@ -112,6 +113,57 @@ impl Pad {
     }
 }
 
+/// How far a stick leans before it counts as a D-pad press.
+const STICK_DEAD_ZONE: f32 = 0.5;
+
+/// A menu layout: the D-pad and left stick are the arrows, the bottom face
+/// button is enter and the right face button is escape.
+pub const MENU_KEYS: [(PadButton, Key); 6] = [
+    (PadButton::Up, Key::Up),
+    (PadButton::Down, Key::Down),
+    (PadButton::Left, Key::Left),
+    (PadButton::Right, Key::Right),
+    (PadButton::South, Key::Enter),
+    (PadButton::East, Key::Escape),
+];
+
+/// The keys `pads` hold under `layout`, which names the key each button
+/// stands for, in layout order and each once. The left stick leaning
+/// toward a D-pad direction holds that D-pad button.
+#[must_use]
+pub fn held_keys(pads: &[Pad], layout: &[(PadButton, Key)]) -> Vec<Key> {
+    let mut keys = Vec::new();
+    for (button, key) in layout {
+        if pads.iter().any(|pad| holds(pad, *button)) && !keys.contains(key) {
+            keys.push(*key);
+        }
+    }
+    keys
+}
+
+/// The keys that went down between the `before` and `now` snapshots
+/// under `layout`, for menus that move one step per press.
+#[must_use]
+pub fn pressed_keys(before: &[Pad], now: &[Pad], layout: &[(PadButton, Key)]) -> Vec<Key> {
+    let held_before = held_keys(before, layout);
+    held_keys(now, layout)
+        .into_iter()
+        .filter(|key| !held_before.contains(key))
+        .collect()
+}
+
+fn holds(pad: &Pad, button: PadButton) -> bool {
+    let leans = |axis, sign: f32| pad.axis(axis) * sign > STICK_DEAD_ZONE;
+    pad.pressed(button)
+        || match button {
+            PadButton::Up => leans(PadAxis::LeftY, -1.0),
+            PadButton::Down => leans(PadAxis::LeftY, 1.0),
+            PadButton::Left => leans(PadAxis::LeftX, -1.0),
+            PadButton::Right => leans(PadAxis::LeftX, 1.0),
+            _ => false,
+        }
+}
+
 /// Why controllers cannot be read.
 #[derive(Debug, thiserror::Error)]
 #[error("cannot read game controllers: {0}")]
@@ -179,4 +231,45 @@ fn snapshot(gilrs: &Gilrs) -> Vec<Pad> {
             }),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use katui_proto::input::Key;
+
+    use super::{MENU_KEYS, Pad, PadButton, held_keys, pressed_keys};
+
+    fn pad(buttons: &[PadButton], axes: [f32; 4]) -> Pad {
+        let mut pad = Pad {
+            index: 0,
+            name: "pad".to_owned(),
+            buttons: [0.0; 17],
+            axes,
+        };
+        for button in buttons {
+            pad.buttons[*button as usize] = 1.0;
+        }
+        pad
+    }
+
+    #[test]
+    fn the_stick_leans_like_the_d_pad_and_each_key_shows_once() {
+        let pads = [
+            pad(&[PadButton::South], [-0.9, 0.2, 0.0, 0.0]),
+            pad(&[PadButton::Left], [0.0; 4]),
+        ];
+        assert_eq!(
+            held_keys(&pads, &MENU_KEYS),
+            vec![Key::Left, Key::Enter],
+            "a small lean down stays in the dead zone"
+        );
+    }
+
+    #[test]
+    fn a_menu_sees_a_held_button_once() {
+        let idle = [pad(&[], [0.0; 4])];
+        let east = [pad(&[PadButton::East], [0.0; 4])];
+        assert_eq!(pressed_keys(&idle, &east, &MENU_KEYS), vec![Key::Escape]);
+        assert!(pressed_keys(&east, &east, &MENU_KEYS).is_empty());
+    }
 }

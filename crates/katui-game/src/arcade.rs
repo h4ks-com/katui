@@ -286,7 +286,7 @@ impl<G: Game> App for Arcade<G> {
 fn watch_pads(waker: Waker<Wake>) {
     let mut held = Vec::new();
     let _ = katui_rt::gamepad::watch(move |pads| {
-        let keys = pad_keys(pads);
+        let keys = katui_rt::gamepad::held_keys(pads, &ARCADE_KEYS);
         if keys == held {
             return true;
         }
@@ -298,51 +298,22 @@ fn watch_pads(waker: Waker<Wake>) {
 #[cfg(not(feature = "gamepad"))]
 fn watch_pads(_waker: Waker<Wake>) {}
 
-/// How far a stick leans before it counts as an arrow.
+/// The keys every arcade game here reads: the D-pad and left stick are the
+/// arrows, the bottom face button is space, and the right face button and
+/// start are enter.
 #[cfg(feature = "gamepad")]
-const STICK_DEAD_ZONE: f32 = 0.5;
-
-/// The keys `pads` hold: the d-pad and left stick are the arrows, the
-/// bottom face button is space, and the right face button and start are
-/// enter, which is what every arcade game here reads.
-#[cfg(feature = "gamepad")]
-fn pad_keys(pads: &[katui_rt::gamepad::Pad]) -> Vec<Key> {
-    use katui_rt::gamepad::{PadAxis, PadButton};
-    let leans =
-        |pad: &katui_rt::gamepad::Pad, axis, sign: f32| pad.axis(axis) * sign > STICK_DEAD_ZONE;
-    let mut keys = Vec::new();
-    for pad in pads {
-        let held = [
-            (
-                Key::Up,
-                pad.pressed(PadButton::Up) || leans(pad, PadAxis::LeftY, -1.0),
-            ),
-            (
-                Key::Down,
-                pad.pressed(PadButton::Down) || leans(pad, PadAxis::LeftY, 1.0),
-            ),
-            (
-                Key::Left,
-                pad.pressed(PadButton::Left) || leans(pad, PadAxis::LeftX, -1.0),
-            ),
-            (
-                Key::Right,
-                pad.pressed(PadButton::Right) || leans(pad, PadAxis::LeftX, 1.0),
-            ),
-            (Key::Char(' '), pad.pressed(PadButton::South)),
-            (
-                Key::Enter,
-                pad.pressed(PadButton::East) || pad.pressed(PadButton::Start),
-            ),
-        ];
-        for (key, down) in held {
-            if down && !keys.contains(&key) {
-                keys.push(key);
-            }
-        }
-    }
-    keys
-}
+const ARCADE_KEYS: [(katui_rt::gamepad::PadButton, Key); 7] = {
+    use katui_rt::gamepad::PadButton;
+    [
+        (PadButton::Up, Key::Up),
+        (PadButton::Down, Key::Down),
+        (PadButton::Left, Key::Left),
+        (PadButton::Right, Key::Right),
+        (PadButton::South, Key::Char(' ')),
+        (PadButton::East, Key::Enter),
+        (PadButton::Start, Key::Enter),
+    ]
+};
 
 #[cfg(test)]
 mod tests {
@@ -559,12 +530,12 @@ mod tests {
             buttons: [0.0; 17],
             axes: [0.0; 4],
         };
-        assert!(super::pad_keys(&[pad.clone()]).is_empty());
+        assert!(katui_rt::gamepad::held_keys(&[pad.clone()], &super::ARCADE_KEYS).is_empty());
         pad.buttons[PadButton::South as usize] = 1.0;
         pad.buttons[PadButton::Start as usize] = 1.0;
         pad.axes = [-0.9, 0.2, 0.0, 0.0];
         assert_eq!(
-            super::pad_keys(&[pad]),
+            katui_rt::gamepad::held_keys(&[pad], &super::ARCADE_KEYS),
             vec![Key::Left, Key::Char(' '), Key::Enter],
             "the stick leans left, a small lean down stays in the dead zone"
         );
