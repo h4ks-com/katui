@@ -13,7 +13,7 @@ use crate::RtError;
 use crate::events::{EventPump, Signal, Waker};
 use crate::pacing::{Pacer, Pacing};
 use crate::pane::PaneView;
-use crate::session::{ResizeEvent, ResizeWatch, Teardown};
+use crate::session::{ImageCleanup, ResizeEvent, ResizeWatch, Teardown};
 use crate::stop::StopRequest;
 
 /// How often an idle loop checks the terminal size.
@@ -102,7 +102,10 @@ pub fn run_app<A: App, W: io::Write>(
     }
     let size = crate::tty::size()?;
     let stop = StopRequest::watch()?;
-    let terminal = RestoringTerminal { out: &mut out };
+    let terminal = RestoringTerminal {
+        out: &mut out,
+        images: ImageCleanup::delete(caps),
+    };
     session::enter(terminal.out)?;
     session::enable_input(terminal.out)?;
     terminal.out.flush()?;
@@ -131,18 +134,19 @@ pub fn run_app<A: App, W: io::Write>(
 /// Restores the terminal when dropped, a panic in the application included.
 struct RestoringTerminal<'a, W: io::Write> {
     out: &'a mut W,
+    images: ImageCleanup,
 }
 
 impl<W: io::Write> Drop for RestoringTerminal<'_, W> {
     fn drop(&mut self) {
         // drop cannot report, so the restore is best effort
-        let _ = restore(self.out);
+        let _ = restore(self.out, self.images);
     }
 }
 
-fn restore<W: io::Write>(out: &mut W) -> io::Result<()> {
+fn restore<W: io::Write>(out: &mut W, images: ImageCleanup) -> io::Result<()> {
     Teardown {
-        graphics: true,
+        images,
         ..Teardown::default()
     }
     .finish(out)?;

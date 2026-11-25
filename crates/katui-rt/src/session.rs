@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use katui_present::cells;
 use katui_present::session;
 use katui_proto::kitty;
+use katui_proto::probe::Capabilities;
 
 use crate::RtError;
 
@@ -51,12 +52,38 @@ impl<W: io::Write> Drop for Session<W> {
 /// pieces to send after the always-on resets.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Teardown {
-    /// Delete every visible kitty image; runs that transmitted any.
-    pub graphics: bool,
+    /// What happens to the kitty images the run showed.
+    pub images: ImageCleanup,
     /// Home the cursor; runs that kept painting the screen.
     pub home: bool,
     /// Clear the whole screen after homing.
     pub clear: bool,
+}
+
+/// What a run's teardown does with the kitty images it showed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ImageCleanup {
+    /// Leave them; runs that transmitted none.
+    #[default]
+    Keep,
+    /// Delete every visible image.
+    Delete,
+    /// Delete every visible image through passthrough, because a
+    /// multiplexer drops a bare graphics command and the images would
+    /// stay over the shell.
+    DeleteThroughMultiplexer,
+}
+
+impl ImageCleanup {
+    /// The delete a run on a terminal with `caps` needs.
+    #[must_use]
+    pub fn delete(caps: &Capabilities) -> Self {
+        if caps.multiplexed() {
+            Self::DeleteThroughMultiplexer
+        } else {
+            Self::Delete
+        }
+    }
 }
 
 impl Teardown {
@@ -65,8 +92,13 @@ impl Teardown {
     pub(crate) fn finish<W: io::Write>(self, out: &mut W) -> io::Result<()> {
         out.write_all(b"\x1b[?2026l\x1b[0m")?;
         cells::show_cursor(out)?;
-        if self.graphics {
-            out.write_all(&kitty::Delete::AllVisible.encode())?;
+        let delete = kitty::Delete::AllVisible.encode();
+        match self.images {
+            ImageCleanup::Keep => {}
+            ImageCleanup::Delete => out.write_all(&delete)?,
+            ImageCleanup::DeleteThroughMultiplexer => {
+                out.write_all(&kitty::wrap_for_passthrough(&delete))?;
+            }
         }
         if self.home {
             out.write_all(b"\x1b[H")?;
@@ -192,7 +224,7 @@ mod tests {
 
     use std::time::{Duration, Instant};
 
-    use super::{ResizeEvent, ResizeWatch, Session, Stage, Teardown};
+    use super::{ImageCleanup, ResizeEvent, ResizeWatch, Session, Stage, Teardown};
     /// A writer that records into shared storage, so bytes survive the
     /// session's drop.
     #[derive(Clone)]
@@ -250,7 +282,7 @@ mod tests {
         let stage = Stage::enter(
             Vec::new(),
             Teardown {
-                graphics: true,
+                images: ImageCleanup::Delete,
                 home: true,
                 clear: true,
             },
@@ -261,6 +293,24 @@ mod tests {
             String::from_utf8_lossy(&bytes),
             "\x1b[?25l\x1b[?2026l\x1b[0m\x1b[?25h\x1b_Ga=d,d=a,q=2\x1b\\\x1b[H\x1b[2J",
             "hide on enter; sync off, styles, cursor, graphics, home, clear on leave"
+        );
+    }
+
+    #[test]
+    fn a_multiplexed_stage_wraps_its_image_delete_for_passthrough() {
+        let stage = Stage::enter(
+            Vec::new(),
+            Teardown {
+                images: ImageCleanup::DeleteThroughMultiplexer,
+                ..Teardown::default()
+            },
+        )
+        .expect("writing to a Vec cannot fail");
+        let bytes = stage.leave().expect("writing to a Vec cannot fail");
+        assert_eq!(
+            String::from_utf8_lossy(&bytes),
+            "\x1b[?25l\x1b[?2026l\x1b[0m\x1b[?25h\x1bPtmux;\x1b\x1b_Ga=d,d=a,q=2\x1b\x1b\\\x1b\\",
+            "only the delete goes through passthrough"
         );
     }
 
