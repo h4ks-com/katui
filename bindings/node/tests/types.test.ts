@@ -11,6 +11,7 @@ import {
   button,
   type Element,
   Focus,
+  focusableButton,
   html,
   label,
   type MessageOf,
@@ -49,6 +50,11 @@ test('a widget carries the literal message it sends', () => {
   same<typeof button, typeof button>(true)
   const save = button('Save', 'save')
   same<typeof save, Element<'save'>>(true)
+  const leave = focusableButton('Leave', 'leave', true)
+  same<typeof leave, Element<'leave'>>(true)
+  // @ts-expect-error a focusable button sends only its own message
+  const stray: Element<'save'> = focusableButton('Leave', 'leave', true)
+  assert.ok(stray)
   same<ReturnType<typeof label>, Element<never>>(true)
 })
 

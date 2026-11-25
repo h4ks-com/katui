@@ -1709,6 +1709,12 @@ struct KatuiElement *katui_hint(const char *text);
 struct KatuiElement *katui_button(const char *text, uint64_t key);
 
 /**
+ * A button that sends `key` when clicked; `focused` rings it in the
+ * accent color to show where the keys act.
+ */
+struct KatuiElement *katui_focusable_button(const char *text, uint64_t key, bool focused);
+
+/**
  * A button in the accent color that sends `key` when clicked.
  */
 struct KatuiElement *katui_primary_button(const char *text, uint64_t key);

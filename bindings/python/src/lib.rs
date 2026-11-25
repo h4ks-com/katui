@@ -77,6 +77,7 @@ fn katui_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
         widgets::heading,
         widgets::hint,
         widgets::button,
+        widgets::focusable_button,
         widgets::primary_button,
         widgets::panel,
         widgets::page,

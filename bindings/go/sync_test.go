@@ -34,12 +34,14 @@ var renamed = map[string]string{
 }
 
 var omitted = map[string]string{
-	"Key":              "keys are named by strings like \"a\", \"enter\" and \"up\"",
-	"Theme.scope":      "the app runner and Screen set the theme around every view",
-	"HeldKeys.tick":    "the game loop feeds the held keys",
-	"HeldKeys.press":   "the game loop feeds the held keys",
-	"HeldKeys.release": "the game loop feeds the held keys",
-	"HeldKeys.clear":   "the game loop feeds the held keys",
+	"Key":                 "keys are named by strings like \"a\", \"enter\" and \"up\"",
+	"Theme.scope":         "the app runner and Screen set the theme around every view",
+	"HeldKeys.tick":       "the game loop feeds the held keys",
+	"HeldKeys.press":      "the game loop feeds the held keys",
+	"HeldKeys.release":    "the game loop feeds the held keys",
+	"HeldKeys.clear":      "the game loop feeds the held keys",
+	"HeldKeys.press_with": "the game loop feeds the held keys",
+	"HeldKeys.held":       "the game loop presses keys without modifiers, so IsHeld answers the same",
 }
 
 var initialisms = map[string]string{"id": "ID", "xy": "XY", "html": "HTML", "srgb": "SRGB", "rgb": "RGB", "ui": "UI"}

@@ -44,6 +44,14 @@ pub fn button<M>(text: &str, message: M) -> Element<M> {
     button_in(text, message, theme.raised.clone(), theme.text, &theme)
 }
 
+/// A button that keyboard or controller focus can rest on; `focused` rings
+/// it in the accent color so the reader sees where the keys act.
+pub fn focusable_button<M>(text: &str, message: M, focused: bool) -> Element<M> {
+    let theme = Theme::current();
+    button_in(text, message, theme.raised.clone(), theme.text, &theme)
+        .border(1.0, theme.outline(focused))
+}
+
 /// A button in the accent color, for the action that matters most.
 pub fn primary_button<M>(text: &str, message: M) -> Element<M> {
     let theme = Theme::current();

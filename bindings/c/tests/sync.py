@@ -31,6 +31,8 @@ OMITTED = {
     "HeldKeys.press": "the game loop feeds the held keys",
     "HeldKeys.release": "the game loop feeds the held keys",
     "HeldKeys.clear": "the game loop feeds the held keys",
+    "HeldKeys.press_with": "the game loop feeds the held keys",
+    "HeldKeys.held": "the game loop presses keys without modifiers, so is_held answers the same",
 }
 
 FUNCTIONS = set(re.findall(r"\b(katui_\w+)\s*\(", HEADER))

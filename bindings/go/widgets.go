@@ -43,6 +43,14 @@ func Button(text string, message any) *Element {
 	return element(C.katui_button(s, C.uint64_t(key(message))))
 }
 
+// FocusableButton is a button that sends message when clicked; focused
+// rings it in the accent color to show where the keys act.
+func FocusableButton(text string, message any, focused bool) *Element {
+	s := cString(text)
+	defer free(s)
+	return element(C.katui_focusable_button(s, C.uint64_t(key(message)), C.bool(focused)))
+}
+
 // PrimaryButton is a button in the accent color that sends message when
 // clicked.
 func PrimaryButton(text string, message any) *Element {

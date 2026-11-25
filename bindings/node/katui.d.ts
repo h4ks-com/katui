@@ -137,6 +137,11 @@ export declare function textArea(
   focused?: boolean | null,
 ): Element<never>
 export declare function button<const M>(text: string, message: M): Element<M>
+export declare function focusableButton<const M>(
+  text: string,
+  message: M,
+  focused: boolean,
+): Element<M>
 export declare function primaryButton<const M>(text: string, message: M): Element<M>
 export declare function checkbox<const M>(text: string, checked: boolean, message: M): Element<M>
 export declare function toggleSwitch<const M>(text: string, on: boolean, message: M): Element<M>

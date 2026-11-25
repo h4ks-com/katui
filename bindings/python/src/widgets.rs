@@ -49,6 +49,11 @@ pub(crate) fn button(text: &str, message: &Bound<'_, PyAny>) -> PyElement {
 }
 
 #[pyfunction]
+pub(crate) fn focusable_button(text: &str, message: &Bound<'_, PyAny>, focused: bool) -> PyElement {
+    element(w::focusable_button(text, value(message), focused))
+}
+
+#[pyfunction]
 pub(crate) fn primary_button(text: &str, message: &Bound<'_, PyAny>) -> PyElement {
     element(w::primary_button(text, value(message)))
 }

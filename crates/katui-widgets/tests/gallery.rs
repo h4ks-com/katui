@@ -7,8 +7,8 @@ use common::{CELL, render_to_png, ui};
 use katui_proto::input::{InputEvent, Key, Mods};
 use katui_ui::{Element, Length, Ui};
 use katui_widgets::{
-    Focus, ListState, TextField, Theme, button, checkbox, hint, label, list, panel, primary_button,
-    progress, tabs, text_field, title,
+    Focus, ListState, TextField, Theme, button, checkbox, focusable_button, hint, label, list,
+    panel, primary_button, progress, tabs, text_field, title,
 };
 
 const SIZE: (u32, u32) = (9 * 80, 19 * 30);
@@ -97,4 +97,28 @@ fn every_widget_renders_and_answers_its_clicks() {
     assert_eq!(click(70.0, 217.0), Some(Message::Toggle));
     assert_eq!(click(470.0, 163.0), Some(Message::Pick(5)));
     assert_eq!(click(600.0, 500.0), None);
+}
+
+#[test]
+fn a_focused_button_wears_the_accent_ring() {
+    let theme = Theme::dark(CELL);
+    let accent = theme.accent;
+    let rings = |focused: bool| {
+        let view = theme.clone().scope(|theme| {
+            Element::row([focusable_button("Leave", Message::Save, focused)])
+                .padding(theme.cell_height())
+                .background(theme.background.clone())
+        });
+        let mut ui: Ui<Message> = ui();
+        let output = ui.render(&view, (160, 80), CELL);
+        let surface = output.flatten(CELL, (160, 80)).expect("whole pixels");
+        surface
+            .pixels()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|pixel| pixel[..3] == [accent.r, accent.g, accent.b])
+    };
+    assert!(rings(true), "focus shows");
+    assert!(!rings(false), "no ring without focus");
 }

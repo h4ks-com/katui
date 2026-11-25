@@ -17,6 +17,7 @@ from katui.widgets import (
     ScrollState,
     TextField,
     button,
+    focusable_button,
     label,
     panel,
     scroll_view,
@@ -51,6 +52,9 @@ class Wrong(katui.App[Message]):
 
 def test_a_widget_carries_the_message_it_sends() -> None:
     save: Element[Message] = button("Save", Message.SAVE)
+    leave: Element[Message] = focusable_button("Leave", Message.QUIT, True)
+    stray: Element[Message] = focusable_button("Leave", "leave", True)  # type: ignore
+    assert leave is not None and stray is not None
     nothing: Element[Never] = label("x")
     assert save is not None and nothing is not None
     assert Screen(Editor()).render().width > 0

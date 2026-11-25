@@ -41,7 +41,8 @@ static KatuiElement *tour_controls(Tour *tour) {
                        {.text = "text", .color = {255, 120, 0, 255}, .underline = true}};
   return katui_column(KATUI_LIST(
       katui_title("Title"), katui_heading("Heading"), katui_hint("Hint"), katui_rich(spans, 2),
-      katui_row(KATUI_LIST(katui_button("Button", NOTHING), katui_primary_button("Primary", NOTHING))),
+      katui_row(KATUI_LIST(katui_button("Button", NOTHING), katui_primary_button("Primary", NOTHING),
+                                     katui_focusable_button("Focused", NOTHING, true))),
       katui_text_field(tour->field, "field", true), katui_text_area(tour->area, "area", false),
       katui_checkbox("Check", true, NOTHING), katui_switch("Switch", false, NOTHING), katui_progress(0.5f),
       katui_tabs(tabs, 2, 1, TAB), katui_radio(options, 2, 0, PICK), katui_slider(0.25f, SLIDE),

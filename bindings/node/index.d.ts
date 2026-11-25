@@ -481,6 +481,8 @@ export declare enum Edit {
   Ignored = 3,
 }
 
+export declare function focusableButton(text: string, message: unknown, focused: boolean): Element
+
 /**
  * `game` drawn off-terminal after `steps` steps with `held` keys down, for
  * tests and screenshots.

@@ -33,6 +33,7 @@
       "tree",
       "button",
       "checkbox",
+      "focusable_button",
       "heading",
       "hint",
       "label",
@@ -223,9 +224,11 @@
     "HeldKeys": [
       "tick",
       "press",
+      "press_with",
       "release",
       "clear",
       "is_held",
+      "held",
       "any_held"
     ],
     "V3": [

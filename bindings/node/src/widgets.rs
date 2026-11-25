@@ -49,6 +49,20 @@ pub fn button(env: Env, text: String, message: Unknown<'_>) -> Result<Element> {
 }
 
 #[napi]
+pub fn focusable_button(
+    env: Env,
+    text: String,
+    message: Unknown<'_>,
+    focused: bool,
+) -> Result<Element> {
+    Ok(element(w::focusable_button(
+        &text,
+        value(&env, message)?,
+        focused,
+    )))
+}
+
+#[napi]
 pub fn primary_button(env: Env, text: String, message: Unknown<'_>) -> Result<Element> {
     Ok(element(w::primary_button(&text, value(&env, message)?)))
 }

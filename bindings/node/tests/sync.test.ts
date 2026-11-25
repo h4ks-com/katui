@@ -54,6 +54,8 @@ const OMITTED: Record<string, string> = {
   press: 'the game loop feeds the held keys',
   release: 'the game loop feeds the held keys',
   clear: 'the game loop feeds the held keys',
+  press_with: 'the game loop feeds the held keys',
+  held: 'the game loop presses keys without modifiers, so isHeld answers the same',
 }
 
 function camel(name: string): string {

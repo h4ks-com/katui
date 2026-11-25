@@ -58,6 +58,22 @@ pub unsafe extern "C" fn katui_button(text: *const c_char, key: u64) -> *mut Kat
     element(w::button(&unsafe { self::text(text) }, plain(key)))
 }
 
+/// A button that sends `key` when clicked; `focused` rings it in the
+/// accent color to show where the keys act.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn katui_focusable_button(
+    text: *const c_char,
+    key: u64,
+    focused: bool,
+) -> *mut KatuiElement {
+    // SAFETY: the header requires `text` to be NULL or NUL-terminated.
+    element(w::focusable_button(
+        &unsafe { self::text(text) },
+        plain(key),
+        focused,
+    ))
+}
+
 /// A button in the accent color that sends `key` when clicked.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn katui_primary_button(text: *const c_char, key: u64) -> *mut KatuiElement {

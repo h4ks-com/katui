@@ -1,17 +1,18 @@
 use std::time::{Duration, Instant};
 
-use katui_proto::input::Key;
+use katui_proto::input::{Key, Mods};
 
 /// We keep this short so a tap stays a tap, which leaves a gap before auto-repeat starts.
 const FIRST_LEASE: Duration = Duration::from_millis(160);
 const REPEAT_LEASE: Duration = Duration::from_millis(120);
 
-/// Which keys are down. A terminal that reports releases gives the exact
-/// answer; on any other terminal, a multiplexer included, we treat a press
-/// as a lease that auto-repeat keeps renewing.
+/// Which keys are down, and the modifiers each went down with. A terminal
+/// that reports releases gives the exact answer; on any other terminal, a
+/// multiplexer included, we treat a press as a lease that auto-repeat
+/// keeps renewing.
 #[derive(Debug, Clone, Default)]
 pub struct HeldKeys {
-    down: Vec<(Key, Instant)>,
+    down: Vec<(Key, Mods, Instant)>,
     now: Option<Instant>,
     reports_releases: bool,
     /// The keys a game controller holds, which it reports exactly, so they
@@ -27,19 +28,27 @@ impl HeldKeys {
 
     /// `key` was pressed or auto-repeated at `now`.
     pub fn press(&mut self, key: Key, now: Instant) {
+        self.press_with(key, Mods::NONE, now);
+    }
+
+    /// `key` was pressed or auto-repeated with `mods` at `now`.
+    pub fn press_with(&mut self, key: Key, mods: Mods, now: Instant) {
         self.now = Some(now);
         let lease = if self.is_held(key) {
             REPEAT_LEASE
         } else {
             FIRST_LEASE
         };
-        self.down.retain(|(held, _)| *held != key);
-        self.down.push((key, now + lease));
+        self.down.retain(|(held, ..)| *held != key);
+        self.down.push((key, mods, now + lease));
     }
 
+    /// `key` came up. We match on the key alone, because a terminal reports
+    /// the modifiers held at release time: Shift let go before an arrow
+    /// would otherwise leave the arrow held.
     pub fn release(&mut self, key: Key) {
         self.reports_releases = true;
-        self.down.retain(|(held, _)| *held != key);
+        self.down.retain(|(held, ..)| *held != key);
     }
 
     /// Forget every key, for when releases can no longer reach us.
@@ -63,9 +72,30 @@ impl HeldKeys {
     #[must_use]
     pub fn is_held(&self, key: Key) -> bool {
         self.pad.contains(&key)
-            || self.down.iter().any(|(held, until)| {
-                *held == key && (self.reports_releases || self.now.is_some_and(|now| now < *until))
-            })
+            || self
+                .down
+                .iter()
+                .any(|(held, _, until)| *held == key && self.lasts(*until))
+    }
+
+    /// Every key held now with the modifiers it went down with; a game
+    /// controller's keys come with none.
+    #[must_use]
+    pub fn held(&self) -> Vec<(Key, Mods)> {
+        let keyboard = self
+            .down
+            .iter()
+            .filter(|(key, _, until)| !self.pad.contains(key) && self.lasts(*until))
+            .map(|(key, mods, _)| (*key, *mods));
+        self.pad
+            .iter()
+            .map(|key| (*key, Mods::NONE))
+            .chain(keyboard)
+            .collect()
+    }
+
+    fn lasts(&self, until: Instant) -> bool {
+        self.reports_releases || self.now.is_some_and(|now| now < until)
     }
 
     #[must_use]
@@ -78,9 +108,30 @@ impl HeldKeys {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use katui_proto::input::Key;
+    use katui_proto::input::{Key, Mods};
 
     use super::HeldKeys;
+
+    const SHIFT: Mods = Mods {
+        shift: true,
+        ..Mods::NONE
+    };
+
+    #[test]
+    fn a_key_keeps_its_modifiers_and_lets_go_without_them() {
+        let start = Instant::now();
+        let mut keys = HeldKeys::default();
+        keys.release(Key::Down);
+        keys.press_with(Key::Up, SHIFT, start);
+        keys.press(Key::Left, start);
+        assert_eq!(keys.held(), vec![(Key::Up, SHIFT), (Key::Left, Mods::NONE)]);
+        keys.release(Key::Up);
+        assert_eq!(
+            keys.held(),
+            vec![(Key::Left, Mods::NONE)],
+            "Shift went up first, so the release came without it"
+        );
+    }
 
     #[test]
     fn without_releases_a_press_lapses_unless_repeats_renew_it() {
