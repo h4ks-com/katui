@@ -8,7 +8,7 @@ use std::io;
 use katui_draw::{TextEngine, bundled_fonts};
 use katui_present::kitty::{Images, KittyScreen, RgbaImage};
 use katui_present::surface::{PatchedKitty, PixelScreen};
-use katui_proto::input::{Button, InputEvent, Key, Mods, MouseAction, MouseEvent, Pointer};
+use katui_proto::input::{InputEvent, Key, Mods, MouseAction, MouseEvent, Pointer};
 use katui_proto::probe::Capabilities;
 use katui_rt::RtError;
 use katui_rt::app::{App, AppEvent, run_app};
@@ -125,26 +125,11 @@ impl<A: UiApp> Runner<A> {
 
     fn mouse(&mut self, mouse: MouseEvent) -> Control {
         let (x, y) = self.pointer.locate(&mouse, self.cell);
-        match mouse.action {
-            MouseAction::Press(Button::Left) => {
-                let message = self.ui.click(x, y);
-                self.send(message)
-            }
-            MouseAction::Drag(Button::Left) => {
-                let message = self.ui.drag(x, y);
-                self.send(message)
-            }
-            MouseAction::Release(Button::Left) => {
-                self.ui.release();
-                Control::Wait
-            }
-            MouseAction::WheelUp | MouseAction::WheelDown => {
-                let message = self.ui.wheel(x, y, mouse.action == MouseAction::WheelDown);
-                self.send(message)
-            }
-            MouseAction::Move => self.hover(x, y),
-            _ => Control::Wait,
+        if mouse.action == MouseAction::Move {
+            return self.hover(x, y);
         }
+        let message = self.ui.mouse(mouse.action, x, y);
+        self.send(message)
     }
 
     /// Send the leave message of the element the pointer left, then the

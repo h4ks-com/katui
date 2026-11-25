@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use katui_draw::{Canvas, Rect, TextEngine};
+use katui_proto::input::{Button, MouseAction};
 use katui_proto::probe::CellPixels;
 use katui_scene::placement::{CellRect, ImageId, PixelRect, Placement, PlacementId};
 use katui_scene::surface::Surface;
@@ -273,6 +274,25 @@ impl<M: Clone + 'static> Ui<M> {
             hit.on_wheel_down
         } else {
             hit.on_wheel_up
+        }
+    }
+
+    /// The message a mouse `action` at (`x`, `y`) sends: a left press
+    /// clicks, a left drag drags, any release ends the press and the wheel
+    /// scrolls. Moves send nothing here; [`Hover`] turns them into enter
+    /// and leave messages.
+    pub fn mouse(&mut self, action: MouseAction, x: f32, y: f32) -> Option<M> {
+        match action {
+            MouseAction::Press(Button::Left) => self.click(x, y),
+            MouseAction::Drag(Button::Left) => self.drag(x, y),
+            MouseAction::Release(_) => {
+                self.release();
+                None
+            }
+            MouseAction::WheelUp | MouseAction::WheelDown => {
+                self.wheel(x, y, action == MouseAction::WheelDown)
+            }
+            _ => None,
         }
     }
 
