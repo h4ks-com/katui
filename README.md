@@ -192,6 +192,11 @@ Your existing widgets keep working, with real images placed next to them.
 On Windows, kitty graphics need WezTerm's nightly build, and Windows
 Terminal 1.22 or newer shows sixel images.
 
+WezTerm on Windows can stop drawing and hang when a game sends many small
+image updates in a row, such as a piece sliding across a board. Its
+renderer slows down with every update and its memory keeps growing. Use
+Windows Terminal there if you hit this.
+
 katui checks what the terminal supports when it starts. To choose yourself,
 set `KATUI_GRAPHICS` when you run your app:
 
