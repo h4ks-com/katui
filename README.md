@@ -251,6 +251,7 @@ for the sound.
 
 - [katnav](https://github.com/h4ks-com/katnav) is a web browser for the terminal. It runs Chromium off screen and draws each page with katui, fast enough for browser games.
 - [kess](https://github.com/h4ks-com/kess) is chess on a glossy 3D board in your terminal, against a bot, on one keyboard, or online with a code.
+- [katplay](https://github.com/h4ks-com/katplay) is PlayStation Remote Play in your terminal. It streams a PS5 or PS4 with sound, and you play from the keyboard or a game controller.
 
 ## Learn more
 
